@@ -17,7 +17,7 @@ integer function INIT(en,q,k,X,Xw,Dip,instr,lnstr,CLOSE_Gs,FINALIZE)
 &                         l_chi,l_cohsex,l_life,l_rpa_IP,l_td_hartree,l_tddft,list_dbs,l_td_hf,l_setup,l_sc_run,l_rim,l_rim_w,&
 &                         l_real_time,l_ppa,l_lrc_fxc,l_gw0,l_elel_corr,l_elel_scatt,l_elph_corr,l_td_sex,&
 &                         l_elph_Hamiltonian,l_elph_scatt,l_elphoton_corr,l_elphoton_scatt,l_em1d,l_eval_collisions,&
-&                         l_sc_magnetic,l_sc_electric,l_dipoles,l_pf_fxc,l_nl_optics,l_mpa,l_phel_corr,l_X,l_screen
+&                         l_sc_magnetic,l_sc_electric,l_dipoles,l_pf_fxc,l_nl_optics,l_mpa,l_phel_corr,l_X,l_screen,l_Wpot
 #if defined _SCALAPACK
  use drivers,        ONLY:l_slk_test
 #endif
@@ -312,6 +312,7 @@ integer function INIT(en,q,k,X,Xw,Dip,instr,lnstr,CLOSE_Gs,FINALIZE)
        l_X=runlevel_is_on('Xx')
        l_em1d=runlevel_is_on('em1d')
        l_em1s=runlevel_is_on('em1s')
+       l_Wpot=runlevel_is_on('Wpot')
        l_ppa=runlevel_is_on('ppa')
        l_mpa=runlevel_is_on('mpa')
        l_cohsex=runlevel_is_on('cohsex')
@@ -416,6 +417,13 @@ integer function INIT(en,q,k,X,Xw,Dip,instr,lnstr,CLOSE_Gs,FINALIZE)
      QP_G_er=(/0._SP,PH_W_debye/)
 #endif
      if (l_gw0.and.l_elel_corr) call initactivate(1,'HF_and_locXC')
+     !
+     ! W(q,G,Gp) on disk needs a static (em1s) or plasmon-pole (ppa) screening. Default is ppa
+     !
+     if (l_Wpot.and..not.any((/l_ppa,l_em1s/))) then
+       call initactivate(1,'ppa')
+       l_ppa=.TRUE.
+     endif
      !
      if (any((/l_em1s,l_em1d,l_X,l_optics,l_ppa,l_mpa/)))   call initactivate(1,'dipoles')
      if (l_ppa)    call initactivate(1,'em1d')

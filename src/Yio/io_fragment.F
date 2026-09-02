@@ -15,7 +15,7 @@ subroutine io_fragment(ID,ID_frag,i_fragment,j_fragment,extension,ierr)
 &                      io_sec,io_extension,read_is_on,write_is_on,&
 &                      OP_RD_CL,OP_APP_CL,io_type,io_folder,io_raw_extension
  use IO_m,        ONLY:frag_WF,frag_DIP,frag_RESPONSE,frag_QINDX,frag_HF,&
-                       frag_SC,frag_RT,frag_ELPH,frag_BS_K,frag_DG
+                       frag_SC,frag_RT,frag_ELPH,frag_BS_K,frag_DG,frag_SCREEN
  use stderr,      ONLY:intc,write_fragments_IO_log,logfile
  use parallel_m,  ONLY:ncpu 
 #if ! defined _io_lib
@@ -52,6 +52,8 @@ subroutine io_fragment(ID,ID_frag,i_fragment,j_fragment,extension,ierr)
      if (.not.frag_HF) return
    case("em1s","em1d","pp","Xx")
      if (.not.frag_RESPONSE) return
+   case("W")
+     if (.not.frag_SCREEN) return
    case("carriers","THETA","OBSERVABLES","G","REF")
      if (.not.frag_RT) return
    case("scE","scWFs","scV","sc_MeanPotential")

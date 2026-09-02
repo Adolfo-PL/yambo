@@ -156,6 +156,11 @@ subroutine INIT_read_command_line(rstr,init_)
        if (l_mpa)  call initactivate(1,'mpa')
      endif
      !
+     if ( trim(rstr_piece(i1)) == 'Wpot') then
+       if (STRING_same(trim(rstr_piece(i1+1)),'s')) call initactivate(1,'em1s')
+       if (STRING_same(trim(rstr_piece(i1+1)),'p')) call initactivate(1,'ppa')
+     endif
+     !
      ! BSE/LLR
      !
      if (i_cycle==2.and.trim(rstr_piece(i1)) == 'optics' )  then

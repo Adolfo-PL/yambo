@@ -11,7 +11,7 @@ subroutine io_fragment_disconnect(ID,ID_frag)
  !
  use IO_int,      ONLY:io_disconnect
  use IO_m,        ONLY:frag_WF,frag_DIP,frag_RESPONSE,frag_QINDX,frag_HF,&
-                       frag_SC,frag_RT,frag_ELPH,io_raw_extension,frag_DG
+                       frag_SC,frag_RT,frag_ELPH,io_raw_extension,frag_DG,frag_SCREEN
  !
  implicit none
  !
@@ -30,6 +30,8 @@ subroutine io_fragment_disconnect(ID,ID_frag)
      if (.not.frag_HF) return
    case("em1s","em1d","pp","Xx")
      if (.not.frag_RESPONSE) return
+   case("W")
+     if (.not.frag_SCREEN) return
    case("carriers","THETA","OBSERVABLES","G","REF")
      if (.not.frag_RT) return
    case("scE","scWFs","scV","sc_MeanPotential")
