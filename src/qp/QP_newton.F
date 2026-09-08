@@ -11,7 +11,7 @@ subroutine QP_newton(X,Xen,Xk,en,k,q,qp,Xw,Dip)
  !
  use pars,          ONLY:SP,cZERO
  use units,         ONLY:HA2EV
- use drivers,       ONLY:l_ppa,l_mpa,l_elel_corr,l_cohsex,l_rim_w
+ use drivers,       ONLY:l_ppa,l_mpa,l_elel_corr,l_cohsex,l_rim_w,l_Wpot
  use com,           ONLY:msg
  use DIPOLES,       ONLY:DIPOLE_t
  use X_m,           ONLY:X_t
@@ -66,6 +66,10 @@ subroutine QP_newton(X,Xen,Xk,en,k,q,qp,Xw,Dip)
      if (l_rim_w) call QP_interpolate_W(X,Xw,q,'PPA')
      call QP_ppa_cohsex(X,Xk,en,k,q,qp,Xw,iter)
      !
+     ! Sc from ndb.W (check of the W database against the internal self-energy)
+     !
+     if (l_Wpot) call W_Sigma_check(X,Xk,en,k,q,qp,Xw)
+     !
    else if (l_mpa) then
      !
      if (l_RIM_W) call QP_interpolate_W(X,Xw,q,'MPA')
@@ -74,6 +78,8 @@ subroutine QP_newton(X,Xen,Xk,en,k,q,qp,Xw,Dip)
    else if (l_cohsex) then
      !
      call QP_ppa_cohsex(X,Xk,en,k,q,qp,Xw,iter)
+     !
+     if (l_Wpot) call W_Sigma_check(X,Xk,en,k,q,qp,Xw)
      !
    else 
      !

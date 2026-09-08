@@ -3,7 +3,7 @@
 !
 ! Copyright (C) 2026 The Yambo Team
 !
-! Authors (see AUTHORS file for details): 
+! Authors (see AUTHORS file for details):
 !
 subroutine W_potential(q,X,Xw)
  !
@@ -24,6 +24,14 @@ subroutine W_potential(q,X,Xw)
  !
  !   Omega(q,G,G') = ppaE / sqrt( X_mat(w=0)/X_mat(w=i ppaE) - 1 )
  !
+ ! RIM-W (rim_w runlevel, plasmon-pole only). QP_ppa_cohsex replaces, for G,G'<=RIM_W_ng,
+ !
+ !   Re[ X_mat(w=0) gamp ]  ->  Re[ RIM_W(w=0,q,G,G') ]/2         (all q, PPA residual)
+ !   Omega(q=0,G,G')        ->  ppaE / RIM_W_E(G,G')              (q=0, PPA pole)
+ !
+ ! and the same replacements are folded here in W_static (correlation part) and W_ppa_E,
+ ! so that ndb.W reproduces the W actually used by yambo in the GW self-energy.
+ !
  ! Note that the -4 pi/spin_occ prefactor applied by yambo when W is contracted in the
  ! self-energy is NOT included: W is stored in Hartree atomic units.
  !
@@ -34,14 +42,15 @@ subroutine W_potential(q,X,Xw)
  use LIVE_t,        ONLY:live_timing
  use parallel_m,    ONLY:master_cpu
  use parallel_int,  ONLY:PP_wait
+ use parser_m,      ONLY:parser
  use frequency,     ONLY:w_samp
- use R_lattice,     ONLY:bz_samp,d3q_factor,RIM_qpg
+ use R_lattice,     ONLY:bz_samp,d3q_factor,RIM_qpg,RIM_W,RIM_W_E,RIM_W_ng,RIM_W_is_diagonal,RIM_ng
  use X_m,           ONLY:X_t,X_mat
  use ALLOC,         ONLY:X_ALLOC_elemental
  use collision_el,  ONLY:elemental_collision,elemental_collision_free,elemental_collision_alloc
  use Wpot_m,        ONLY:W_is_PPA,W_ng,W_n_freqs,W_screening,W_alloc,W_free,&
 &                        W_freqs,W_vcoul,W_epsm1,W_static,W_ppa_E,&
-&                        W_PPcond_rate,W_TO_rate,W_PP_err
+&                        W_PPcond_rate,W_TO_rate,W_PP_err,W_RIM_W,W_RIM_W_ng
  use IO_int,        ONLY:io_control
  use IO_m,          ONLY:OP_RD_CL,OP_RD,OP_WR_CL,OP_APP_CL,RD_CL_IF_END,REP,NONE,VERIFY,&
 &                        manage_action,deliver_IO_error_message,io_RESPONSE
@@ -58,6 +67,7 @@ subroutine W_potential(q,X,Xw)
  type(elemental_collision) :: isc
  integer                   :: iq,ig1,ig2,ID_X,ID_W,IO_ACT,io_err,iq_first,iq_last,PPcond_rate,TO_rate
  integer,      external    :: io_X,io_W
+ logical                   :: l_RIMW
  real(SP)                  :: q_weight,gamp_fac,X_ppaE,PP_err,X_norm
  complex(SP)               :: X1,X2,ratio,sq_ratio
  !
@@ -84,13 +94,32 @@ subroutine W_potential(q,X,Xw)
  iq_first=X%iq(1)
  iq_last =min(X%iq(2),q%nibz)
  !
+ ! RIM-W: the interpolated/integrated head (and wings) of W are used by QP_ppa_cohsex
+ ! in the plasmon-pole self-energy only. ndb.RIM_W is read (or computed and written)
+ ! by QP_interpolate_W, as in QP_newton.
+ !
+ l_RIMW=l_rim_w.and.W_is_PPA
+ if (l_rim_w.and..not.W_is_PPA) call warning('[W] RIM-W is used by yambo in the plasmon-pole self-energy only:'//&
+&                                             ' not included in the static W')
+ if (l_RIMW) then
+   call parser('RIM_W_diag',RIM_W_is_diagonal)
+   if (RIM_W_ng==0) RIM_W_ng=RIM_ng
+   call QP_interpolate_W(X,Xw,q,'PPA')
+   if (.not.allocated(RIM_W).or..not.allocated(RIM_W_E)) call error('[W] RIM-W arrays not available')
+ endif
+ W_RIM_W   =l_RIMW
+ W_RIM_W_ng=0
+ if (l_RIMW) W_RIM_W_ng=min(RIM_W_ng,X%ng)
+ !
  call msg('r','[W] Screening database           ',trim(W_screening))
  call msg('r','[W] Matrix size                  ',W_ng)
  call msg('r','[W] Screening frequencies        ',W_n_freqs)
  call msg('r','[W] Q-points range               ',(/iq_first,iq_last/))
  if (W_is_PPA) call msg('r','[W] PPA imaginary energy         ',X_ppaE*HA2EV,"[eV]")
  call msg('r','[W] RIM regularized q->0 head    ',allocated(RIM_qpg))
- if (l_rim_w) call warning('[W] The RIM-W corrections (ndb.RIM_W) are not included in W(q,G,Gp)')
+ call msg('r','[W] RIM-W corrections included   ',W_RIM_W)
+ if (W_RIM_W) call msg('r','[W] RIM-W RL components          ',W_RIM_W_ng)
+ if (W_RIM_W) call msg('r','[W] RIM-W diagonal only          ',RIM_W_is_diagonal)
  !
  ! Screening DB check (VERIFY mode)
  !
@@ -198,6 +227,21 @@ subroutine W_potential(q,X,Xw)
        !
      endif
      !
+     ! RIM-W: same replacements done in QP_ppa_cohsex (residual at all q, pole at q=0).
+     ! The imaginary part of the correlation term is kept from X_mat*gamp, as in yambo.
+     !
+     if (l_RIMW) then
+       do ig2=1,W_RIM_W_ng
+         do ig1=1,W_RIM_W_ng
+           if (RIM_W_is_diagonal.and.ig1/=ig2) cycle
+           W_static(ig1,ig2)=cmplx(real(RIM_W(1,iq,ig1,ig2))/2._SP,&
+&                                  aimag(X_mat(ig1,ig2,1))*real(isc%gamp(ig1,ig2)),kind=SP)*gamp_fac
+           if (ig1==ig2) W_static(ig1,ig2)=W_static(ig1,ig2)+W_vcoul(ig1)
+           if (iq==1) W_ppa_E(ig1,ig2)=X_ppaE/RIM_W_E(ig1,ig2)
+         enddo
+       enddo
+     endif
+     !
      W_PPcond_rate=PPcond_rate
      W_TO_rate    =TO_rate
      W_PP_err     =PP_err
@@ -206,7 +250,9 @@ subroutine W_potential(q,X,Xw)
      !
      call msg('r',' Current Q-pt index             ',iq)
      call msg('r',' :: W(q,G=0,Gp=0)   [Ha]        ',(/real(W_static(1,1)),aimag(W_static(1,1))/))
+     call msg('r',' :: W-v(q,G=0,Gp=0) [Ha]        ',(/real(W_static(1,1)-W_vcoul(1)),aimag(W_static(1,1)-W_vcoul(1))/))
      if (W_is_PPA) then
+       call msg('r',' :: Omega(q,G=0,Gp=0) [eV]      ',(/real(W_ppa_E(1,1)),aimag(W_ppa_E(1,1))/)*HA2EV)
        call msg('r',' :: PP condition fails/total    ',real(PPcond_rate,SP)/real(X%ng,SP)**2)
        call msg('r',' :: Time ordering fails/rest    ',real(TO_rate,SP)/max(real(X%ng,SP)**2-real(PPcond_rate,SP),1._SP))
        call msg('r',' :: Mean rel dev of PP cond     ',PP_err/real(X%ng,SP)**2)
@@ -230,6 +276,11 @@ subroutine W_potential(q,X,Xw)
    call W_free()
    !
  endif
+ !
+ ! RIM-W arrays are re-read from ndb.RIM_W by QP_newton (YAMBO_ALLOC is not guarded)
+ !
+ YAMBO_FREE(RIM_W)
+ YAMBO_FREE(RIM_W_E)
  !
  call PP_wait()
  !

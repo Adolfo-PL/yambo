@@ -42,6 +42,13 @@ module Wpot_m
  character(schlen) :: W_screening="none"       ! "em1s" or "pp"
  character(schlen) :: W_convention="W = eps^-1 v = v + v chi v, eps^-1 = 1 + v chi [Ha]"
  !
+ ! RIM-W (ndb.RIM_W) corrections folded in W_static (real part) and W_ppa_E (q=0) for
+ ! G,G' <= W_RIM_W_ng, exactly as QP_ppa_cohsex uses them in the plasmon-pole self-energy.
+ ! They are applied to the plasmon-pole W only (yambo does not use RIM-W in COHSEX).
+ !
+ logical           :: W_RIM_W    =.FALSE.
+ integer           :: W_RIM_W_ng =0
+ !
  ! Per q-point (IBZ) quantities
  !
  complex(SP), allocatable :: W_freqs(:)        ! frequencies of the screening DB (n_freqs)

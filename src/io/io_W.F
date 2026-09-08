@@ -190,7 +190,7 @@ integer function variables_W(ID,local_desc,X)
  use descriptors,   ONLY:IO_desc,IO_desc_reset
  use X_m,           ONLY:X_t
  use R_lattice,     ONLY:RIM_qpg
- use Wpot_m,        ONLY:W_is_PPA,W_ng,W_n_freqs,W_screening,W_convention
+ use Wpot_m,        ONLY:W_is_PPA,W_ng,W_n_freqs,W_screening,W_convention,W_RIM_W,W_RIM_W_ng
  use IO_int,        ONLY:io_elemental
  use IO_m,          ONLY:io_status
  !
@@ -210,9 +210,9 @@ integer function variables_W(ID,local_desc,X)
  l_RIM_head=allocated(RIM_qpg)
  tmp_ib=X%ib
  !
- ! W_PARS_1: ng(1) + n_freqs(1) + bands(2) + ppaE(1) + PPA(1) + RIM(1) = 7 slots
+ ! W_PARS_1: ng(1) + n_freqs(1) + bands(2) + ppaE(1) + PPA(1) + RIM(1) + RIM-W(1) + RIM-W ng(1) = 9 slots
  !
- call io_elemental(ID,VAR="W_PARS_1",VAR_SZ=7,MENU=0)
+ call io_elemental(ID,VAR="W_PARS_1",VAR_SZ=9,MENU=0)
  call io_elemental(ID,I0=W_ng,&
 &     VAR="W matrix size                   ",CHECK=.true.,OP=(/"<="/),DESCRIPTOR=local_desc)
  call io_elemental(ID,I0=W_n_freqs,&
@@ -225,6 +225,10 @@ integer function variables_W(ID,local_desc,X)
 &     VAR="Plasmon-pole energies included  ",CHECK=.true.,OP=(/"=="/),DESCRIPTOR=local_desc)
  call io_elemental(ID,L0=l_RIM_head,&
 &     VAR="RIM regularized q->0 head       ",WARN=.true.,OP=(/"=="/),DESCRIPTOR=local_desc)
+ call io_elemental(ID,L0=W_RIM_W,&
+&     VAR="RIM-W corrections included      ",WARN=.true.,OP=(/"=="/),DESCRIPTOR=local_desc)
+ call io_elemental(ID,I0=W_RIM_W_ng,&
+&     VAR="RIM-W RL components             ",WARN=.true.,OP=(/"=="/),DESCRIPTOR=local_desc)
  call io_elemental(ID,VAR="",VAR_SZ=0,MENU=0)
  !
  ! W_SCREENING: the screening DB W has been built from
