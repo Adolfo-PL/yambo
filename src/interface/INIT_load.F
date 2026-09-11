@@ -286,6 +286,7 @@ subroutine INIT_load(defs,en,q,k,X,Xw,Dip)
  call it('f',defs,'DrClassic', '[X] Use a classical model for the drude term',verb_level=V_resp)
  call it('f',defs,'mpERdb',  '[Xm] Write to disk MPA poles and residues')
  call it('f',defs,'WriteXo', '[X] Write on the-fly the IP response function',verb_level=V_resp)
+ call it('f',defs,'ChiFxc',  '[X] chi0 (KS), P (QP-corrected) and fxc=chi0^-1-P^-1 on disk (ndb.Chi)')
  !
  ! BSE/BSK
  !

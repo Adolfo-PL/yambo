@@ -194,6 +194,7 @@ subroutine INIT_activate()
 &                  'DrudeW','EhEngy','LongDr'/))
    call initactivate(1,'DrClassic')
    if (.not.l_rpa_IP) call initactivate(1,'WriteXo')
+   if (.not.l_rpa_IP) call initactivate(1,'ChiFxc')
    !
    call INIT_QP_ctl_switch('X')
    !
@@ -312,6 +313,7 @@ subroutine INIT_activate()
    call X_activate('Xs',(/'QpntsR','BndsRn','NGsBlk','GrFnTp','DmRnge','CGrdSp','EhEngy','LongDr','DrudeW'/))
    call initactivate(1,'XTermKind')
    call initactivate(1,'XTermEn')
+   call initactivate(1,'ChiFxc')
  endif
  !
  ! GW (PPA, MPA, & COHSEX) 
@@ -339,6 +341,7 @@ subroutine INIT_activate()
    endif
    call initactivate(1,'XTermKind')
    call initactivate(1,'XTermEn')
+   call initactivate(1,'ChiFxc')
    call initactivate(1,'OptDipAverage')
  endif
  !

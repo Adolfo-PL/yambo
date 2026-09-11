@@ -28,7 +28,7 @@ subroutine io_fragment_disconnect(ID,ID_frag)
      if (.not.frag_DIP) return
    case("HF_and_locXC","xxvxc")
      if (.not.frag_HF) return
-   case("em1s","em1d","pp","Xx")
+   case("em1s","em1d","pp","Xx","Chi")
      if (.not.frag_RESPONSE) return
    case("W")
      if (.not.frag_SCREEN) return
