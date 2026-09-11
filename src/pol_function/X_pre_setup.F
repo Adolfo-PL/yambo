@@ -9,7 +9,8 @@ subroutine X_pre_setup(Xen,Xk,X)
  !
  use pars,          ONLY:SP
  use X_m,           ONLY:X_t,use_X_DbGd,X_DbGd_nkpts,l_X_terminator,X_use_lin_sys,&
-&                        X_use_gpu,Chi_linalg_mode,X_ng,l_write_disk_Xo
+&                        X_use_gpu,Chi_linalg_mode,X_ng,l_write_disk_Xo,l_recalculate_X
+ use Chi_m,         ONLY:l_Chi_fxc
  use electrons,     ONLY:levels,n_sp_pol
  use drivers,       ONLY:l_bs_fxc,l_col_cut,Finite_Tel,l_cohsex,l_rt_carriers_in_use,l_rpa_IP
  use R_lattice,     ONLY:nqibz,bz_samp
@@ -112,6 +113,16 @@ subroutine X_pre_setup(Xen,Xk,X)
  ! Check if Xo must be written on-the-fly
  !
  call parser('WriteXo',l_write_disk_Xo)
+ !
+ ! ndb.Chi needs BOTH bubbles, and they are built inside the q-loop of
+ ! X_dielectric_matrix. A complete response database on disk would make that loop
+ ! return early and no ndb.Chi would be written, so force the recalculation.
+ !
+ call parser('ChiFxc',l_Chi_fxc)
+ if (l_Chi_fxc) then
+   l_recalculate_X=.TRUE.
+   call warning('[Chi] the response matrix is recomputed: ndb.Chi needs chi0 and P together')
+ endif
  !
  if (l_rpa_IP) l_write_disk_Xo=.FALSE.
  !
