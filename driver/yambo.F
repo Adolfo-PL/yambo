@@ -17,7 +17,7 @@ integer function yambo(np,pid,lnstr,iinf,iind,iod,icd,ijs,instr,inf,ind,od,com_d
  use drivers,       ONLY:l_HF_and_locXC,l_sc_run,l_eval_collisions,l_real_time,&
 &                        l_optics,l_chi,l_em1s,l_ppa,l_mpa,l_bss,l_bse,l_em1d,l_X,&
 &                        l_gw0,l_life,l_acfdt,l_dipoles,l_nl_optics,l_elel_corr,l_gpu_test,&
-&                        l_slk_test
+&                        l_slk_test,l_Wpot
 #if defined _ELPH
  use drivers,       ONLY:l_elph_Hamiltonian
 #endif
@@ -29,7 +29,9 @@ integer function yambo(np,pid,lnstr,iinf,iind,iod,icd,ijs,instr,inf,ind,od,com_d
  use it_m,          ONLY:infile
  use QP_m,          ONLY:QP_ng_Sx,QP_ng_SH
  use wave_func,     ONLY:wf_ng
- use electrons,     ONLY:levels,E_reset
+ use electrons,     ONLY:levels,E_reset,E_duplicate
+ use parser_m,      ONLY:parser
+ use Chi_m,         ONLY:l_Chi_fxc,Chi_KS_levels
  use R_lattice,     ONLY:bz_samp,bz_samp_reset
  use frequency,     ONLY:w_samp
  !
@@ -154,6 +156,15 @@ integer function yambo(np,pid,lnstr,iinf,iind,iod,icd,ijs,instr,inf,ind,od,com_d
  !=======================
  !
  launch_me= .not.(l_slk_test.or.l_gpu_test)
+ !
+ ! ndb.Chi needs the X levels as they are BEFORE any QP correction is applied to them
+ !
+ call parser('ChiFxc',l_Chi_fxc)
+ if (launch_me.and.l_Chi_fxc) then
+   call E_reset(Chi_KS_levels)
+   call E_duplicate(Xen,Chi_KS_levels)
+ endif
+ !
  if(launch_me) call External_corrections(en,Xen,Ken,DIPen,Xk,k,X)
  !
  ! DIPOLES
@@ -193,6 +204,14 @@ integer function yambo(np,pid,lnstr,iinf,iind,iod,icd,ijs,instr,inf,ind,od,com_d
  if (l_nl_optics.and.launch_me) call error('Please run the calculation of em1s/d/x in a separate run')
  !
  if (launch_me) i_err=X_dielectric_matrix(Xen,Xk,q,X(i_X_kind),Xw(i_X_kind),Dip,.FALSE.,.FALSE.)
+ if (launch_me) call mem_manager_report
+ !
+ ! SCREENED COULOMB POTENTIAL W(q,G,G') ON DISK
+ !==============================================
+ !
+ launch_me=l_Wpot.and..not.l_nl_optics
+ !
+ if (launch_me) call W_potential(q,X(i_X_kind),Xw(i_X_kind))
  if (launch_me) call mem_manager_report
  !
  ! HARTREE-FOCK AND VXC

@@ -74,6 +74,7 @@ module drivers
  logical :: l_X                  =.FALSE.
  logical :: l_em1d               =.FALSE.
  logical :: l_em1s               =.FALSE.
+ logical :: l_Wpot               =.FALSE.
  !
  ! ... and the kernel
  !
