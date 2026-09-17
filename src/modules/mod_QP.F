@@ -37,6 +37,7 @@ module QP_m
  logical           :: use_GreenF_to_eval_QP
  logical           :: use_GreenF_Zoom
  logical           :: GF_is_causal
+ logical           :: QP_retarded_G=.FALSE.
  character(schlen) :: QP_solver
  character(schlen) :: GF_energy_range_mode="centered"
  real(SP)          :: QP_G_Zoom_treshold
@@ -103,6 +104,9 @@ module QP_m
    ! Green Function and Self-Energy
    !
    integer                :: GreenF_n_steps
+   logical                :: GreenF_retarded=.FALSE.
+   real(SP)               :: GreenF_mu=0._SP
+   complex(SP),allocatable :: Sigma_x(:),Vxc_reference(:)
    complex(SP),allocatable:: S_total(:,:)
    complex(SP),allocatable:: GreenF(:,:)
    complex(SP),allocatable:: GreenF_W(:,:)
@@ -241,6 +245,8 @@ module QP_m
      qp%nb=qp%nb
      qp%n_states=qp_in%n_states
      qp%GreenF_n_steps=qp_in%GreenF_n_steps
+     qp%GreenF_retarded=qp_in%GreenF_retarded
+     qp%GreenF_mu=qp_in%GreenF_mu
      if (what=="ALL") call IO_desc_duplicate(qp_in%desc,qp%desc)
      YAMBO_ALLOC(qp%k,(qp%nk,3))
      YAMBO_ALLOC(qp%table,(qp%n_states,3+n_sp_pol-1))
@@ -266,6 +272,16 @@ module QP_m
        endif
      endif
      if (allocated(qp_in%S_total)) then
+       if (qp_in%GreenF_retarded) then
+         if (.not.allocated(qp%E_bare)) then
+           YAMBO_ALLOC(qp%E_bare,(qp%n_states))
+         endif
+         qp%E_bare=qp_in%E_bare
+         YAMBO_ALLOC(qp%Sigma_x,(qp%n_states))
+         YAMBO_ALLOC(qp%Vxc_reference,(qp%n_states))
+         qp%Sigma_x=qp_in%Sigma_x
+         qp%Vxc_reference=qp_in%Vxc_reference
+       endif
        YAMBO_ALLOC(qp%S_total,(qp%n_states,qp%GreenF_n_steps))
        YAMBO_ALLOC(qp%GreenF,(qp%n_states,qp%GreenF_n_steps))
        YAMBO_ALLOC(qp%GreenF_W,(qp%n_states,qp%GreenF_n_steps))
@@ -297,6 +313,8 @@ module QP_m
      qp%nb=0
      qp%n_states=0
      qp%GreenF_n_steps=0
+     qp%GreenF_retarded=.FALSE.
+     qp%GreenF_mu=0._SP
      call IO_desc_reset(qp%desc)
      YAMBO_FREE(qp%table)
      YAMBO_FREE(qp%k)
@@ -307,6 +325,8 @@ module QP_m
      YAMBO_FREE(qp%S_total)
      YAMBO_FREE(qp%GreenF)
      YAMBO_FREE(qp%GreenF_W)
+     YAMBO_FREE(qp%Sigma_x)
+     YAMBO_FREE(qp%Vxc_reference)
    end subroutine
    !
    ! Lifetime functions e2et/h2ht

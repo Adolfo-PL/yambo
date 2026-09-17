@@ -22,10 +22,13 @@ integer function io_Chi(X,Xw,ID)
  use frequency,     ONLY:w_samp
  use Chi_m,         ONLY:Chi_desc,Chi_ng,Chi_n_freqs,Chi_alloc,Chi_freqs,Chi_0,Chi_P,Chi_fxc,&
 &                        Chi_QP_applied,Chi_QP_action,Chi_convention
+ use Chi_m,         ONLY:Chi_G_mode,Chi_G_db,Chi_G_norm_tol,Chi_G_check_tol,Chi_rcond_floor,&
+&                        Chi_G_mu,Chi_G_kbt,Chi_G0_error,Chi_rcond
+ use Chi_m,         ONLY:Chi_G_axis
  use IO_int,        ONLY:io_connect,io_disconnect,io_elemental,io_header,io_fragment,&
 &                        def_variable_bulk,io_variable_bulk,def_variable_elemental,io_variable_elemental
  use IO_m,          ONLY:io_sec,io_com,io_status,write_is_on,read_is_on,NONE,frag_RESPONSE,&
-&                        IO_NO_DATABASE,io_mode,DUMP
+&                        IO_NO_DATABASE,io_mode,DUMP,variable_exist
  use descriptors,   ONLY:IO_desc_reset
  use stderr,        ONLY:intc
  use timing_m,      ONLY:timing
@@ -39,7 +42,7 @@ integer function io_Chi(X,Xw,ID)
  ! Work Space
  !
  integer                 :: i1,iq,io_com_save,io_err,ID_frag,ng_qpg,tmp_ib(2)
- character(schlen)       :: ch
+ character(schlen)       :: ch,axis
  real(SP),   allocatable :: RL_vecs_disk(:,:)
  complex(SP),allocatable :: qpg_disk(:,:)
  !
@@ -87,6 +90,37 @@ integer function io_Chi(X,Xw,ID)
    call io_elemental(ID,CH0=Chi_convention,&
 &       VAR="Convention                      ",DESCRIPTOR=Chi_desc)
    call io_elemental(ID,VAR="",VAR_SZ=0,MENU=0)
+   if (read_is_on(ID)) then
+     Chi_G_mode='LEVELS'
+     Chi_G_db=''
+   endif
+   if (write_is_on(ID).or.variable_exist(ID,'CHI_G_MODE')) then
+     call io_elemental(ID,VAR="CHI_G_MODE",CH0='',VAR_SZ=1,MENU=0)
+     call io_elemental(ID,CH0=Chi_G_mode)
+     call io_elemental(ID,VAR="",VAR_SZ=0,MENU=0)
+   endif
+   axis=Chi_G_axis
+   if (trim(Chi_G_mode)=='LEVELS') axis='NATIVE'
+   if (write_is_on(ID).or.variable_exist(ID,'CHI_G_AXIS')) then
+     call io_elemental(ID,VAR="CHI_G_AXIS",CH0='',VAR_SZ=1,MENU=0)
+     call io_elemental(ID,CH0=axis)
+     call io_elemental(ID,VAR="",VAR_SZ=0,MENU=0)
+     if (read_is_on(ID).and.trim(Chi_G_mode)/='LEVELS') Chi_G_axis=axis
+   endif
+   if (write_is_on(ID).or.variable_exist(ID,'CHI_G_DB')) then
+     call io_elemental(ID,VAR="CHI_G_DB",CH0='',VAR_SZ=1,MENU=0)
+     call io_elemental(ID,CH0=Chi_G_db)
+     call io_elemental(ID,VAR="",VAR_SZ=0,MENU=0)
+   endif
+   if (write_is_on(ID).or.variable_exist(ID,'CHI_G_PARAMETERS')) then
+     call io_elemental(ID,VAR="CHI_G_PARAMETERS",VAR_SZ=5,MENU=0)
+     call io_elemental(ID,R0=Chi_G_norm_tol)
+     call io_elemental(ID,R0=Chi_G_check_tol)
+     call io_elemental(ID,R0=Chi_rcond_floor)
+     call io_elemental(ID,R0=Chi_G_mu)
+     call io_elemental(ID,R0=Chi_G_kbt)
+     call io_elemental(ID,VAR="",VAR_SZ=0,MENU=0)
+   endif
    !
    io_Chi=io_status(ID)
    if (io_Chi/=0) goto 1
@@ -169,6 +203,18 @@ integer function io_Chi(X,Xw,ID)
    ch="FXC_Q_"//trim(intc(iq))
    call def_variable_bulk(ID_frag,trim(ch),4,(/2,Chi_ng,Chi_ng,Chi_n_freqs/),SP)
    call  io_variable_bulk(ID_frag,4,C3=Chi_fxc)
+   ch="CHI_RCOND_Q_"//trim(intc(iq))
+   if (read_is_on(ID)) Chi_rcond=0._SP
+   if (write_is_on(ID_frag).or.variable_exist(ID_frag,trim(ch))) then
+     call def_variable_bulk(ID_frag,trim(ch),5,(/2,Chi_n_freqs/),SP)
+     call io_variable_bulk(ID_frag,5,R2=Chi_rcond)
+   endif
+   ch="CHI_G0_ERROR_Q_"//trim(intc(iq))
+   if (read_is_on(ID)) Chi_G0_error=-1._SP
+   if (write_is_on(ID_frag).or.variable_exist(ID_frag,trim(ch))) then
+     call def_variable_bulk(ID_frag,trim(ch),6,(/1/),SP)
+     call io_variable_bulk(ID_frag,6,R0=Chi_G0_error)
+   endif
    !
  endif
  !

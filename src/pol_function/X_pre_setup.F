@@ -10,14 +10,16 @@ subroutine X_pre_setup(Xen,Xk,X)
  use pars,          ONLY:SP
  use X_m,           ONLY:X_t,use_X_DbGd,X_DbGd_nkpts,l_X_terminator,X_use_lin_sys,&
 &                        X_use_gpu,Chi_linalg_mode,X_ng,l_write_disk_Xo,l_recalculate_X
- use Chi_m,         ONLY:l_Chi_fxc
+ use Chi_m,         ONLY:l_Chi_fxc,Chi_G_mode,Chi_KS_levels,Chi_G_norm_tol,Chi_G_check_tol,&
+&                        Chi_rcond_floor,Chi_G_kbt,Chi_G_mu
+ use Chi_m,         ONLY:Chi_G_axis,Chi_G_nu_steps,Chi_G_nu_range
  use electrons,     ONLY:levels,n_sp_pol
  use drivers,       ONLY:l_bs_fxc,l_col_cut,Finite_Tel,l_cohsex,l_rt_carriers_in_use,l_rpa_IP
  use R_lattice,     ONLY:nqibz,bz_samp
  use QP_m,          ONLY:COHSEX_use_empties
  use TDDFT,         ONLY:FXC_n_g_corr
  use interfaces,    ONLY:eval_G_minus_G
- use parallel_m,    ONLY:PAR_COM_WORLD
+ use parallel_m,    ONLY:PAR_COM_WORLD,ncpu
  use stderr,        ONLY:intc
  use parser_m,      ONLY:parser
  use gpu_m,         ONLY:have_gpu
@@ -119,6 +121,34 @@ subroutine X_pre_setup(Xen,Xk,X)
  ! return early and no ndb.Chi would be written, so force the recalculation.
  !
  call parser('ChiFxc',l_Chi_fxc)
+ if (l_Chi_fxc) then
+   if (trim(Chi_G_mode)/='LEVELS'.and.trim(Chi_G_mode)/='G0'.and.trim(Chi_G_mode)/='DYSON')&
+&     call error('[Chi] ChiGMode must be LEVELS, G0 or DYSON')
+   if (Chi_G_norm_tol<=0._SP.or.Chi_G_norm_tol>=1._SP.or.Chi_G_check_tol<=0._SP.or.&
+&      Chi_rcond_floor<0._SP.or.Chi_rcond_floor>=1._SP) call error('[Chi] invalid validation tolerances')
+   if (trim(Chi_G_mode)/='LEVELS') then
+     if (trim(Chi_G_axis)/='REAL'.and.trim(Chi_G_axis)/='IMAG') call error('[Chi/G] ChiGAxis must be REAL or IMAG')
+     if (Chi_G_nu_steps<1.or.Chi_G_nu_range(1)<0._SP.or.Chi_G_nu_range(2)<Chi_G_nu_range(1))&
+&       call error('[Chi/G] invalid imaginary frequency range/steps')
+     if (ncpu/=1.or.have_gpu) call error('[Chi/G] first implementation requires one MPI rank and CPU execution')
+     if (X%iq(1)<=1) call error('[Chi/G] select finite q only: QpntsRXd must start after q=1')
+     if (l_X_terminator.or.use_X_DbGd) call error('[Chi/G] disable XTermKind and double-grid interpolation')
+     if (X%ehe(1)>0._SP.or.X%ehe(2)>0._SP)&
+&       call error('[Chi/G] transition-energy filtering is unsupported; set EhEngyXd to zero')
+     if (any(Chi_KS_levels%nbf/=Chi_KS_levels%nbm))&
+&       call error('[Chi/G] first implementation requires an insulating KS reference')
+     Chi_G_kbt=0._SP
+     Chi_G_mu=Chi_KS_levels%E_Fermi
+     if (Finite_Tel.or.l_rt_carriers_in_use) call error('[Chi/G] finite temperature/nonequilibrium is unsupported')
+     if (allocated(Xen%W).or.allocated(Xen%Z).or.allocated(Xen%GreenF))&
+&       call error('[Chi/G] use ChiGDb alone; disable external X widths, residues and Green functions')
+     if (maxval(abs(Xen%E-Chi_KS_levels%E))>1.E-5_SP)&
+&       call error('[Chi/G] disable external X energy corrections; G0 must use the KS reference')
+     X%ordering='R'
+     X%cg_percentual=0._SP
+     if (trim(Chi_G_mode)=='DYSON') call Chi_G_load(X,Xk)
+   endif
+ endif
  if (l_Chi_fxc) then
    l_recalculate_X=.TRUE.
    call warning('[Chi] the response matrix is recomputed: ndb.Chi needs chi0 and P together')

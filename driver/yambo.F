@@ -31,7 +31,7 @@ integer function yambo(np,pid,lnstr,iinf,iind,iod,icd,ijs,instr,inf,ind,od,com_d
  use wave_func,     ONLY:wf_ng
  use electrons,     ONLY:levels,E_reset,E_duplicate
  use parser_m,      ONLY:parser
- use Chi_m,         ONLY:l_Chi_fxc,Chi_KS_levels
+ use Chi_m,         ONLY:l_Chi_fxc,Chi_KS_levels,Chi_G_free,Chi_header_done
  use R_lattice,     ONLY:bz_samp,bz_samp_reset
  use frequency,     ONLY:w_samp
  !
@@ -160,6 +160,8 @@ integer function yambo(np,pid,lnstr,iinf,iind,iod,icd,ijs,instr,inf,ind,od,com_d
  ! ndb.Chi needs the X levels as they are BEFORE any QP correction is applied to them
  !
  call parser('ChiFxc',l_Chi_fxc)
+ Chi_header_done=.FALSE.
+ call Chi_G_free()
  if (launch_me.and.l_Chi_fxc) then
    call E_reset(Chi_KS_levels)
    call E_duplicate(Xen,Chi_KS_levels)
@@ -312,6 +314,8 @@ integer function yambo(np,pid,lnstr,iinf,iind,iod,icd,ijs,instr,inf,ind,od,com_d
  !=========
  !
  call CLOSE_the_run(.TRUE.,.TRUE.,.FALSE.)
+ call Chi_G_free()
+ call E_reset(Chi_KS_levels)
  !
  i_err=INIT(en,q,k,X,Xw,Dip,instr,lnstr,.false.,.true.)
  !

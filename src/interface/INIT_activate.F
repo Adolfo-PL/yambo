@@ -194,7 +194,8 @@ subroutine INIT_activate()
 &                  'DrudeW','EhEngy','LongDr'/))
    call initactivate(1,'DrClassic')
    if (.not.l_rpa_IP) call initactivate(1,'WriteXo')
-   if (.not.l_rpa_IP) call initactivate(1,'ChiFxc')
+   if (.not.l_rpa_IP) call initactivate(1,&
+&    'ChiFxc ChiGMode ChiGDb ChiGAxis ChiGNuSteps ChiGNuRnge ChiGNormTol ChiGCheckTol ChiRcondMin')
    !
    call INIT_QP_ctl_switch('X')
    !
@@ -313,7 +314,8 @@ subroutine INIT_activate()
    call X_activate('Xs',(/'QpntsR','BndsRn','NGsBlk','GrFnTp','DmRnge','CGrdSp','EhEngy','LongDr','DrudeW'/))
    call initactivate(1,'XTermKind')
    call initactivate(1,'XTermEn')
-   call initactivate(1,'ChiFxc')
+   call initactivate(1,&
+&    'ChiFxc ChiGMode ChiGDb ChiGAxis ChiGNuSteps ChiGNuRnge ChiGNormTol ChiGCheckTol ChiRcondMin')
  endif
  !
  ! GW (PPA, MPA, & COHSEX) 
@@ -341,7 +343,8 @@ subroutine INIT_activate()
    endif
    call initactivate(1,'XTermKind')
    call initactivate(1,'XTermEn')
-   call initactivate(1,'ChiFxc')
+   call initactivate(1,&
+&    'ChiFxc ChiGMode ChiGDb ChiGAxis ChiGNuSteps ChiGNuRnge ChiGNormTol ChiGCheckTol ChiRcondMin')
    call initactivate(1,'OptDipAverage')
  endif
  !
@@ -370,7 +373,7 @@ subroutine INIT_activate()
      if (l_gw0) then
        call initactivate(1,'FFTGvecs RandQpts QEDRLvcs GbndRnge GDamping dScStep DysSolver') 
        if (trim(QP_solver)=="g") then
-         call initactivate(1,'GEnSteps GEnRnge GEnMode GDmRnge GreenFTresh GreenF2QP') 
+         call initactivate(1,'GEnSteps GEnRnge GEnMode GDmRnge GreenFTresh GreenF2QP GRetarded')
        else
          call initactivate(1,'SCEtresh')
          if (.not.l_cohsex) call initactivate(1,'NewtDchk ExtendOut OnMassShell QPExpand')
@@ -407,7 +410,7 @@ subroutine INIT_activate()
          if (trim(QP_solver)=="g") then
            !DALV: switching off GsampType and GImRnge for now
            !call initactivate(1,'GsampType GEnSteps GEnRnge GImRnge GEnMode GDmRnge GreenFTresh GreenF2QP') 
-           call initactivate(1,'GEnSteps GEnRnge GEnMode GDmRnge GreenFTresh GreenF2QP')
+           call initactivate(1,'GEnSteps GEnRnge GEnMode GDmRnge GreenFTresh GreenF2QP GRetarded')
          else
            call initactivate(1,'SCEtresh')
            if (.not.l_cohsex) call initactivate(1,'NewtDchk ExtendOut OnMassShell QPExpand')

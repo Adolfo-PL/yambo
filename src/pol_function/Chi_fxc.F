@@ -19,13 +19,15 @@ subroutine Chi_fxc_eval(iq,iq_mem,X,Xen,Xk,Xw,Dip)
  !      exactly as if nothing had happened
  !   4. on the master: fxc = chi0^-1 - P^-1 in double precision on the symmetrized
  !      matrices (mod_Chi), then writes ndb.Chi
+ ! In G0/DYSON mode the independently checked band-pair bubbles replace
+ ! only the export buffers, optionally on a separate imaginary frequency grid.
  !
  use pars,          ONLY:SP,DP,pi,cZERO,cONE,schlen
  use units,         ONLY:HA2EV
  use com,           ONLY:msg
  use stderr,        ONLY:intc
  use LIVE_t,        ONLY:live_timing
- use frequency,     ONLY:w_samp
+ use frequency,     ONLY:w_samp,W_duplicate,W_reset
  use electrons,     ONLY:levels
  use R_lattice,     ONLY:bz_samp,bare_qpg
  use DIPOLES,       ONLY:DIPOLE_t
@@ -33,6 +35,8 @@ subroutine Chi_fxc_eval(iq,iq_mem,X,Xen,Xk,Xw,Dip)
  use matrix,        ONLY:PAR_matrix
  use Chi_m,         ONLY:Chi_KS_levels,Chi_ng,Chi_n_freqs,Chi_alloc,Chi_free,Chi_freqs,Chi_0,Chi_P,Chi_fxc,&
 &                        Chi_header_done,Chi_QP_applied,Chi_QP_action
+ use Chi_m,         ONLY:Chi_G_mode,Chi_G0_error,Chi_G_check_tol,Chi_rcond,Chi_rcond_floor,Chi_convention
+ use Chi_m,         ONLY:Chi_G_axis,Chi_G_nu_steps,Chi_G_nu_range
  use QP_CTL_m,      ONLY:QP_ctl_DB_user
  use parallel_m,    ONLY:master_cpu,PAR_COM_X_WORLD,PAR_COM_X_WORLD_RL_resolved
  use parallel_int,  ONLY:PP_redux_wait,PP_wait
@@ -40,6 +44,7 @@ subroutine Chi_fxc_eval(iq,iq_mem,X,Xen,Xk,Xw,Dip)
  use IO_int,        ONLY:io_control
  use IO_m,          ONLY:OP_WR_CL,OP_APP_CL,REP
  use timing_m,      ONLY:timing
+ use, intrinsic :: ieee_arithmetic, ONLY:ieee_is_finite
  !
 #include<y_memory.h>
  !
@@ -49,6 +54,7 @@ subroutine Chi_fxc_eval(iq,iq_mem,X,Xen,Xk,Xw,Dip)
  type(bz_samp)             :: Xk
  type(w_samp)              :: Xw
  type(DIPOLE_t)            :: Dip
+ type(w_samp)             :: Chi_w
  !
  ! Work Space
  !
@@ -56,7 +62,11 @@ subroutine Chi_fxc_eval(iq,iq_mem,X,Xen,Xk,Xw,Dip)
  integer,     external    :: io_Chi
  real(SP)                 :: dev_P_chi0,fxc_body_max
  complex(SP), allocatable :: P_full(:,:,:),C0_full(:,:,:)
+ complex(SP), allocatable :: G0_full(:,:,:)
  complex(DP), allocatable :: A(:,:),B(:,:),work(:)
+ complex(DP), allocatable :: condition_work(:)
+ real(DP), allocatable :: condition_rwork(:)
+ real(DP) :: anorm,rcond
  complex(DP)              :: vs(X%ng),wq(1)
  integer,     allocatable :: ipiv(:)
  logical                  :: l_QP_db
@@ -88,6 +98,47 @@ subroutine Chi_fxc_eval(iq,iq_mem,X,Xen,Xk,Xw,Dip)
  !
  X_par(iq_mem)%blc(r1:r2,c1:c2,:nw)=P_full(r1:r2,c1:c2,:)
  if (X_lower_triangle_matrix_in_use) X_par_lower_triangle%blc(c1:c2,r1:r2,:nw)=P_full(c1:c2,r1:r2,:)
+ ! Independent G0/Dyson bubbles affect only ndb.Chi. The screening matrix
+ ! above is restored before these replacements and remains frozen.
+ Chi_G0_error=-1._SP
+ call W_reset(Chi_w)
+ call W_duplicate(Xw,Chi_w)
+ if (trim(Chi_G_mode)/='LEVELS') then
+   allocate(G0_full(ng,ng,nw))
+   call Chi_G_bubble(iq,X,Xk,Xw,.TRUE.,G0_full)
+   Chi_G0_error=maxval(abs(G0_full-C0_full))/max(maxval(abs(C0_full)),tiny(1._SP))
+   call msg('r','[Chi/G] G0 bubble relative error against KS Xo',Chi_G0_error)
+   if (Chi_G0_error>Chi_G_check_tol) call error('[Chi/G] G0 baseline mismatch; kernel export aborted')
+   if (trim(Chi_G_axis)=='IMAG') then
+     ! Only the kernel export uses this continuous T=0 imaginary grid.
+     ! Native screening and its frequency grid are already restored.
+     nw=Chi_G_nu_steps
+     if (Chi_G_nu_range(1)==Chi_G_nu_range(2)) nw=1
+     deallocate(G0_full,Chi_w%p)
+     YAMBO_FREE(P_full)
+     YAMBO_FREE(C0_full)
+     allocate(G0_full(ng,ng,nw),Chi_w%p(nw))
+     YAMBO_ALLOC(P_full,(ng,ng,nw))
+     YAMBO_ALLOC(C0_full,(ng,ng,nw))
+     Chi_w%n_freqs=nw
+     Chi_w%er=0._SP
+     Chi_w%dr=Chi_G_nu_range
+     Chi_w%grid_type='im'
+     do iw=1,nw
+       Chi_w%p(iw)=cmplx(0._SP,Chi_G_nu_range(1),kind=SP)
+       if (nw>1) Chi_w%p(iw)=cmplx(0._SP,Chi_G_nu_range(1)+&
+&         (Chi_G_nu_range(2)-Chi_G_nu_range(1))*real(iw-1,SP)/real(nw-1,SP),kind=SP)
+     enddo
+     call Chi_G_bubble(iq,X,Xk,Chi_w,.TRUE.,G0_full)
+   endif
+   C0_full=G0_full
+   if (trim(Chi_G_mode)=='G0') then
+     P_full=G0_full
+   else
+     call Chi_G_bubble(iq,X,Xk,Chi_w,.FALSE.,P_full)
+   endif
+   deallocate(G0_full)
+ endif
  !
  ! 4. fxc and I/O, master only
  !
@@ -96,7 +147,7 @@ subroutine Chi_fxc_eval(iq,iq_mem,X,Xen,Xk,Xw,Dip)
    Chi_ng     =ng
    Chi_n_freqs=nw
    call Chi_alloc(ng,nw)
-   Chi_freqs(:)=Xw%p(:nw)
+   Chi_freqs(:)=Chi_w%p(:nw)
    Chi_0 (:,:,:)=C0_full
    Chi_P (:,:,:)=P_full
    !
@@ -109,7 +160,10 @@ subroutine Chi_fxc_eval(iq,iq_mem,X,Xen,Xk,Xw,Dip)
    YAMBO_ALLOC(A,(ng,ng))
    YAMBO_ALLOC(B,(ng,ng))
    YAMBO_ALLOC(ipiv,(ng))
+   allocate(condition_work(2*ng),condition_rwork(2*ng))
+   A=(0._DP,0._DP)
    call zgetri(ng,A,ng,ipiv,wq,-1,info)
+   if (info/=0) call error('[Chi] invalid inversion workspace query')
    lwork=max(int(real(wq(1))),ng)
    YAMBO_ALLOC(work,(lwork))
    !
@@ -122,12 +176,8 @@ subroutine Chi_fxc_eval(iq,iq_mem,X,Xen,Xk,Xw,Dip)
        enddo
      enddo
      !
-     call zgetrf(ng,ng,A,ng,ipiv,info)
-     if (info/=0) call error('[Chi] chi0 is singular at q='//trim(intc(iq))//' w='//trim(intc(iw)))
-     call zgetri(ng,A,ng,ipiv,work,lwork,info)
-     call zgetrf(ng,ng,B,ng,ipiv,info)
-     if (info/=0) call error('[Chi] P is singular at q='//trim(intc(iq))//' w='//trim(intc(iw)))
-     call zgetri(ng,B,ng,ipiv,work,lwork,info)
+     call checked_inverse(A,'chi0',iw,1)
+     call checked_inverse(B,'P',iw,2)
      !
      do ig2=1,ng
        do ig1=1,ng
@@ -141,6 +191,7 @@ subroutine Chi_fxc_eval(iq,iq_mem,X,Xen,Xk,Xw,Dip)
    YAMBO_FREE(ipiv)
    YAMBO_FREE(B)
    YAMBO_FREE(A)
+   deallocate(condition_work,condition_rwork)
    !
    ! Report
    !
@@ -152,6 +203,8 @@ subroutine Chi_fxc_eval(iq,iq_mem,X,Xen,Xk,Xw,Dip)
    call msg('r',' [Chi] max|P-chi0|/max|chi0|             ',dev_P_chi0)
    call msg('r',' [Chi] fxc(q,0,0;w1)   [Ha]              ',(/real(Chi_fxc(1,1,1)),aimag(Chi_fxc(1,1,1))/))
    if (ng>1) call msg('r',' [Chi] max|fxc| body (G,Gp>0;w1) [Ha]    ',fxc_body_max)
+   call msg('r',' [Chi] minimum rcond (chi0, P)            ',&
+&           (/minval(Chi_rcond(1,:)),minval(Chi_rcond(2,:))/))
    !
    ! I/O
    !
@@ -160,13 +213,20 @@ subroutine Chi_fxc_eval(iq,iq_mem,X,Xen,Xk,Xw,Dip)
      Chi_QP_applied=l_QP_db
      Chi_QP_action ="none"
      if (l_QP_db) Chi_QP_action=trim(QP_ctl_DB_user(1)%action)
+     if (trim(Chi_G_mode)/='LEVELS') then
+       Chi_QP_applied=trim(Chi_G_mode)=='DYSON'
+       Chi_QP_action=trim(Chi_G_mode)
+       Chi_convention='Bare density vertices; G0/G Dyson bubble; fxc=chi0^-1-P_G^-1, unsymmetrized [Ha]'
+     endif
      call io_control(ACTION=OP_WR_CL,COM=REP,SEC=(/1/),ID=ID)
-     io_err=io_Chi(X,Xw,ID)
+     io_err=io_Chi(X,Chi_w,ID)
+     if (io_err<0) call error('[Chi] cannot write ndb.Chi header')
      Chi_header_done=.TRUE.
    endif
    !
    call io_control(ACTION=OP_APP_CL,COM=REP,SEC=(/2*iq,2*iq+1/),ID=ID)
-   io_err=io_Chi(X,Xw,ID)
+   io_err=io_Chi(X,Chi_w,ID)
+   if (io_err<0) call error('[Chi] cannot write ndb.Chi q fragment')
    !
    call Chi_free()
    !
@@ -174,12 +234,30 @@ subroutine Chi_fxc_eval(iq,iq_mem,X,Xen,Xk,Xw,Dip)
  !
  YAMBO_FREE(P_full)
  YAMBO_FREE(C0_full)
+ call W_reset(Chi_w)
  !
  call PP_wait(COMM=PAR_COM_X_WORLD%COMM)
  !
  call timing('Chi_fxc',OPR='stop')
  !
  contains
+   subroutine checked_inverse(M,label,iw_,which)
+     complex(DP), intent(inout) :: M(ng,ng)
+     character(*), intent(in) :: label
+     integer, intent(in) :: iw_,which
+     if (.not.all(ieee_is_finite(real(M,DP))).or..not.all(ieee_is_finite(aimag(M))))&
+&      call error('[Chi] nonfinite response matrix for '//label)
+     anorm=maxval(sum(abs(M),dim=1))
+     call zgetrf(ng,ng,M,ng,ipiv,info)
+     if (info/=0) call error('[Chi] '//label//' singular at q='//trim(intc(iq))//' w='//trim(intc(iw_)))
+     call zgecon('1',ng,M,ng,anorm,rcond,condition_work,condition_rwork,info)
+     if (info/=0) call error('[Chi] condition estimate failed for '//label)
+     if (.not.ieee_is_finite(rcond)) call error('[Chi] nonfinite condition estimate for '//label)
+     Chi_rcond(which,iw_)=real(rcond,SP)
+     if (rcond<real(Chi_rcond_floor,DP)) call error('[Chi] '//label//' ill-conditioned; reduce the density basis')
+     call zgetri(ng,M,ng,ipiv,work,lwork,info)
+     if (info/=0) call error('[Chi] matrix inversion failed for '//label)
+   end subroutine
    !
    subroutine gather(M,full)
      type(PAR_matrix)          :: M
