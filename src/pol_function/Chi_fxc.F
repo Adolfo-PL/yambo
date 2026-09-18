@@ -214,9 +214,11 @@ subroutine Chi_fxc_eval(iq,iq_mem,X,Xen,Xk,Xw,Dip)
      Chi_QP_action ="none"
      if (l_QP_db) Chi_QP_action=trim(QP_ctl_DB_user(1)%action)
      if (trim(Chi_G_mode)/='LEVELS') then
-       Chi_QP_applied=trim(Chi_G_mode)=='DYSON'
+       Chi_QP_applied=trim(Chi_G_mode)=='DYSON'.or.trim(Chi_G_mode)=='COHSEX'
        Chi_QP_action=trim(Chi_G_mode)
        Chi_convention='Bare density vertices; G0/G Dyson bubble; fxc=chi0^-1-P_G^-1, unsymmetrized [Ha]'
+       if (trim(Chi_G_mode)=='COHSEX')&
+&        Chi_convention='Bare vertices; static COHSEX unit-weight G poles; fxc=chi0^-1-P_G^-1, unsymmetrized [Ha]'
      endif
      call io_control(ACTION=OP_WR_CL,COM=REP,SEC=(/1/),ID=ID)
      io_err=io_Chi(X,Chi_w,ID)

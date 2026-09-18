@@ -2,7 +2,8 @@
 
 This change adds an initial diagonal, frozen-screening GW route to the
 `ChiFxc` export. The existing level-correction route remains the default:
-`ChiGMode="LEVELS"`. The new modes are `G0` and `DYSON`.
+`ChiGMode="LEVELS"`. The G modes are `G0`, `COHSEX` and `DYSON`.
+`COHSEX` works with native static screening; `DYSON` uses PPA dynamic screening.
 
 Base: Adolfo-PL/yambo, branch `claude/nbd-file-generation-path-yidcr2`,
 commit `2d64938d8328b184ffbf7ce82972d737a8e5c12a`.
@@ -24,7 +25,23 @@ All energies here are absolute in Yambo's KS energy reference. The chemical
 potential enters the occupations. Equivalently, energies measured relative
 to the chemical potential give `G(z)=1/[z+mu-epsilon_KS-DeltaSigma]`.
 Positive `GDmRnge` controls eta; `GDamping` must be zero so Sigma and G are
-evaluated at the same complex energy.
+evaluated at the same complex energy. The retarded PPA path preserves this
+imaginary part when preparing its self-energy sampling grid.
+
+For static W, Yambo's native COHSEX/Newton solver produces diagonal energies
+`E_COHSEX = epsilon_KS + Sigma_SEX + Sigma_COH - Vxc_KS` and unit residues.
+`ChiGMode="COHSEX"` reads its `ndb.QP` and constructs
+
+```
+G_nk(z) = 1 / [z - E_COHSEX,nk]
+A_nk(E) = delta(E - E_COHSEX,nk)
+```
+
+The bubble is evaluated analytically from these poles. No spectral energy
+grid, numerical delta broadening, fitted Z, or second subtraction of Vxc is
+introduced. With fixed orbitals this static diagonal approximation gives
+the same bubble as using the corrected energies with unit residues. It
+does not reproduce dynamical GW satellites or lifetimes.
 
 For each finite q, the response loops over the complete requested band-pair
 range and BZ k points, using Yambo's `qindx_X` mapping k -> k-q and density
@@ -46,6 +63,7 @@ Before export, it must agree with the native `X_irredux` KS response within
 
 ```
 ChiGMode="G0":    chi0=P_G0; fxc=0
+ChiGMode="COHSEX":chi0=P_G0; P=P_G_COHSEX; fxc=chi0^-1-P_G_COHSEX^-1
 ChiGMode="DYSON": chi0=P_G0; P=P_G; fxc=chi0^-1-P_G^-1
 ```
 
@@ -69,9 +87,103 @@ recommended because the QP and Chi module types changed.
 
 Start with one CPU MPI rank, a small insulating SAVE database containing
 finite q points, a small response band range and a small density basis.
-The spectral convolution costs approximately
+The COHSEX route has no spectral convolution and needs only pole-pair sums.
+The dynamical spectral convolution costs approximately
 `Nk * Nb^2 * NE^2 * N_response_frequencies`, before the density-matrix
 accumulation. Gamma-only SAVE data cannot run this finite-q prototype.
+
+### Static screening: COHSEX route
+
+Use this route when you have only a static W calculation. Retain SAVE and
+the native `ndb.em1s` database and its fragments. The standalone `ndb.W`
+export is not an input to the native COHSEX solver. If the native screening
+databases are absent or incompatible, Yambo recalculates static screening.
+
+Generate a COHSEX input with the Newton solver:
+
+```sh
+yambo -p c -g n -F cohsex.in -J cohsex
+```
+
+Keep your converged static screening settings and choose `QPkrange` to
+cover **every response band, k point and spin**, with diagonal states only.
+Keep the KS starting energies and orbitals unmodified; do not enable
+external energy/width/residue corrections, self-consistent iterations or
+mixed self-energies. Converge the native COHSEX band and screening cutoffs.
+Run the edited input to produce `cohsex/ndb.QP`:
+
+```sh
+yambo -F cohsex.in -J cohsex
+yambo -d s -F chi_cohsex.in -J chi_cohsex
+```
+
+In the generated static response input, set/add:
+
+```text
+ChiFxc
+ChiGMode="G0"
+ChiGAxis="IMAG"
+ChiGNuSteps=16
+% ChiGNuRnge
+ 0.0 | 20.0 | eV
+%
+ChiGCheckTol=0.0001
+ChiRcondMin=1.0e-12
+XTermKind="none"
+% EhEngyXs
+ 0.0 | 0.0 | eV
+%
+```
+
+Set `BndsRnXs` to the response band range, `NGsBlkXs` to the density basis,
+and `QpntsRXs` entirely after q index 1. Disable double grids and external
+X energy, width, residue and Green-function corrections. Run once in G0
+mode to validate the KS baseline, then change/add:
+
+```text
+ChiGMode="COHSEX"
+ChiGDb="cohsex/ndb.QP"
+```
+
+```sh
+yambo -F chi_cohsex.in -J chi_cohsex
+```
+
+The imaginary export grid can contain many frequencies even though native
+screening is static. Its response matrix and native frequency grid are
+preserved. The loader rejects a non-COHSEX QP database, nonunit residues,
+linewidths, off-diagonal or duplicate states, incomplete state coverage,
+different KS reference energies, and corrected poles that cross the fixed
+KS chemical potential. Such crossings need a separate treatment of the
+chemical potential and occupations. `ChiGNormTol` is used only for the
+dynamic spectral route; static poles have exact unit weight.
+
+### MPI for the response
+
+G0, COHSEX and DYSON support k-point distribution on CPUs. For N ranks,
+set the response layout explicitly, for example with four ranks:
+
+```text
+X_and_IO_CPU="1 1 4 1 1"
+X_and_IO_ROLEs="q g k c v"
+X_and_IO_nCPU_LinAlg_INV=1
+```
+
+```sh
+mpirun -np 4 yambo -F chi_cohsex.in -J chi_cohsex
+```
+
+Use N no larger than the number of BZ k points. Automatic layout selection
+may distribute bands and is therefore not sufficient. Each rank computes
+its owned k points; Yambo's native wavefunction partition includes their
+k-q partners. The full bubble is summed in double precision across the
+response communicator. The density matrices, G data and inversion work
+remain replicated, and only the master writes `ndb.Chi`. q, G-vector and
+conduction/valence-band distribution are rejected. GPU bubble kernels
+remain unimplemented; use a CPU build for the response. Native COHSEX/GW
+solver capabilities are unchanged by this response restriction.
+
+### PPA dynamic screening route
 
 ### 1. Export retarded GW spectra
 
@@ -215,7 +327,7 @@ static terms over frequencies. `Green_Functions_Energies` includes eta.
 
 ## Current scope and validation
 
-The response path explicitly rejects MPI distribution, GPU execution,
+The response path supports serial CPUs and k-only MPI. It rejects GPU execution,
 q=0, finite temperature, metallic KS references, double grids,
 transition-energy filtering and response terminators. The retarded GW
 export requires PPA, diagonal Sigma, unshifted KS starting energies and no
@@ -240,12 +352,31 @@ python tests/chi_green/run_tests.py --fc gfortran --single-precision --lapack-so
 The tests check analytic poles and satellites, an independent fermionic
 Matsubara sum, the G0 limit, causality, quadrature, XC subtraction, the
 imaginary export grid, inverse response differences, screening restoration,
-and rejection of missing states, legacy spectra, reference mismatches and
-ill-conditioned inversions. They passed with GNU Fortran 16.2.0 and
-Reference LAPACK 3.12.1 in both host precision settings.
+static COHSEX pole loading and inverse differences, preservation of retarded
+sampling damping, and disjoint k partitions whose sum matches the serial
+bubble (including an empty synthetic rank). Negative tests cover invalid
+COHSEX databases, occupation crossings, missing states, legacy spectra,
+reference mismatches, unsupported MPI layouts and ill-conditioned inversions.
+They passed with GNU Fortran 16.2.0 and Reference LAPACK 3.12.1 in both host
+precision settings.
+
+A separate test uses real MPI collectives around the production bubble
+with synthetic material/IO. Run it on a machine with a GNU-compatible MPI
+Fortran compiler and launcher; no LAPACK source is needed for this test:
+
+```sh
+python tests/chi_green/run_tests.py --fc gfortran --mpifc mpifort --mpiexec mpiexec
+python tests/chi_green/run_tests.py --fc gfortran --single-precision --mpifc mpifort --mpiexec mpiexec
+```
+
+The default runs use two and three ranks for a two-k-point fixture, testing
+an empty rank as well. This test has not been executed in the Windows
+validation environment, which has no MPI runtime. It does not exercise
+Yambo's native communicator creation or wavefunction distribution.
 
 These tests use mock material and database IO. They do not establish a
-complete Yambo build, NetCDF round-trip, or a material benchmark. Those
+ complete Yambo build, NetCDF round-trip, real MPI material run, or a material
+ benchmark. Those
 checks require your Linux/HPC build and SAVE/screening data. Begin with the
 G0 run, then converge spectral coverage/resolution, eta, bands, k mesh and
 density basis before drawing physical conclusions from the Dyson kernel.

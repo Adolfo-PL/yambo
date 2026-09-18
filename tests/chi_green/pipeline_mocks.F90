@@ -93,7 +93,7 @@ module X_m
  use pars
  use matrix
  type X_t
-   integer::ng=2,ib(2)=[1,2]
+   integer::ng=2,ib(2)=[1,2],whoami=2
  end type
  type(PAR_matrix),allocatable::X_par(:)
  type(PAR_matrix)::X_par_lower_triangle
@@ -155,6 +155,7 @@ module QP_CTL_m
  type(ctl)::QP_ctl_DB_user(1)
 end module
 module global_XC
+ integer,parameter::QP_SE_COHSEX=7
  integer::QP_DB_kind=0
 end module
 module IO_m
@@ -216,23 +217,63 @@ contains
  end subroutine
 end module
 module parallel_m
+ integer::ncpu=1,myid=0
  logical::master_cpu=.TRUE.
  type comm_t
-   integer::COMM=0,CPU_id=0
+   integer::COMM=0,CPU_id=0,n_CPU=1
+ end type
+ type index_t
+   logical,allocatable::element_1D(:)
  end type
  type(comm_t)::PAR_COM_X_WORLD,PAR_COM_X_WORLD_RL_resolved
+ type(comm_t)::PAR_COM_Q_INDEX,PAR_COM_RL_INDEX,PAR_COM_CON_INDEX_X(5),PAR_COM_VAL_INDEX_X(5)
+ type(index_t)::PAR_IND_Xk_bz
 end module
 module parallel_int
  use pars
+#ifdef _TEST_MPI
+ use mpi
+#endif
+ interface PP_redux_wait
+   module procedure reduce_sp
+#ifdef _TEST_SINGLE
+   module procedure reduce_dp
+#endif
+ end interface
 contains
  subroutine PP_wait(COMM)
    integer::COMM
+#ifdef _TEST_MPI
+   integer::ierr
+   call MPI_BARRIER(COMM,ierr)
+   if(ierr/=MPI_SUCCESS)call MPI_ABORT(COMM,1,ierr)
+#endif
  end subroutine
- subroutine PP_redux_wait(a,IN_PLACE,COMM)
+ subroutine reduce_sp(a,IN_PLACE,COMM)
    complex(SP)::a(:,:)
-   logical::IN_PLACE
+   logical,optional::IN_PLACE
    integer::COMM
+#ifdef _TEST_MPI
+   integer::ierr,datatype
+   datatype=MPI_DOUBLE_COMPLEX
+#ifdef _TEST_SINGLE
+   datatype=MPI_COMPLEX
+#endif
+   call MPI_ALLREDUCE(MPI_IN_PLACE,a,size(a),datatype,MPI_SUM,COMM,ierr)
+   if(ierr/=MPI_SUCCESS)call MPI_ABORT(COMM,1,ierr)
+#endif
  end subroutine
+#ifdef _TEST_SINGLE
+ subroutine reduce_dp(a,COMM)
+   complex(DP)::a(:,:)
+   integer::COMM
+#ifdef _TEST_MPI
+   integer::ierr
+   call MPI_ALLREDUCE(MPI_IN_PLACE,a,size(a),MPI_DOUBLE_COMPLEX,MPI_SUM,COMM,ierr)
+   if(ierr/=MPI_SUCCESS)call MPI_ABORT(COMM,1,ierr)
+#endif
+ end subroutine
+#endif
 end module
 module collision_el
  use pars
@@ -304,7 +345,14 @@ subroutine X_irredux(iq,s,m,e,k,w,x,d)
  enddo
 end subroutine
 subroutine error(s)
+#ifdef _TEST_MPI
+ use mpi
+ integer::ierr
+#endif
  character(*)::s
  print *,trim(s)
+#ifdef _TEST_MPI
+ call MPI_ABORT(MPI_COMM_WORLD,1,ierr)
+#endif
  error stop 1
 end subroutine

@@ -45,7 +45,7 @@ subroutine QP_ppa_cohsex(X,Xk,E,k,q,qp,Xw,GW_iter)
  use QP_m,          ONLY:QP_solver,QP_t,QP_n_G_bands,QP_dSc_steps,QP_Sc_steps,QP_table,l_QP_symmetrize,&
 &                        QP_Sc,QP_n_states,QP_G_damp,QP_table,QP_dSc_delta,GW_terminator_E,&
 &                        COHSEX_use_empties,l_GW_terminator,GW_terminator_Kind,QP_states_simmetrize
- use QP_m,          ONLY:QP_retarded_G
+ use QP_m,          ONLY:QP_retarded_G,QP_prepare_G_grid
  use ALLOC,         ONLY:X_ALLOC_elemental
  use X_m,           ONLY:X_t,X_par
  use wave_func,     ONLY:WF
@@ -139,11 +139,7 @@ subroutine QP_ppa_cohsex(X,Xk,E,k,q,qp,Xw,GW_iter)
      Sc_W(i_qp)%n_freqs =QP_Sc_steps
      call FREQUENCIES_Green_Function(i_qp,Sc_W(i_qp),E%E,.FALSE.)
      !
-     if(Sc_W(i_qp)%grid_type=="ra") then
-       Sc_W(i_qp)%p=real(Sc_W(i_qp)%p,SP)
-     else
-       QP_G_damp=0._SP
-     endif
+     call QP_prepare_G_grid(Sc_W(i_qp)%p,Sc_W(i_qp)%grid_type)
    enddo
    !
  endif

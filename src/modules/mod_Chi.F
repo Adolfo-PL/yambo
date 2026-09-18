@@ -16,8 +16,8 @@ module Chi_m
  !                   database provides them: see X_irredux_residuals, Z_eh_occ)
  !   fxc (q,G,G';w)  = chi0^-1 - P^-1
  !
- ! In LEVELS mode both bubbles are computed by X_irredux. G0/DYSON mode
- ! instead uses explicit finite-q density vertices and spectral band pairs.
+ ! In LEVELS mode both bubbles are computed by X_irredux. G0/COHSEX/DYSON
+ ! instead use explicit finite-q vertices with analytic poles or spectral pairs.
  ! Both routes use yambo's normalization and vertex convention:
  ! Adler-Wiser sum over transitions normalized by 1/(N_kbz V_cell), rho^*(G) rho(G') in
  ! the residual. LEVELS uses X_GreenF_analytical with the requested ordering.
@@ -30,7 +30,7 @@ module Chi_m
  !
  ! whose head stays O(1) at q->0, and fxc = D (chi0~^-1 - P~^-1) D. The stored fxc is the
  ! bare (unsymmetrized) G-space kernel in Hartree atomic units. Its q->0 head is evaluated
- ! at q0 in LEVELS mode. G0/DYSON currently excludes q=0 and a response vertex.
+ ! at q0 in LEVELS mode. G modes currently exclude q=0 and a response vertex.
  !
  ! Self-test: with no XfnQPdb the two bubbles are computed from identical levels through
  ! identical code and fxc must vanish exactly.
@@ -50,8 +50,8 @@ module Chi_m
  integer           :: Chi_n_freqs     =0
  character(schlen) :: Chi_QP_action   ="none"
  character(schlen) :: Chi_convention  ="chi0,P: yambo Xo [1/(Nk V)]; fxc=chi0^-1-P^-1 [Ha], bare G-space"
- ! LEVELS preserves the existing QP-energy path. G0/DYSON are independent
- ! finite-q band-pair bubbles; DYSON reads conventional retarded ndb.G.
+ ! LEVELS preserves the existing QP-energy path. COHSEX uses exact unit-weight
+ ! poles from a native static ndb.QP; DYSON reads conventional retarded ndb.G.
  character(schlen) :: Chi_G_mode="LEVELS",Chi_G_db=""
  character(schlen) :: Chi_G_axis="IMAG"
  integer :: Chi_G_nu_steps=16
@@ -61,6 +61,7 @@ module Chi_m
  real(SP) :: Chi_G0_error=0._SP
  real(SP), allocatable :: Chi_rcond(:,:),Chi_G_norm(:,:,:)
  real(DP), allocatable :: Chi_G_energy(:,:,:,:),Chi_G_weight(:,:,:,:),Chi_G_occupation(:,:,:,:)
+ real(DP), allocatable :: Chi_G_static_energy(:,:,:),Chi_G_static_occupation(:,:,:)
  !
  ! Kohn-Sham levels, duplicated before the QP corrections are applied to the X levels
  !
@@ -98,6 +99,8 @@ module Chi_m
      if (allocated(Chi_G_weight)) deallocate(Chi_G_weight)
      if (allocated(Chi_G_occupation)) deallocate(Chi_G_occupation)
      if (allocated(Chi_G_norm)) deallocate(Chi_G_norm)
+     if (allocated(Chi_G_static_energy)) deallocate(Chi_G_static_energy)
+     if (allocated(Chi_G_static_occupation)) deallocate(Chi_G_static_occupation)
    end subroutine
    !
 end module Chi_m

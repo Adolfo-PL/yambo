@@ -140,6 +140,17 @@ module QP_m
  end interface
  !
  contains
+   ! Keep Sigma and retarded G on the same upper-half-plane sampling grid.
+   ! The historical real-axis solver instead supplies damping separately.
+   subroutine QP_prepare_G_grid(p,grid_type)
+     complex(SP), intent(inout) :: p(:)
+     character(*), intent(in) :: grid_type
+     if (grid_type=='ra'.and..not.QP_retarded_G) then
+       p=real(p,SP)
+     else
+       QP_G_damp=0._SP
+     endif
+   end subroutine
    !
    subroutine QP_XCo_alloc(l_Vxc,l_Vnl_xc,l_screen_hyb)
    implicit none

@@ -35,6 +35,7 @@ end function
 integer function io_QP_and_GF(s,qp,id)
  use pars
  use QP_m
+ use global_XC
  character(*)::s
  type(QP_t)::qp
  integer::id,i,iw,band,kpt,n
@@ -45,6 +46,28 @@ integer function io_QP_and_GF(s,qp,id)
  if(index(s,'legacy')>0)qp%GreenF_retarded=.FALSE.
  n=qp%GreenF_n_steps
  allocate(qp%table(qp%n_states,3),qp%k(2,3),qp%E_bare(qp%n_states))
+ if(index(s,'.QP')>0)then
+   QP_DB_kind=QP_SE_COHSEX
+   if(index(s,'wrong_kind')>0)QP_DB_kind=0
+   allocate(qp%E(qp%n_states),qp%Z(qp%n_states))
+   qp%k=0._SP;qp%Z=1._SP
+   do i=1,qp%n_states
+     band=mod(i-1,2)+1;kpt=(i-1)/2+1
+     qp%table(i,:)=[band,band,kpt]
+     qp%E_bare(i)=real(2*band-3,SP)
+     delta=-.2_SP
+     if(band==2)delta=.4_SP
+     qp%E(i)=qp%E_bare(i)+delta
+   enddo
+   if(index(s,'residue')>0)qp%Z(1)=.7_SP
+   if(index(s,'linewidth')>0)qp%E(1)=qp%E(1)+cmplx(0._SP,.01_SP,SP)
+   if(index(s,'crossing')>0)qp%E(1)=1._SP
+   if(index(s,'reference')>0)qp%E_bare(1)=qp%E_bare(1)+1._SP
+   if(index(s,'offdiag')>0)qp%table(1,2)=2
+   if(index(s,'duplicate')>0)qp%table(2,:)=qp%table(1,:)
+   io_QP_and_GF=0
+   return
+ endif
  allocate(qp%GreenF(qp%n_states,n),qp%GreenF_W(qp%n_states,n),qp%S_total(qp%n_states,n))
  qp%k=0._SP
  do i=1,qp%n_states

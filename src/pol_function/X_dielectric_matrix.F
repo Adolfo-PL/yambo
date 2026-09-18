@@ -30,7 +30,7 @@ integer function X_dielectric_matrix(Xen,Xk,q,X,Xw,Dip,SILENT_MODE,CHILD)
  use IO_m,          ONLY:OP_RD_CL,OP_APP_CL,VERIFY,REP,io_RESPONSE
  use TDDFT,         ONLY:F_xc_gspace
  use interfaces,    ONLY:WF_load,WF_free
- use Chi_m,         ONLY:l_Chi_fxc
+ use Chi_m,         ONLY:l_Chi_fxc,Chi_G_mode
  use QP_m,          ONLY:QP_n_W_freqs_redux
  use matrix,        ONLY:MATRIX_reset,MATRIX_copy
  !
@@ -200,6 +200,7 @@ integer function X_dielectric_matrix(Xen,Xk,q,X,Xw,Dip,SILENT_MODE,CHILD)
    call PARALLEL_global_indexes(Xen,Xk,q," ",RESET=.TRUE.,X=X)
    call PARALLEL_global_indexes(Xen,Xk,q,"Response_G_space_and_IO",X=X) 
  endif
+ if (l_Chi_fxc.and.trim(Chi_G_mode)/='LEVELS') call Chi_G_parallel_check(X)
  call X_half_mat_check(Xen,Xk,Xw)
  !
  if (     io_RESPONSE) X_MEM_n_tot_freqs=Xw%n_freqs
