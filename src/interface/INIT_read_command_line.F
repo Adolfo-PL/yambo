@@ -190,6 +190,7 @@ subroutine INIT_read_command_line(rstr,init_)
          if( STRING_same(trim(rstr_piece(i1+1)) , 'hartree'))  BSK_mode='HARTREE'
          if( STRING_same(trim(rstr_piece(i1+1)) , 'hf'))       BSK_mode='HF'
          if( STRING_same(trim(rstr_piece(i1+1)) , 'alda'))     BSK_mode='ALDA'
+         if( STRING_same(trim(rstr_piece(i1+1)) , 'chi'))      BSK_mode='CHI'
          if( STRING_same(trim(rstr_piece(i1+1)) , 'sex'))      BSK_mode='SEX'
          if( STRING_same(trim(rstr_piece(i1+1)) , 'bsfxc'))    BSK_mode='BSfxc'
          if( STRING_same(trim(rstr_piece(i1+1)) , 'ip'))       BSK_mode='IP'
@@ -203,7 +204,8 @@ subroutine INIT_read_command_line(rstr,init_)
        if((STRING_same(trim(rstr_piece(i1+1)) , 'alda')).or.&
 &             (STRING_same(trim(rstr_piece(i1+1)) , 'lrc')).or.&
 &             (STRING_same(trim(rstr_piece(i1+1)) , 'pf')).or.&
-&             (STRING_same(trim(rstr_piece(i1+1)) , 'bsfxc'))) call initactivate(1,'tddft')
+&             (STRING_same(trim(rstr_piece(i1+1)) , 'bsfxc')).or.&
+&             (STRING_same(trim(rstr_piece(i1+1)) , 'chi'))) call initactivate(1,'tddft')
        !
        l_user_kernel=.TRUE.
        !

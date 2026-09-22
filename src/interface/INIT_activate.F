@@ -11,7 +11,7 @@ subroutine INIT_activate()
  use QP_m,           ONLY:QP_solver,COHSEX_use_empties
  use stderr,         ONLY:intc,STRING_match
  use global_XC,      ONLY:WF_exx_fraction,WF_exx_screening
- use drivers,        ONLY:l_em1s,l_acfdt,l_HF_and_locXC,l_col_cut,l_alda_fxc,l_bs_fxc,l_optics,l_bse,l_bss,&
+ use drivers,        ONLY:l_em1s,l_acfdt,l_HF_and_locXC,l_col_cut,l_alda_fxc,l_chi_bs_fxc,l_bs_fxc,l_optics,l_bse,l_bss,&
 &                         l_chi,l_cohsex,l_life,l_rpa_IP,l_td_hf,l_setup,l_sc_run,l_rim,l_rim_w,&
 &                         l_real_time,l_ppa,l_mpa,l_lrc_fxc,l_gw0,l_elel_corr,l_elel_scatt,l_elph_corr,l_td_sex,&
 &                         l_elph_Hamiltonian,l_elph_scatt,l_elphoton_corr,l_elphoton_scatt,l_em1d,l_eval_collisions,&
@@ -231,6 +231,7 @@ subroutine INIT_activate()
      call initactivate(1,'BSENGfxc FxcLibxc FxcMode UseNLCC')
      if( (WF_exx_fraction>0.) .or. (WF_exx_screening>0.) ) call initactivate(1,'BSENGBlk WehDiag WehCpl')
    endif
+   if(l_chi_bs_fxc) call initactivate(1,'BSENGfxc')
    !
    ! BSE + TDDFT = no BS db, Fxc + LF on-fly
    ! Special case: The BSE equation is used to build up the BSE_Fxc kernel.

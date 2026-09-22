@@ -131,6 +131,11 @@ integer function io_Chi(X,Xw,ID)
    if (write_is_on(ID)) RL_vecs_disk(:,:)=g_vec(:Chi_ng,:)
    call def_variable_bulk(ID,'CHI_RL_vecs',2,(/Chi_ng,3/),SP)
    call  io_variable_bulk(ID,2,R2=RL_vecs_disk)
+   if (read_is_on(ID)) then
+     if (Chi_ng<1.or.Chi_ng>size(g_vec,1)) call error('[Chi] invalid stored G-basis size')
+     if (maxval(abs(RL_vecs_disk-g_vec(:Chi_ng,:)))>1.E-5_SP) &
+&     call error('[Chi] stored G vectors differ from the current reciprocal basis')
+   endif
    YAMBO_FREE(RL_vecs_disk)
    !
    ! |q+G| as used in the Coulomb potential (cutoff included when active)

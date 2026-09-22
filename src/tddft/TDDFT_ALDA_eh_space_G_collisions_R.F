@@ -7,7 +7,7 @@
 !
 #include<dev_defs.h>
 !
-subroutine TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_T_grp,NG,l_bs_tddft_wf_in_loop,tddft_wf,mode)
+subroutine TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_T_grp,NG,l_bs_tddft_wf_in_loop,tddft_wf,mode,l_bare)
  !
  ! Calculates the F_xc scattering 
  !
@@ -34,10 +34,12 @@ subroutine TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_T_grp,NG,l_bs_tddft_wf_in_
  logical,      intent(in) :: l_bs_tddft_wf_in_loop
  character(1), intent(in) :: mode
  type(tddft_wf_t), target, intent(inout) :: tddft_wf 
+ logical, intent(in) :: l_bare
  ! 
  ! Work Space
  !
  logical     :: l_load_WFs
+ logical     :: bare_vertex
  integer     :: i_spinor,j_spinor,ip_spinor,jp_spinor,ifft,irhotw,is_yambo,os_yambo,i_spinor_y,j_spinor_y,&
 &               i_sp_loop,o_sp_loop
  integer     :: i_T_el,i_T_el_p,N_T_el_p,i_c,i_v,i_sp_c,i_sp_v,i_k_bz,i_k,i_s,i_g0,i_g1,i_g2,i_p_bz,i_g_p,i_p,&
@@ -52,6 +54,9 @@ subroutine TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_T_grp,NG,l_bs_tddft_wf_in_
 #endif
  !
  call timing('T_space ALDA Osc.',OPR='start')
+ bare_vertex=l_bare
+ if (bare_vertex.and.(n_spinor/=1.or.n_sp_pol/=1.or.n_spin/=1)) &
+& call error('[Chi/BSK] bare transition vertices currently require a scalar, unpolarized calculation')
  !
  ! Allocate
  !
@@ -130,7 +135,11 @@ subroutine TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_T_grp,NG,l_bs_tddft_wf_in_
    !
    if( n_spin==1 ) then
      !
-     rhotwr_p(:)=cmplx(F_xc_mat(:,1,1,1,1)*WF_symm1_p(:,1)*conjg(WF_symm2_p(:,1)),kind=DP)
+     if (bare_vertex) then
+       rhotwr_p(:)=cmplx(WF_symm1_p(:,1)*conjg(WF_symm2_p(:,1)),kind=DP)
+     else
+       rhotwr_p(:)=cmplx(F_xc_mat(:,1,1,1,1)*WF_symm1_p(:,1)*conjg(WF_symm2_p(:,1)),kind=DP)
+     endif
      call perform_fft_3d(qs,rhotwr_p,BS_T_grp(i_T_grp)%O_tddft_R(:,i_T_el,1,1))
      !
    endif
