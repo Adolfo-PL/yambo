@@ -29,20 +29,23 @@ subroutine Chi_fxc_eval(iq,iq_mem,X,Xen,Xk,Xw,Dip)
  use LIVE_t,        ONLY:live_timing
  use frequency,     ONLY:w_samp,W_duplicate,W_reset
  use electrons,     ONLY:levels
- use R_lattice,     ONLY:bz_samp,bare_qpg
+ use R_lattice,     ONLY:bz_samp,bare_qpg,q0_def_norm
+ use vec_operate,   ONLY:v_norm
  use DIPOLES,       ONLY:DIPOLE_t
+ use ALLOC,         ONLY:DIPOLE_ALLOC_global
  use X_m,           ONLY:X_t,X_par,current_iq,X_par_lower_triangle,X_lower_triangle_matrix_in_use
  use matrix,        ONLY:PAR_matrix
  use Chi_m,         ONLY:Chi_KS_levels,Chi_ng,Chi_n_freqs,Chi_alloc,Chi_free,Chi_freqs,Chi_0,Chi_P,Chi_fxc,&
 &                        Chi_header_done,Chi_QP_applied,Chi_QP_action
- use Chi_m,         ONLY:Chi_G_mode,Chi_G0_error,Chi_G_check_tol,Chi_rcond,Chi_rcond_floor,Chi_convention
+ use Chi_m,         ONLY:Chi_G_mode,Chi_G0_error,Chi_G_check_tol,Chi_rcond,Chi_rcond_floor,Chi_convention,&
+&                        Chi_optical_q0,Chi_optical_q0_known
  use Chi_m,         ONLY:Chi_G_axis,Chi_G_nu_steps,Chi_G_nu_range
  use QP_CTL_m,      ONLY:QP_ctl_DB_user
  use parallel_m,    ONLY:master_cpu,PAR_COM_X_WORLD,PAR_COM_X_WORLD_RL_resolved
  use parallel_int,  ONLY:PP_redux_wait,PP_wait
  use parser_m,      ONLY:parser
  use IO_int,        ONLY:io_control
- use IO_m,          ONLY:OP_WR_CL,OP_APP_CL,REP
+ use IO_m,          ONLY:OP_WR_CL,OP_APP_CL,REP,io_DIP
  use timing_m,      ONLY:timing
  use, intrinsic :: ieee_arithmetic, ONLY:ieee_is_finite
  !
@@ -104,8 +107,16 @@ subroutine Chi_fxc_eval(iq,iq_mem,X,Xen,Xk,Xw,Dip)
  call W_reset(Chi_w)
  call W_duplicate(Xw,Chi_w)
  if (trim(Chi_G_mode)/='LEVELS') then
+   ! X_irredux releases the global dipole array after an optical q=0
+   ! matrix.  Its second (KS) call above has therefore freed DIP_iR;
+   ! reload it for the independent G0/COHSEX bubble's optical head.
+   if (iq==1.and.io_DIP) then
+     call DIPOLE_dimensions(Chi_KS_levels,Dip,X%ib,X%q0)
+     call DIPOLE_IO(Xk,Chi_KS_levels,Dip,'read ',io_err,'X')
+     if (io_err/=0) call error('[Chi/G] cannot reload optical dipoles')
+   endif
    allocate(G0_full(ng,ng,nw))
-   call Chi_G_bubble(iq,X,Xk,Xw,.TRUE.,G0_full)
+   call Chi_G_bubble(iq,X,Xk,Xw,Dip,.TRUE.,G0_full)
    Chi_G0_error=maxval(abs(G0_full-C0_full))/max(maxval(abs(C0_full)),tiny(1._SP))
    call msg('r','[Chi/G] G0 bubble relative error against KS Xo',Chi_G0_error)
    if (Chi_G0_error>Chi_G_check_tol) call error('[Chi/G] G0 baseline mismatch; kernel export aborted')
@@ -129,15 +140,16 @@ subroutine Chi_fxc_eval(iq,iq_mem,X,Xen,Xk,Xw,Dip)
        if (nw>1) Chi_w%p(iw)=cmplx(0._SP,Chi_G_nu_range(1)+&
 &         (Chi_G_nu_range(2)-Chi_G_nu_range(1))*real(iw-1,SP)/real(nw-1,SP),kind=SP)
      enddo
-     call Chi_G_bubble(iq,X,Xk,Chi_w,.TRUE.,G0_full)
+     call Chi_G_bubble(iq,X,Xk,Chi_w,Dip,.TRUE.,G0_full)
    endif
    C0_full=G0_full
    if (trim(Chi_G_mode)=='G0') then
      P_full=G0_full
    else
-     call Chi_G_bubble(iq,X,Xk,Chi_w,.FALSE.,P_full)
+     call Chi_G_bubble(iq,X,Xk,Chi_w,Dip,.FALSE.,P_full)
    endif
    deallocate(G0_full)
+   if (iq==1.and.io_DIP) call DIPOLE_ALLOC_global()
  endif
  !
  ! 4. fxc and I/O, master only
@@ -209,6 +221,12 @@ subroutine Chi_fxc_eval(iq,iq_mem,X,Xen,Xk,Xw,Dip)
    ! I/O
    !
    if (.not.Chi_header_done) then
+     Chi_optical_q0=0._SP
+     Chi_optical_q0_known=iq==1
+     if (iq==1) then
+       if (v_norm(Dip%q0)<=0._SP) call error('[Chi] optical q0 direction is undefined')
+       Chi_optical_q0=Dip%q0/v_norm(Dip%q0)*q0_def_norm
+     endif
      call parser('XfnQPdb',l_QP_db)
      Chi_QP_applied=l_QP_db
      Chi_QP_action ="none"

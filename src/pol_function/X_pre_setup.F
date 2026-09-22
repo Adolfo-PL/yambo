@@ -132,7 +132,8 @@ subroutine X_pre_setup(Xen,Xk,X)
      if (Chi_G_nu_steps<1.or.Chi_G_nu_range(1)<0._SP.or.Chi_G_nu_range(2)<Chi_G_nu_range(1))&
 &       call error('[Chi/G] invalid imaginary frequency range/steps')
      if (have_gpu) call error('[Chi/G] CPU execution required; GPU bubble kernels are not implemented')
-     if (X%iq(1)<=1) call error('[Chi/G] select finite q only: QpntsRXs or QpntsRXd must start after q=1')
+     if (X%iq(1)==1.and.trim(Chi_G_mode)=='DYSON')&
+&      call error('[Chi/G] optical q=0 DYSON needs an intraband spectral/Drude treatment; use G0 or COHSEX')
      if (l_X_terminator.or.use_X_DbGd) call error('[Chi/G] disable XTermKind and double-grid interpolation')
      if (X%ehe(1)>0._SP.or.X%ehe(2)>0._SP)&
 &       call error('[Chi/G] transition-energy filtering is unsupported; set EhEngyXs or EhEngyXd to zero')

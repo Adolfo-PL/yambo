@@ -59,10 +59,21 @@ module R_lattice
  integer,allocatable::qindx_X(:,:,:)
  integer,allocatable::qindx_S(:,:,:)
  complex(SP),allocatable::bare_qpg(:,:)
+ real(SP)::q0_def_norm=1.E-5_SP
+ integer::g_rot(2,1)=reshape([1,2],[2,1])
 end module
 module D_lattice
  use pars
  real(SP)::DL_vol=1._SP
+ integer::nsym=1,i_time_rev=0,sop_inv(1)=[1]
+end module
+module vec_operate
+ use pars
+contains
+ real(SP) function v_norm(v)
+   real(SP),intent(in)::v(:)
+   v_norm=sqrt(sum(v*v))
+ end function
 end module
 module frequency
  use pars
@@ -94,6 +105,7 @@ module X_m
  use matrix
  type X_t
    integer::ng=2,ib(2)=[1,2],whoami=2
+   real(SP)::q0(3)=[1._SP,0._SP,0._SP]
  end type
  type(PAR_matrix),allocatable::X_par(:)
  type(PAR_matrix)::X_par_lower_triangle
@@ -101,9 +113,16 @@ module X_m
  integer::current_iq=0
 end module
 module DIPOLES
+ use pars
+ complex(SP),allocatable::DIP_iR(:,:,:,:,:)
  type DIPOLE_t
-   integer::unused=0
+   real(SP)::q0(3)=[1._SP,0._SP,0._SP]
  end type
+end module
+module ALLOC
+contains
+ subroutine DIPOLE_ALLOC_global()
+ end subroutine
 end module
 #ifndef _TEST_REAL_QP_MODULE
 module QP_m
@@ -160,6 +179,7 @@ module global_XC
 end module
 module IO_m
  integer,parameter::OP_RD_CL=1,OP_WR_CL=2,OP_APP_CL=3,DUMP=1,REP=1
+ logical::io_DIP=.TRUE.
 end module
 module IO_int
 contains
@@ -307,6 +327,38 @@ subroutine scatter_Bamp(s)
  if(s%is(1)==s%os(1))return
  s%rhotw=[cmplx(1._SP,0._SP,SP),cmplx(.2_SP,0._SP,SP)]
  if(s%is(2)==2)s%rhotw=s%rhotw(2:1:-1)
+end subroutine
+subroutine DIPOLE_rotate(a,b,ikbz,i_spin,what,k,dipole)
+ use pars
+ use R_lattice,only:bz_samp
+ integer::a,b,ikbz,i_spin
+ character(*)::what
+ type(bz_samp)::k
+ complex(SP)::dipole(3)
+ if(a<=b)error stop 'DIP_iR mock stores only conduction/valence dipoles'
+ dipole=0._SP
+ dipole(1)=cmplx(0._SP,1._SP,SP)
+end subroutine
+subroutine DIPOLE_dimensions(e,d,bands,q0)
+ use pars
+ use electrons,only:levels
+ use DIPOLES,only:DIPOLE_t
+ type(levels)::e
+ type(DIPOLE_t)::d
+ integer::bands(2)
+ real(SP)::q0(3)
+ d%q0=q0
+end subroutine
+subroutine DIPOLE_IO(k,e,d,action,io_err,scheme)
+ use R_lattice,only:bz_samp
+ use electrons,only:levels
+ use DIPOLES,only:DIPOLE_t
+ type(bz_samp)::k
+ type(levels)::e
+ type(DIPOLE_t)::d
+ character(*)::action,scheme
+ integer::io_err
+ io_err=0
 end subroutine
 subroutine FREQUENCIES_reset(w,s)
  use frequency

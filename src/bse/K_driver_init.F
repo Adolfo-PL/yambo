@@ -50,8 +50,6 @@ subroutine K_driver_init(what,iq,Ken,Xk)
  if (BS_K_is_Chi.and.have_gpu) call error('[Chi/BSK] GPU transition-space projection is unsupported')
  if (BS_K_is_Chi.and.index(BSS_mode,'t')/=0)&
 &  call error('[Chi/BSK] use a matrix BSE solver; on-the-fly TDDFT cannot use this projected kernel')
- if (BS_K_is_Chi.and.what=='loop-init'.and.iq==1)&
-&  call error('[Chi/BSK] ndb.Chi G bubble has no q=0 kernel; select finite BSE q points')
  !
  ! default mode
  if(STRING_match(BSE_L_kind,"default")) BSE_L_kind="default-bar"

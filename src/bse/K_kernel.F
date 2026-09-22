@@ -36,6 +36,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
 &                        l_BSE_minimize_memory,l_BSE_restart,l_BSE_kernel_complete,&
 &                        BS_perturbative_SOC,BS_K_cutoff,BS_max_val,l_BS_magnons
  use collision_el,  ONLY:elemental_collision_free
+ use ALLOC,         ONLY:DIPOLE_ALLOC_global
  use IO_int,        ONLY:io_control
  use IO_m,          ONLY:REP,OP_WR,RD,WR_CL,OP_APP,deliver_IO_error_message,WR,RD_CL,DUMP
  use TDDFT,         ONLY:FXC_K_diagonal,F_xc_gspace,FXC_n_g_corr,io_BS_Fxc, &
@@ -51,6 +52,8 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  use PHOTOLUM,      ONLY:BSS_PL_free
  use parser_m,      ONLY:parser
  use Chi_m,         ONLY:Chi_ng,Chi_n_freqs,Chi_freqs,Chi_fxc,Chi_free
+ use Chi_m,         ONLY:Chi_optical_q0,Chi_optical_q0_known
+ use BS_solvers,    ONLY:BSS_q0
  use TDDFT_Chi_Fourier_m, ONLY:TDDFT_Chi_pair_G
  !
 #include<dev_defs.h>
@@ -218,8 +221,14 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  endif
  !
  call K_restart(iq,X,ID_head,ID,ID_compr,l_partial_kernel_loaded)
+ if (BS_K_is_Chi.and.l_partial_kernel_loaded)&
+&  call error('[Chi/BSK] partial restart cannot verify ndb.Chi; use a new BSE job')
  !
- if( l_BSE_kernel_complete ) return
+ if( l_BSE_kernel_complete ) then
+   if (BS_K_is_Chi) &
+&    call error('[Chi/BSK] kernel restart cannot verify ndb.Chi; use a new BSE job')
+   return
+ endif
  !
  io_QINDX_err=0
  if (l_bs_corr) io_QINDX_err=qindx_B_init(qindx_ID,qindx_ID_frag)
@@ -251,6 +260,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
    YAMBO_FREE_GPU(DEV_VAR(RIM_W))
    YAMBO_FREE(RIM_W)
    !
+   if (BS_K_is_Chi.and.iq==1) call DIPOLE_ALLOC_global()
    return
    !
  endif
@@ -331,7 +341,6 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  if (iHxc==2) then
    !
    if (BS_K_is_Chi) then
-     if (iq==1) call error('[Chi/BSK] optical q=0 projection requires the dipole-limit head and is not available')
      if (ncpu/=1) call error('[Chi/BSK] transition projection is currently serial only')
      if (n_spinor/=1.or.n_sp_pol/=1.or.n_spin/=1.or.l_BS_magnons) &
 &      call error('[Chi/BSK] only scalar, unpolarized transitions are supported')
@@ -340,6 +349,12 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
      call io_control(ACTION=RD_CL,COM=REP,MODE=DUMP,SEC=(/1/),ID=ID_Chi)
      io_Chi_err=io_Chi(X,Chi_w,ID_Chi)
      if (io_Chi_err/=0) call error('[Chi/BSK] cannot read ndb.Chi header')
+     if (iq==1) then
+       if (.not.Chi_optical_q0_known) call error('[Chi/BSK] ndb.Chi lacks the optical q0 direction')
+       if (maxval(abs(Chi_optical_q0-BSS_q0))>&
+&          max(1.E-9_SP,1.E-3_SP*maxval(abs(Chi_optical_q0))))&
+&        call error('[Chi/BSK] optical q0 direction or normalization differs from ndb.Chi')
+     endif
      if (Chi_ng/=BS_n_g_fxc) call error('[Chi/BSK] BSENGfxc must equal the ndb.Chi G-basis size')
      call io_control(ACTION=RD_CL,COM=REP,MODE=DUMP,SEC=(/2*iq,2*iq+1/),ID=ID_Chi)
      io_Chi_err=io_Chi(X,Chi_w,ID_Chi)
@@ -950,5 +965,6 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
 #endif
  !
  call timing('X T_space Kernel',OPR='stop')
+ if (BS_K_is_Chi.and.iq==1) call DIPOLE_ALLOC_global()
  !
 end subroutine K_kernel

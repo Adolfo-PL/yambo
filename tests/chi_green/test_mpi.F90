@@ -6,11 +6,13 @@ program test_mpi
  use X_m
  use R_lattice
  use frequency
+ use DIPOLES
  use parallel_m
  implicit none
  type(X_t)::x
  type(bz_samp)::k
  type(w_samp)::w
+ type(DIPOLE_t)::d
  complex(SP)::response(2,2,3),expected(2,2),factor
  real(SP)::gap,tolerance
  integer::ierr,ik,iw,mode
@@ -50,7 +52,7 @@ program test_mpi
      Chi_G_weight=1._DP
      Chi_G_occupation(1,:,:,:)=1._DP;Chi_G_occupation(2,:,:,:)=0._DP
    end select
-   call Chi_G_bubble(2,x,k,w,.FALSE.,response)
+   call Chi_G_bubble(2,x,k,w,d,.FALSE.,response)
    do iw=1,w%n_freqs
      factor=1._SP/(w%p(iw)-gap)-1._SP/(w%p(iw)+gap)
      expected=factor*reshape([1.04_SP,.4_SP,.4_SP,1.04_SP],[2,2])

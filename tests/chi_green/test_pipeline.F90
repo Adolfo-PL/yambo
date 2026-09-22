@@ -21,6 +21,7 @@ program test_pipeline
  integer::iw,rank,nranks,ik
  character(24)::argument
  call get_command_argument(1,argument)
+ allocate(DIP_iR(1,1,1,1,1))
  allocate(PAR_IND_Xk_bz%element_1D(2))
  PAR_IND_Xk_bz%element_1D=.TRUE.
  if(trim(argument)=='mpi_band')PAR_COM_CON_INDEX_X(2)%n_CPU=2
@@ -29,7 +30,7 @@ program test_pipeline
  call Chi_G_parallel_check(x)
  allocate(k%sstar(2,2),k%pt(2,3),qindx_X(2,2,2),bare_qpg(2,2))
  k%sstar(:,1)=[1,2];k%sstar(:,2)=1;k%pt=0._SP
- qindx_X=1;qindx_X(2,:,1)=[2,1];bare_qpg=1._SP
+ qindx_X=1;qindx_X(1,:,1)=[1,2];qindx_X(2,:,1)=[2,1];bare_qpg=1._SP
  allocate(Chi_KS_levels%E(2,2,1),Chi_KS_levels%f(2,2,1))
  Chi_KS_levels%E(1,:,:)= -1._SP;Chi_KS_levels%E(2,:,:)=1._SP
  Chi_KS_levels%f(1,:,:)=2._SP;Chi_KS_levels%f(2,:,:)=0._SP
@@ -39,6 +40,11 @@ program test_pipeline
  original=cmplx(.3_SP,.4_SP,SP)
  X_par(1)%blc=original
  Chi_G_mode='G0';Chi_G_axis='IMAG';Chi_G_nu_steps=3;Chi_G_nu_range=[0._SP,2._SP]
+ if(trim(argument)=='optical_missing')then
+   deallocate(DIP_iR)
+   call Chi_G_bubble(1,x,k,w,d,.TRUE.,serial)
+   call error('missing optical dipoles accepted')
+ endif
  if(trim(argument)=='conditioning') Chi_rcond_floor=0.99_SP
  call Chi_fxc_eval(2,1,x,Chi_KS_levels,k,w,d)
  call require(size(saved_freq)==3,'separate imaginary export grid')
@@ -48,6 +54,29 @@ program test_pipeline
  call require(maxval(abs(X_par(1)%blc-original))<1.E-12_SP,'screening matrix restored')
  call require(size(w%p)==2.and.abs(w%p(2)-cmplx(.8_SP,.2_SP,SP))<1.E-12_SP,'native grid preserved')
  call require(minval(saved_rcond)>0._SP,'LAPACK conditioning diagnostics')
+ ! At q=0 the native density head is -conjg(q0 . DIP_iR), whereas the
+ ! G>0 vertex comes from the scattering amplitude.  The stored c/v mock
+ ! dipole is +i and the two k-star body amplitudes are 0.2 and 1.0.
+ call Chi_G_bubble(1,x,k,w,d,.TRUE.,serial)
+ do iw=1,w%n_freqs
+   factor0=2._SP/(w%p(iw)-2._SP)
+   factor1=-2._SP/(w%p(iw)+2._SP)
+   expected(1,1)=q0_def_norm**2*(factor0+factor1)
+   expected(1,2)=cmplx(0._SP,-.6_SP*q0_def_norm,SP)*(factor0+factor1)
+   expected(2,1)=-expected(1,2)
+   expected(2,2)=.52_SP*(factor0+factor1)
+   call require(maxval(abs(serial(:,:,iw)-expected))<100._SP*epsilon(1._SP),&
+&               'optical native dipole head and symmetry-rotated wings')
+ enddo
+ q0_def_norm=2._SP*q0_def_norm
+ call Chi_G_bubble(1,x,k,w,d,.TRUE.,partial)
+ call require(maxval(abs(partial(1,1,:)-4._SP*serial(1,1,:)))<100._SP*epsilon(1._SP),&
+&              'optical head scales quadratically with q0')
+ call require(maxval(abs(partial(1,2,:)-2._SP*serial(1,2,:)))<100._SP*epsilon(1._SP),&
+&              'optical wing scales linearly with q0')
+ call require(maxval(abs(partial(2,2,:)-serial(2,2,:)))<100._SP*epsilon(1._SP),&
+&              'optical body does not scale with q0')
+ q0_def_norm=q0_def_norm/2._SP
  ! Exercise the actual PPA sampling-grid preparation in both conventions.
  QP_retarded_G=.TRUE.; QP_G_damp=.7_SP
  call QP_prepare_G_grid(w%p,'ra')
@@ -91,16 +120,27 @@ program test_pipeline
    call require(maxval(abs(saved_fxc(:,:,iw)-expected))<100._SP*epsilon(1._SP),'static COHSEX kernel')
  enddo
  call require(maxval(abs(X_par(1)%blc-original))<1.E-12_SP,'COHSEX preserves native screening')
+ call Chi_G_bubble(1,x,k,w,d,.FALSE.,serial)
+ do iw=1,w%n_freqs
+   factor0=2._SP/(w%p(iw)-2.6_SP)
+   factor1=-2._SP/(w%p(iw)+2.6_SP)
+   expected(1,1)=q0_def_norm**2*(factor0+factor1)
+   expected(1,2)=cmplx(0._SP,-.6_SP*q0_def_norm,SP)*(factor0+factor1)
+   expected(2,1)=-expected(1,2)
+   expected(2,2)=.52_SP*(factor0+factor1)
+   call require(maxval(abs(serial(:,:,iw)-expected))<100._SP*epsilon(1._SP),&
+&               'static COHSEX optical head and wings')
+ enddo
  ! Simulate disjoint native k ownership, including an empty rank. The fixture
  ! reduction is a no-op, so we independently sum the actual local bubble outputs.
- call Chi_G_bubble(2,x,k,w,.FALSE.,serial)
+ call Chi_G_bubble(2,x,k,w,d,.FALSE.,serial)
  do nranks=2,3
    partitioned=0._SP
    do rank=0,nranks-1
      do ik=1,2
        PAR_IND_Xk_bz%element_1D(ik)=mod(ik-1,nranks)==rank
      enddo
-     call Chi_G_bubble(2,x,k,w,.FALSE.,partial)
+     call Chi_G_bubble(2,x,k,w,d,.FALSE.,partial)
      partitioned=partitioned+partial
    enddo
    call require(maxval(abs(partitioned-serial))<100._SP*epsilon(1._SP),'native k ownership sums to serial')

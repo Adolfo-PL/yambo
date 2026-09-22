@@ -24,7 +24,7 @@ integer function io_Chi(X,Xw,ID)
 &                        Chi_QP_applied,Chi_QP_action,Chi_convention
  use Chi_m,         ONLY:Chi_G_mode,Chi_G_db,Chi_G_norm_tol,Chi_G_check_tol,Chi_rcond_floor,&
 &                        Chi_G_mu,Chi_G_kbt,Chi_G0_error,Chi_rcond
- use Chi_m,         ONLY:Chi_G_axis
+ use Chi_m,         ONLY:Chi_G_axis,Chi_optical_q0,Chi_optical_q0_known
  use IO_int,        ONLY:io_connect,io_disconnect,io_elemental,io_header,io_fragment,&
 &                        def_variable_bulk,io_variable_bulk,def_variable_elemental,io_variable_elemental
  use IO_m,          ONLY:io_sec,io_com,io_status,write_is_on,read_is_on,NONE,frag_RESPONSE,&
@@ -121,6 +121,19 @@ integer function io_Chi(X,Xw,ID)
      call io_elemental(ID,R0=Chi_G_kbt)
      call io_elemental(ID,VAR="",VAR_SZ=0,MENU=0)
    endif
+   ! The numerical |q0| fixes the normalization of optical head/wings.
+   ! Older finite-q databases remain readable without optical metadata.
+   if (read_is_on(ID)) then
+     Chi_optical_q0=0._SP
+     Chi_optical_q0_known=.FALSE.
+   endif
+   if (write_is_on(ID).or.variable_exist(ID,'CHI_OPTICAL_Q0')) then
+     call io_elemental(ID,VAR='CHI_OPTICAL_Q0',VAR_SZ=3,MENU=0)
+     call io_elemental(ID,R1=Chi_optical_q0,&
+&         VAR='Optical q0 direction and norm    ',DESCRIPTOR=Chi_desc)
+     call io_elemental(ID,VAR='',VAR_SZ=0,MENU=0)
+     Chi_optical_q0_known=.TRUE.
+   endif
    !
    io_Chi=io_status(ID)
    if (io_Chi/=0) goto 1
@@ -148,6 +161,12 @@ integer function io_Chi(X,Xw,ID)
    endif
    call def_variable_bulk(ID,'CHI_QPG',3,(/2,nqibz,Chi_ng/),SP)
    call  io_variable_bulk(ID,3,C2=qpg_disk)
+   if (read_is_on(ID)) then
+     if (Chi_ng>size(bare_qpg,2)) call error('[Chi] stored |q+G| basis exceeds the current Coulomb basis')
+     if (maxval(abs(qpg_disk-bare_qpg(:nqibz,:Chi_ng))/&
+&        max(abs(qpg_disk),1.E-10_SP))>5.E-4_SP) &
+&        call error('[Chi] stored |q+G| differs from the current Coulomb normalization/cutoff')
+   endif
    YAMBO_FREE(qpg_disk)
    !
    if (.not.any((/io_sec(ID,:)==2/))) then

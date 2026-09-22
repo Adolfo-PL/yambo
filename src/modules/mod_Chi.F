@@ -46,6 +46,10 @@ module Chi_m
  logical           :: l_Chi_fxc           =.FALSE.  ! ChiFxc input flag
  logical           :: Chi_header_done =.FALSE.
  logical           :: Chi_QP_applied  =.FALSE.
+ ! Optical q->0 direction and numerical norm used for the density head.  These
+ ! must be retained with fxc because its head and wings scale with that norm.
+ real(SP)          :: Chi_optical_q0(3)=0._SP
+ logical           :: Chi_optical_q0_known=.FALSE.
  integer           :: Chi_ng          =0
  integer           :: Chi_n_freqs     =0
  character(schlen) :: Chi_QP_action   ="none"

@@ -19,12 +19,15 @@ subroutine TDDFT_ALDA_eh_space_G_collisions_L(iq,Xk,i_T_grp,NG,l_bs_tddft_wf_in_
  use wave_func,      ONLY:WF
  use interfaces,     ONLY:WF_load,WF_free
  use R_lattice,      ONLY:qindx_X,bz_samp,minus_G
- use BS,             ONLY:l_BS_magnons,BS_T_grp,BS_bands
+ use BS,             ONLY:l_BS_magnons,BS_T_grp,BS_bands,BS_K_is_Chi,BS_n_g_fxc
+ use BS_solvers,     ONLY:BSS_q0
+ use DIPOLES,        ONLY:DIP_iR
  use electrons,      ONLY:n_spinor,n_sp_pol,n_spin
  use timing_m,       ONLY:timing
  use openmp,         ONLY:OPENMP_update,master_thread
  use interfaces,     ONLY:WF_apply_symm
  use TDDFT,          ONLY:tddft_wf_t
+ use collision_el,   ONLY:elemental_collision,elemental_collision_alloc,elemental_collision_free
  !
  implicit none
  !
@@ -44,6 +47,8 @@ subroutine TDDFT_ALDA_eh_space_G_collisions_L(iq,Xk,i_T_grp,NG,l_bs_tddft_wf_in_
  complex(DP), pointer DEV_ATTR :: rhotwr_p(:)
  complex(SP), pointer :: WF_symm1_p(:,:)
  complex(SP), pointer :: WF_symm2_p(:,:)
+ complex(SP) :: chi_dipole(3),chi_head
+ type(elemental_collision) :: chi_scatt
  !
  call timing('T_space ALDA Osc.',OPR='start')
  !
@@ -54,6 +59,8 @@ subroutine TDDFT_ALDA_eh_space_G_collisions_L(iq,Xk,i_T_grp,NG,l_bs_tddft_wf_in_
  WF_symm1_p=cZERO
  WF_symm2_p=cZERO
  rhotwr_p=  cZERO
+ if (BS_K_is_Chi) call elemental_collision_alloc(chi_scatt,NG=BS_n_g_fxc,&
+&                                               CPU_ONLY=.TRUE.,TITLE='Chi/BSK')
  !
 #if defined(__NOTNOW) && ! defined(_CUDA)
  !$omp parallel default(shared), private( K_EXCH_collision, &
@@ -115,12 +122,31 @@ subroutine TDDFT_ALDA_eh_space_G_collisions_L(iq,Xk,i_T_grp,NG,l_bs_tddft_wf_in_
    if ( (is(4)/=os(4)) .and. ((.not.l_BS_magnons).or. n_sp_pol==1) ) call error(" TDDFT_ALDA_R_space: wrong spin index")
    if ( (is(4)==os(4)) .and. ((     l_BS_magnons).and.n_sp_pol==2) ) call error(" TDDFT_ALDA_R_space: wrong spin index")
    !
-   call WF_apply_symm(is,WF_symm1_p)
-   call WF_apply_symm(os,WF_symm2_p)
+   if (.not.BS_K_is_Chi) then
+     call WF_apply_symm(is,WF_symm1_p)
+     call WF_apply_symm(os,WF_symm2_p)
+   endif
    !
    if( n_spinor==1 ) then
-     rhotwr_p(:)=cmplx(WF_symm1_p(:,1)*conjg(WF_symm2_p(:,1)),kind=DP)
-     call perform_fft_3d(qs,rhotwr_p,BS_T_grp(i_T_grp)%O_tddft_L(:,i_T_el,1,1))
+     if (BS_K_is_Chi) then
+       ! Match the native Chi density vertex at every G, including USPP
+       ! augmentation.  The transition charge is conjg(rho_cv(G)).
+       chi_scatt%is=is
+       chi_scatt%os=os
+       chi_scatt%qs=(/i_g_p,iq,1/)
+       call scatter_Bamp(chi_scatt)
+       BS_T_grp(i_T_grp)%O_tddft_L(:,i_T_el,1,1)=conjg(chi_scatt%rhotw)
+       if (iq==1) then
+         if (.not.allocated(DIP_iR)) call error('[Chi/BSK] optical position dipoles were not loaded')
+         call DIPOLE_rotate(i_c,i_v,i_k_bz,i_sp_c,'DIP_iR',Xk,chi_dipole)
+         chi_head=-dot_product(BSS_q0,chi_dipole)
+         if (mode=='A'.or.mode=='Q') chi_head=-conjg(chi_head)
+         BS_T_grp(i_T_grp)%O_tddft_L(1,i_T_el,1,1)=chi_head
+       endif
+     else
+       rhotwr_p(:)=cmplx(WF_symm1_p(:,1)*conjg(WF_symm2_p(:,1)),kind=DP)
+       call perform_fft_3d(qs,rhotwr_p,BS_T_grp(i_T_grp)%O_tddft_L(:,i_T_el,1,1))
+     endif
    endif
    !
    if(n_spinor==2) then
@@ -140,6 +166,7 @@ subroutine TDDFT_ALDA_eh_space_G_collisions_L(iq,Xk,i_T_grp,NG,l_bs_tddft_wf_in_
  enddo
  !
  if(l_bs_tddft_wf_in_loop) call WF_free(WF,keep_fft=.true.,keep_states_to_load=.true.)
+ if (BS_K_is_Chi) call elemental_collision_free(chi_scatt)
  !
  nullify(WF_symm1_p)
  nullify(WF_symm2_p)

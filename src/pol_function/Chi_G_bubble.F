@@ -1,10 +1,10 @@
 !
 ! License-Identifier: GPL
 !
-subroutine Chi_G_bubble(iq,X,Xk,Xw,is_G0,response)
+subroutine Chi_G_bubble(iq,X,Xk,Xw,Dip,is_G0,response)
  ! Full band-pair density bubble. qindx_X maps k to k-q. scatter_Bamp
  ! supplies the same rho*(G) rho(G') convention as X_irredux_residuals.
- ! This implementation requires CPU, a k-only MPI layout, finite q,
+ ! This implementation requires CPU, a k-only MPI layout,
  ! an insulating KS reference, and no transition-energy filtering/terminator.
  use pars, ONLY:SP,DP
  use electrons, ONLY:n_sp_pol,spin_occ
@@ -13,8 +13,10 @@ subroutine Chi_G_bubble(iq,X,Xk,Xw,is_G0,response)
  use Chi_Green_m, ONLY:Chi_G0_pair,Chi_spectral_pair
  use X_m, ONLY:X_t
  use frequency, ONLY:w_samp
- use R_lattice, ONLY:bz_samp,qindx_X
- use D_lattice, ONLY:DL_vol
+ use R_lattice, ONLY:bz_samp,qindx_X,q0_def_norm,g_rot
+ use D_lattice, ONLY:DL_vol,nsym,i_time_rev,sop_inv
+ use DIPOLES, ONLY:DIPOLE_t,DIP_iR
+ use vec_operate, ONLY:v_norm
  use collision_el, ONLY:elemental_collision,elemental_collision_alloc,elemental_collision_free
  use parallel_m, ONLY:PAR_IND_Xk_bz,PAR_COM_X_WORLD
  use parallel_int, ONLY:PP_redux_wait
@@ -24,15 +26,23 @@ subroutine Chi_G_bubble(iq,X,Xk,Xw,is_G0,response)
  type(X_t), intent(in) :: X
  type(bz_samp), intent(in) :: Xk
  type(w_samp), intent(in) :: Xw
+ type(DIPOLE_t), intent(in) :: Dip
  logical, intent(in) :: is_G0
  complex(SP), intent(out) :: response(X%ng,X%ng,Xw%n_freqs)
  type(elemental_collision) :: scattering
  complex(DP) :: pair(Xw%n_freqs),z(Xw%n_freqs),vertex(X%ng,X%ng)
+ complex(SP) :: density(X%ng),dipole(3),field_dir(3)
  complex(DP), allocatable :: accumulated(:,:,:)
  real(DP) :: normalization,fa,fb
- integer :: ikbz,ikpbz,ik,ikp,is,isp,i_spin,a,b,iw,ig,igp,info
+ integer :: ikbz,ikpbz,ik,ikp,is,isp,i_spin,a,b,iw,ig,igp,info,sop_inv_l
  ! Validate before using an incomplete symmetry/distributed mapping.
- if (iq<=1) call error('[Chi/G] finite q required; start QpntsRXs or QpntsRXd after index 1')
+ if (iq<1) call error('[Chi/G] invalid q index')
+ if (iq==1) then
+   if (trim(Chi_G_mode)=='DYSON')&
+&    call error('[Chi/G] optical Dyson bubble needs an intraband spectral/Drude treatment')
+   if (v_norm(Dip%q0)<=0._SP) call error('[Chi/G] optical direction is undefined')
+   field_dir=cmplx(Dip%q0/v_norm(Dip%q0)*q0_def_norm,kind=SP)
+ endif
  z=cmplx(Xw%p,kind=DP)
  if (.not.all(ieee_is_finite(real(z,DP))).or..not.all(ieee_is_finite(aimag(z))))&
 &  call error('[Chi/G] response frequencies must be finite')
@@ -75,14 +85,43 @@ subroutine Chi_G_bubble(iq,X,Xk,Xw,is_G0,response)
        pair=pair*real(spin_occ,DP)
        if (maxval(abs(pair))==0._DP) cycle
      endif
-     scattering%is=(/a,ik,is,i_spin/)
-     scattering%os=(/b,ikp,isp,i_spin/)
-     scattering%qs=(/qindx_X(iq,ikbz,2),iq,1/)
-     call scatter_Bamp(scattering)
+     if (iq==1) then
+       ! Native X_irredux_residuals treats the head as the dipole limit of
+       ! the density vertex.  The ordinary q=0 overlap vanishes for a/=b.
+       ! G>0 uses the q=0 scattering vertex rotated from the IBZ k star.
+       if (X%ng>1) then
+         scattering%is=(/a,ik,1,i_spin/)
+         scattering%os=(/b,ik,1,i_spin/)
+         scattering%qs=(/1,1,1/)
+         call scatter_Bamp(scattering)
+         sop_inv_l=sop_inv(is)
+         do ig=2,X%ng
+           density(ig)=scattering%rhotw(g_rot(ig,sop_inv_l))
+         enddo
+         if (is>nsym/(i_time_rev+1)) density(2:)=conjg(density(2:))
+       endif
+       ! DIP_iR is stored only for conduction/valence band order.  A
+       ! reverse pair uses the same saved dipole and the opposite conjugate
+       ! head, because DIP_iR(v,c)=-conjg(DIP_iR(c,v)).
+       if (.not.allocated(DIP_iR)) call error('[Chi/G] optical DIP_iR is unavailable')
+       if (fa<fb) then
+         call DIPOLE_rotate(a,b,ikbz,i_spin,'DIP_iR',Xk,dipole)
+         density(1)=-conjg(dot_product(field_dir,dipole))
+       else
+         call DIPOLE_rotate(b,a,ikbz,i_spin,'DIP_iR',Xk,dipole)
+         density(1)=dot_product(field_dir,dipole)
+       endif
+     else
+       scattering%is=(/a,ik,is,i_spin/)
+       scattering%os=(/b,ikp,isp,i_spin/)
+       scattering%qs=(/qindx_X(iq,ikbz,2),iq,1/)
+       call scatter_Bamp(scattering)
+       density=scattering%rhotw(1:X%ng)
+     endif
      do igp=1,X%ng
      do ig=1,X%ng
-       vertex(ig,igp)=conjg(cmplx(scattering%rhotw(ig),kind=DP))*&
-&                            cmplx(scattering%rhotw(igp),kind=DP)*normalization
+       vertex(ig,igp)=conjg(cmplx(density(ig),kind=DP))*&
+&                            cmplx(density(igp),kind=DP)*normalization
      enddo
      enddo
      do iw=1,Xw%n_freqs
