@@ -13,11 +13,12 @@ integer function INIT(en,q,k,X,Xw,Dip,instr,lnstr,CLOSE_Gs,FINALIZE)
  ! INIT = 1  : input file editing mode
  ! INIT = 2  : DB listing mode
  !
- use drivers,        ONLY:infile_editing,l_em1s,l_acfdt,l_HF_and_locXC,l_col_cut,l_alda_fxc,l_bs_fxc,l_optics,l_bse,l_bss,&
-&                         l_chi,l_cohsex,l_life,l_rpa_IP,l_td_hartree,l_tddft,list_dbs,l_td_hf,l_setup,l_sc_run,l_rim,l_rim_w,&
+ use drivers,        ONLY:infile_editing,l_em1s,l_acfdt,l_HF_and_locXC,l_col_cut,l_alda_fxc,l_chi_bs_fxc,&
+&                         l_bs_fxc,l_optics,l_bse,l_bss,l_chi,l_cohsex,l_life,l_rpa_IP,l_td_hartree,l_tddft,&
+&                         list_dbs,l_td_hf,l_setup,l_sc_run,l_rim,l_rim_w,&
 &                         l_real_time,l_ppa,l_lrc_fxc,l_gw0,l_elel_corr,l_elel_scatt,l_elph_corr,l_td_sex,&
 &                         l_elph_Hamiltonian,l_elph_scatt,l_elphoton_corr,l_elphoton_scatt,l_em1d,l_eval_collisions,&
-&                         l_sc_magnetic,l_sc_electric,l_dipoles,l_pf_fxc,l_nl_optics,l_mpa,l_phel_corr,l_X,l_screen
+&                         l_sc_magnetic,l_sc_electric,l_dipoles,l_pf_fxc,l_nl_optics,l_mpa,l_phel_corr,l_X,l_screen,l_Wpot
 #if defined _SCALAPACK
  use drivers,        ONLY:l_slk_test
 #endif
@@ -312,6 +313,7 @@ integer function INIT(en,q,k,X,Xw,Dip,instr,lnstr,CLOSE_Gs,FINALIZE)
        l_X=runlevel_is_on('Xx')
        l_em1d=runlevel_is_on('em1d')
        l_em1s=runlevel_is_on('em1s')
+       l_Wpot=runlevel_is_on('Wpot')
        l_ppa=runlevel_is_on('ppa')
        l_mpa=runlevel_is_on('mpa')
        l_cohsex=runlevel_is_on('cohsex')
@@ -369,10 +371,11 @@ integer function INIT(en,q,k,X,Xw,Dip,instr,lnstr,CLOSE_Gs,FINALIZE)
      l_rpa_IP     = STRING_same(trim(Chi_mode),"IP").or.STRING_same(trim(BSK_mode),"IP")
      l_td_hartree = STRING_same(trim(Chi_mode),"HARTREE").or.STRING_same(trim(BSK_mode),"HARTREE")
      l_alda_fxc   = STRING_same(trim(Chi_mode),"ALDA").or.STRING_same(trim(BSK_mode),"ALDA")
+     l_chi_bs_fxc = STRING_same(trim(BSK_mode),"CHI")
      l_lrc_fxc    = STRING_same(trim(Chi_mode),"LRC")
      l_pf_fxc     = STRING_same(Chi_mode,'PF')
      l_bs_fxc     = STRING_same(trim(Chi_mode),"BSFXC").or.STRING_same(trim(BSK_mode),"BSFXC")
-     l_tddft      = l_alda_fxc.or.l_lrc_fxc.or.l_bs_fxc
+     l_tddft      = l_alda_fxc.or.l_chi_bs_fxc.or.l_lrc_fxc.or.l_bs_fxc
      l_td_hf      = STRING_same(trim(BSK_mode),"HF")
      l_td_sex     = STRING_same(trim(BSK_mode),"SEX")
      !
@@ -417,6 +420,13 @@ integer function INIT(en,q,k,X,Xw,Dip,instr,lnstr,CLOSE_Gs,FINALIZE)
 #endif
      if (l_gw0.and.l_elel_corr) call initactivate(1,'HF_and_locXC')
      !
+     ! W(q,G,Gp) on disk needs a static (em1s) or plasmon-pole (ppa) screening. Default is ppa
+     !
+     if (l_Wpot.and..not.any((/l_ppa,l_em1s/))) then
+       call initactivate(1,'ppa')
+       l_ppa=.TRUE.
+     endif
+     !
      if (any((/l_em1s,l_em1d,l_X,l_optics,l_ppa,l_mpa/)))   call initactivate(1,'dipoles')
      if (l_ppa)    call initactivate(1,'em1d')
      if (l_mpa)    call initactivate(1,'em1d')
@@ -433,7 +443,7 @@ integer function INIT(en,q,k,X,Xw,Dip,instr,lnstr,CLOSE_Gs,FINALIZE)
      !
      if (l_bse) then
        !
-       if (l_alda_fxc) BS_res_K_exchange=.TRUE.
+       if (l_alda_fxc.or.l_chi_bs_fxc) BS_res_K_exchange=.TRUE.
        !
        if (io_X_err(2)==0) then
          if (io_BS_err/=0) BS_n_g_W=X(2)%ng
@@ -492,6 +502,10 @@ integer function INIT(en,q,k,X,Xw,Dip,instr,lnstr,CLOSE_Gs,FINALIZE)
        BS_res_K_exchange=l_td_hartree.or.l_tddft.or.l_td_hf.or.l_td_sex
        BS_res_K_corr    =l_bs_fxc.or.l_td_hf.or.l_td_sex.or.(l_tddft.and.((WF_exx_fraction > 0._SP).or.(WF_exx_screening> 0._SP)))
        BS_W_is_diagonal =l_td_hf .or. (l_tddft.and.(WF_exx_fraction > 0._SP).and. .not.(WF_exx_screening> 0._SP) )
+       if (l_chi_bs_fxc) then
+         BS_res_K_corr=.FALSE.
+         BS_W_is_diagonal=.FALSE.
+       endif
        BS_K_coupling    =index(BSE_mode,'coupling')>0
        if (BS_K_coupling) then
          BS_cpl_K_exchange=BS_res_K_exchange  

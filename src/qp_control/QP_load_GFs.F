@@ -21,6 +21,9 @@ subroutine QP_load_GFs(bands,qp,E)
  ! Work Space
  !
  integer     :: i_qp,i_band,i_k_pt,i_spin
+ ! The conventional retarded database belongs to the explicit density
+ ! convolution, not the historical ELPH spectral remapping convention.
+ if (qp%GreenF_retarded) call error('Use ChiGDb for GRetarded databases; XfnQPdb GF remapping is unsupported')
  !
  E%GreenF_is_causal=GF_is_causal
  E%GreenF_n_E_steps=qp%GreenF_n_steps

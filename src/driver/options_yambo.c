@@ -106,6 +106,16 @@ void options_yambo(struct options_struct options[],int *i_opt)
  strcpy(options[*i_opt].long_desc[1],"<string>=(X) dynamical response matrix");
  options[*i_opt].char_var=1;
  *i_opt=*i_opt+1;
+ options[*i_opt].short_desc="Screened Coulomb potential W(q,G,G') on disk (ndb.W)";
+ strcpy(options[*i_opt].long_desc[0],"<string>=(s)tatic [from em1s]");
+ strcpy(options[*i_opt].long_desc[1],"<string>=(p)PA [static + plasmon-pole energies, from pp]");
+ options[*i_opt].long_opt="Wpot";
+ options[*i_opt].short_opt='W';
+ options[*i_opt].bin="yambo";
+ options[*i_opt].yambo_string="Wpot";
+ options[*i_opt].char_var=1;
+ options[*i_opt].section=desc;
+ *i_opt=*i_opt+1;
  options[*i_opt].short_desc="Oscillator strenghts (or dipoles)";
  options[*i_opt].long_opt="dipoles";
  options[*i_opt].short_opt='q';

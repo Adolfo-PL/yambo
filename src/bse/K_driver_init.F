@@ -15,12 +15,13 @@ subroutine K_driver_init(what,iq,Ken,Xk)
  use BS_solvers,   ONLY:BSS_mode,BSS_slepc_matrix_format,BSS_uses_DbGd,&
 &                       BSS_slepc_double_grp,run_Slepc,BSS_mode,       &
 &                       l_abs_prop_chi_bse,l_eels_can_be_computed,l_eels_from_inversion
- use BS,           ONLY:BSE_L_kind,BSE_mode,BS_K_is_ALDA,BS_dip_size,l_BSE_minimize_memory,BS_perturbative_SOC,&
+ use BS,           ONLY:BSE_L_kind,BSE_mode,BS_K_is_ALDA,BS_K_is_Chi,BS_dip_size,l_BSE_minimize_memory,BS_perturbative_SOC,&
 &                       BS_perturbative_SOC,l_BS_magnons,l_BS_photolum,&
 &                       BS_cpl_K_exchange,BS_n_g_exch,BS_res_K_exchange,BS_K_coupling,BS_res_ares_n_mat,&
 &                       BS_n_eh_spaces,l_BS_ares_from_res,BS_bands,BS_K_anti_resonant
  use TDDFT,        ONLY:FXC_is_retarded,FXC_n_g_corr,l_Fxc_from_Vxc
- use drivers,      ONLY:l_col_cut,l_rpa_IP,l_alda_fxc,l_bs_fxc
+ use drivers,      ONLY:l_col_cut,l_rpa_IP,l_alda_fxc,l_chi_bs_fxc,l_bs_fxc
+ use gpu_m,        ONLY:have_gpu
  use D_lattice,    ONLY:i_time_rev,i_space_inv,l_3D
 #if defined _RT
  use drivers,      ONLY:l_rt_carriers_in_use
@@ -45,6 +46,10 @@ subroutine K_driver_init(what,iq,Ken,Xk)
  !==========
  BS_n_eh_spaces=1
  BS_res_ares_n_mat=1
+ BS_K_is_Chi=l_chi_bs_fxc
+ if (BS_K_is_Chi.and.have_gpu) call error('[Chi/BSK] GPU transition-space projection is unsupported')
+ if (BS_K_is_Chi.and.index(BSS_mode,'t')/=0)&
+&  call error('[Chi/BSK] use a matrix BSE solver; on-the-fly TDDFT cannot use this projected kernel')
  !
  ! default mode
  if(STRING_match(BSE_L_kind,"default")) BSE_L_kind="default-bar"

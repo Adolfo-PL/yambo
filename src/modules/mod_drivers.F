@@ -74,6 +74,7 @@ module drivers
  logical :: l_X                  =.FALSE.
  logical :: l_em1d               =.FALSE.
  logical :: l_em1s               =.FALSE.
+ logical :: l_Wpot               =.FALSE.
  !
  ! ... and the kernel
  !
@@ -81,6 +82,7 @@ module drivers
  logical :: l_td_hartree         =.FALSE.
  logical :: l_tddft              =.FALSE.
  logical :: l_alda_fxc           =.FALSE.
+ logical :: l_chi_bs_fxc         =.FALSE.
  logical :: l_bs_fxc             =.FALSE.
  logical :: l_lrc_fxc            =.FALSE.
  logical :: l_pf_fxc             =.FALSE.

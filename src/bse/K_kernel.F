@@ -9,7 +9,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  !
  ! K = <2V-W> for n_spin=1; K=<V-W> for n_spin>1
  !
- use pars,          ONLY:SP,schlen,pi,cZERO,cI
+ use pars,          ONLY:SP,DP,schlen,pi,cZERO,cI
  use LOGO,          ONLY:pickup_a_random
  use drivers,       ONLY:l_bs_fxc,l_tddft,l_rim_w
  use frequency,     ONLY:w_samp
@@ -29,15 +29,16 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  use BS,            ONLY:BS_bands,BS_res_K_corr,BS_W,BS_W_is_diagonal,&
 &                        BS_res_K_exchange,BS_Block_size,BS_n_g_W,&
 &                        O_ng,BS_n_g_exch,BS_n_g_fxc,BS_identifier,BS_LiveTiming_steps,&
-&                        BS_K_dim,BS_K_is_ALDA,BS_cpl_K_exchange,&
+&                        BS_K_dim,BS_K_is_ALDA,BS_K_is_Chi,BS_cpl_K_exchange,&
 &                        BS_cpl_K_corr,K_EXCH_collision,K_CORR_collision,&
 &                        WF_phase,n_BS_blks,BS_blk,BS_T_grp,&
 &                        BS_nT_grps,BS_blks_free,l_BS_ares_from_res,&
 &                        l_BSE_minimize_memory,l_BSE_restart,l_BSE_kernel_complete,&
 &                        BS_perturbative_SOC,BS_K_cutoff,BS_max_val,l_BS_magnons
  use collision_el,  ONLY:elemental_collision_free
+ use ALLOC,         ONLY:DIPOLE_ALLOC_global
  use IO_int,        ONLY:io_control
- use IO_m,          ONLY:REP,OP_WR,RD,WR_CL,OP_APP,deliver_IO_error_message,WR
+ use IO_m,          ONLY:REP,OP_WR,RD,WR_CL,OP_APP,deliver_IO_error_message,WR,RD_CL,DUMP
  use TDDFT,         ONLY:FXC_K_diagonal,F_xc_gspace,FXC_n_g_corr,io_BS_Fxc, &
 &                        FXC_mode,tddft_wf_t,l_Fxc_from_Vxc
  use xc_functionals,ONLY:V_xc,F_xc,F_xc_mat,magn,XC_potential_driver
@@ -50,6 +51,10 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  use MAGNONS,       ONLY:BSS_MAGN_free
  use PHOTOLUM,      ONLY:BSS_PL_free
  use parser_m,      ONLY:parser
+ use Chi_m,         ONLY:Chi_ng,Chi_n_freqs,Chi_freqs,Chi_fxc,Chi_free
+ use Chi_m,         ONLY:Chi_optical_q0,Chi_optical_q0_known
+ use BS_solvers,    ONLY:BSS_q0
+ use TDDFT_Chi_Fourier_m, ONLY:TDDFT_Chi_pair_G
  !
 #include<dev_defs.h>
 #include<y_memory.h>
@@ -63,6 +68,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  ! Work Space ...
  !
  type(tddft_wf_t), target  :: tddft_wf
+ type(w_samp)               :: Chi_w
  character(schlen) :: section_title
  character(1)      :: mode_now
  !
@@ -107,6 +113,12 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  !
  logical :: BS_blk_done(n_BS_blks),l_partial_kernel_loaded
  integer :: n_steps,m_steps,i_steps
+ integer :: ID_Chi,io_Chi_err,ig,jg
+ integer, external :: io_Chi
+ logical :: l_KfnQPdb
+ real(SP) :: chi_norm,chi_antiherm
+ complex(DP) :: chi_pair
+ complex(DP), allocatable :: Chi_static(:,:)
  !
  ! Constants & Setup
  !==================
@@ -129,7 +141,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  if (l_bs_fxc) then
    section_title="BSE Kernel -> xc-kernel"
  else
-   if (BS_K_is_ALDA) then
+   if (BS_K_is_ALDA.or.BS_K_is_Chi) then
      section_title="TDDFT Kernel"
    else
      section_title="BSE Kernel"
@@ -138,12 +150,14 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
    !
    if (BS_res_K_corr.or.BS_res_K_exchange)     section_title=trim(section_title)//" (Resonant"
    if (BS_K_is_ALDA     )                      section_title=trim(section_title)//" ALDA"
+   if (BS_K_is_Chi      )                      section_title=trim(section_title)//" Chi"
    if (BS_res_K_corr    )                      section_title=trim(section_title)//" CORRRELATION"
    if (BS_res_K_exchange)                      section_title=trim(section_title)//" EXCHANGE"
    if (BS_res_K_corr.or.BS_res_K_exchange)     section_title=trim(section_title)//")"
    !
    if (BS_cpl_K_corr.or.BS_cpl_K_exchange)     section_title=trim(section_title)//" (Coupling"
    if (BS_K_is_ALDA.and.BS_cpl_K_exchange)     section_title=trim(section_title)//" ALDA"
+   if (BS_K_is_Chi .and.BS_cpl_K_exchange)     section_title=trim(section_title)//" Chi"
    if (BS_cpl_K_corr    )                      section_title=trim(section_title)//" CORRRELATION"
    if (BS_cpl_K_exchange)                      section_title=trim(section_title)//" EXCHANGE"
    if (BS_cpl_K_corr.or.BS_cpl_K_exchange)     section_title=trim(section_title)//")"
@@ -173,12 +187,12 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
    call msg('r','[BSE] Exchange components ',BS_n_g_exch)
  endif
  !
- if (BS_K_is_ALDA) then
+ if (BS_K_is_ALDA.or.BS_K_is_Chi) then
    O_ng_tddft =maxval(qindx_X(iq,:,2))
-   l_tddft_gsum=(index(FXC_mode,"G-")>0)
-   l_tddft_rsum=(index(FXC_mode,"R-")>0)
+   l_tddft_gsum=BS_K_is_Chi.or.(index(FXC_mode,"G-")>0)
+   l_tddft_rsum=(.not.BS_K_is_Chi).and.(index(FXC_mode,"R-")>0)
    if( .not.(l_tddft_gsum.or.l_tddft_rsum) ) call error("Wrong FXC_mode:"//trim(FXC_mode))
-   if(index(FXC_mode,"cut_GmGp")>0) then
+   if(BS_K_is_ALDA.and.index(FXC_mode,"cut_GmGp")>0) then
      FXC_n_g_corr=BS_n_g_fxc
      if (BS_n_g_fxc/= eval_G_minus_G(BS_n_g_fxc,0) ) then
        BS_n_g_fxc   = eval_G_minus_G(BS_n_g_fxc,0)
@@ -187,7 +201,8 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
    endif
    l_bs_tddft_wf_in_loop= ((iq==1) .and. (Xk%nbz>=1).and.(.not.trim(PARALLEL_default_mode)=="workload") ) .or. &
    &                      ((iq> 1) .and.                       trim(PARALLEL_default_mode)=="KQmemory" )
-   call msg('r','[BSE] ALDA        components ',BS_n_g_fxc)
+   if (BS_K_is_ALDA) call msg('r','[BSE] ALDA components ',BS_n_g_fxc)
+   if (BS_K_is_Chi ) call msg('r','[BSE] Chi  components ',BS_n_g_fxc)
  endif
  !
  if (l_bs_corr) then
@@ -206,8 +221,14 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  endif
  !
  call K_restart(iq,X,ID_head,ID,ID_compr,l_partial_kernel_loaded)
+ if (BS_K_is_Chi.and.l_partial_kernel_loaded)&
+&  call error('[Chi/BSK] partial restart cannot verify ndb.Chi; use a new BSE job')
  !
- if( l_BSE_kernel_complete ) return
+ if( l_BSE_kernel_complete ) then
+   if (BS_K_is_Chi) &
+&    call error('[Chi/BSK] kernel restart cannot verify ndb.Chi; use a new BSE job')
+   return
+ endif
  !
  io_QINDX_err=0
  if (l_bs_corr) io_QINDX_err=qindx_B_init(qindx_ID,qindx_ID_frag)
@@ -239,6 +260,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
    YAMBO_FREE_GPU(DEV_VAR(RIM_W))
    YAMBO_FREE(RIM_W)
    !
+   if (BS_K_is_Chi.and.iq==1) call DIPOLE_ALLOC_global()
    return
    !
  endif
@@ -303,7 +325,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
    !
  if ((.not.l_bs_exch).and.iHxc==1) cycle
  !
- if ((.not.BS_K_is_ALDA).and.iHxc==2) cycle
+ if ((.not.(BS_K_is_ALDA.or.BS_K_is_Chi)).and.iHxc==2) cycle
  !
  if ((.not.l_bs_corr).and.iHxc==3) cycle
  !
@@ -318,9 +340,45 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  !======
  if (iHxc==2) then
    !
+   if (BS_K_is_Chi) then
+     if (ncpu/=1) call error('[Chi/BSK] transition projection is currently serial only')
+     if (n_spinor/=1.or.n_sp_pol/=1.or.n_spin/=1.or.l_BS_magnons) &
+&      call error('[Chi/BSK] only scalar, unpolarized transitions are supported')
+     call parser('KfnQPdb',l_KfnQPdb)
+     if (l_KfnQPdb) call error('[Chi/BSK] use KS transitions; KfnQPdb would double count the QP shift')
+     call io_control(ACTION=RD_CL,COM=REP,MODE=DUMP,SEC=(/1/),ID=ID_Chi)
+     io_Chi_err=io_Chi(X,Chi_w,ID_Chi)
+     if (io_Chi_err/=0) call error('[Chi/BSK] cannot read ndb.Chi header')
+     if (iq==1) then
+       if (.not.Chi_optical_q0_known) call error('[Chi/BSK] ndb.Chi lacks the optical q0 direction')
+       if (maxval(abs(Chi_optical_q0-BSS_q0))>&
+&          max(1.E-9_SP,1.E-3_SP*maxval(abs(Chi_optical_q0))))&
+&        call error('[Chi/BSK] optical q0 direction or normalization differs from ndb.Chi')
+     endif
+     if (Chi_ng/=BS_n_g_fxc) call error('[Chi/BSK] BSENGfxc must equal the ndb.Chi G-basis size')
+     call io_control(ACTION=RD_CL,COM=REP,MODE=DUMP,SEC=(/2*iq,2*iq+1/),ID=ID_Chi)
+     io_Chi_err=io_Chi(X,Chi_w,ID_Chi)
+     if (io_Chi_err/=0) call error('[Chi/BSK] cannot read ndb.Chi q fragment')
+     if (Chi_n_freqs<1) call error('[Chi/BSK] ndb.Chi contains no frequency samples')
+     if (abs(Chi_freqs(1))>1.E-7_SP) &
+&      call error('[Chi/BSK] first ndb.Chi frequency must be exactly zero for static Casida')
+     chi_norm=max(1._SP,maxval(abs(Chi_fxc(:,:,1))))
+     chi_antiherm=0._SP
+     do jg=1,Chi_ng
+       do ig=1,Chi_ng
+         chi_antiherm=max(chi_antiherm,abs(Chi_fxc(ig,jg,1)-conjg(Chi_fxc(jg,ig,1))))
+       enddo
+     enddo
+     if (chi_antiherm/chi_norm>1.E-4_SP) &
+&      call error('[Chi/BSK] zero-frequency fxc is not Hermitian; static Casida is invalid')
+     YAMBO_ALLOC(Chi_static,(Chi_ng,Chi_ng))
+     Chi_static=cmplx(Chi_fxc(:,:,1),kind=DP)
+     call msg('r','[Chi/BSK] static inverse-Fourier kernel from ndb.Chi @q',iq)
+   endif
+   !
    call WF_load(WF,NG(1),NG(2),(/1,Ken%nbm/),(/1,Xk%nibz/),space='R',title="-TDDFT",keep_states_to_load=.true.)
    !
-   QP_ng_Vxc=BS_n_g_fxc
+   if (BS_K_is_ALDA) QP_ng_Vxc=BS_n_g_fxc
    !
    if (l_tddft_rsum) then
      YAMBO_ALLOC(tddft_wf%rhotwr1,(fft_size*n_spinor*n_spinor))
@@ -332,27 +390,21 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
    YAMBO_ALLOC(tddft_wf%WF_symm1,(fft_size,n_spinor))
    YAMBO_ALLOC(tddft_wf%WF_symm2,(fft_size,n_spinor))
    !
-   YAMBO_ALLOC(F_xc,(fft_size,n_spin,n_spin))
-   if(l_BS_magnons .or. n_spinor==2 .or. l_Fxc_from_Vxc) then
-     YAMBO_ALLOC(V_xc,(fft_size,n_spin))
-     V_xc=0._SP
+   if (BS_K_is_ALDA) then
+     YAMBO_ALLOC(F_xc,(fft_size,n_spin,n_spin))
+     if(l_BS_magnons .or. n_spinor==2 .or. l_Fxc_from_Vxc) then
+       YAMBO_ALLOC(V_xc,(fft_size,n_spin))
+       V_xc=0._SP
+     endif
+     if(n_spin>1) YAMBO_ALLOC(magn,(fft_size,3))
+     call XC_potential_driver(Ken,Xk,WF_kind,WF_xc_functional,2)
+     YAMBO_ALLOC(F_xc_mat,(fft_size,n_spin,n_spin,n_spin,n_spin))
+     call Build_F_xc_mat(V_xc,F_xc,F_xc_mat)
+     YAMBO_FREE(F_xc)
+     if(l_BS_magnons .or. n_spinor==2 .or. l_Fxc_from_Vxc) YAMBO_FREE(V_xc)
+     if(n_spin>1) YAMBO_FREE(magn)
+     call TDDFT_ALDA_lower_cutoff(FXC_mode)
    endif
-   !
-   if(n_spin>1) then
-     YAMBO_ALLOC(magn,(fft_size,3))
-   endif
-   call XC_potential_driver(Ken,Xk,WF_kind,WF_xc_functional,2)
-   YAMBO_ALLOC(F_xc_mat,(fft_size,n_spin,n_spin,n_spin,n_spin))
-   call Build_F_xc_mat(V_xc,F_xc,F_xc_mat)
-   YAMBO_FREE(F_xc)
-   if(l_BS_magnons .or. n_spinor==2 .or. l_Fxc_from_Vxc) then
-     YAMBO_FREE(V_xc)
-   endif
-   if(n_spin>1) then
-     YAMBO_FREE(magn)
-   endif
-   !
-   call TDDFT_ALDA_lower_cutoff(FXC_mode)
    !
    call WF_free(WF,keep_states_to_load=.true.)
    !
@@ -455,7 +507,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
    mode_now=BS_blk(i_block)%mode
    if (.not.l_BS_ares_from_res) mode_now="F"
    !
-   if (iHxc==1) l_write_kernel=.not.(BS_K_is_ALDA.or.l_bs_corr)
+   if (iHxc==1) l_write_kernel=.not.(BS_K_is_ALDA.or.BS_K_is_Chi.or.l_bs_corr)
    if (iHxc==2) l_write_kernel=.not. l_bs_corr
    if (iHxc==3) l_write_kernel=.true.
    !
@@ -510,7 +562,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
      endif
      if (.not.allocated( BS_T_grp(i_Tgrp_p)%O_tddft_R) ) then
        call TDDFT_oscillators_alloc_R(i_Tgrp_p)
-       call TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_Tgrp_p,NG,l_bs_tddft_wf_in_loop,tddft_wf,mode_now)
+       call TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_Tgrp_p,NG,l_bs_tddft_wf_in_loop,tddft_wf,mode_now,BS_K_is_Chi)
      endif
    endif
    !
@@ -697,8 +749,15 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
          ! ALDA
          if (iHxc==2) then
            if(l_tddft_rsum)     H_x=H_x+TDDFT_ALDA_eh_space_R_kernel(is_k,os_k,is_p,os_p,tddft_wf,'RES')
-           if(l_tddft_gsum)     H_x=H_x+TDDFT_ALDA_eh_space_G_kernel(BS_n_g_fxc,&
+           if(l_tddft_gsum.and.BS_K_is_ALDA) H_x=H_x+TDDFT_ALDA_eh_space_G_kernel(BS_n_g_fxc,&
 &                                   BS_T_grp(i_Tgrp_p),i_Tp, BS_T_grp(i_Tgrp_k),i_Tk)
+           if(BS_K_is_Chi) then
+             call TDDFT_Chi_pair_G(Chi_static,&
+&              cmplx(BS_T_grp(i_Tgrp_k)%O_tddft_L(:,i_Tk,1,1),kind=DP),&
+&              cmplx(BS_T_grp(i_Tgrp_p)%O_tddft_R(:,i_Tp,1,1),kind=DP),chi_pair,io_Chi_err)
+             if (io_Chi_err/=0) call error('[Chi/BSK] inverse-Fourier transition projection failed')
+             H_x=H_x+cmplx(chi_pair,kind=SP)/(4._SP*pi)
+           endif
          endif
          !
          ! Correlations
@@ -727,8 +786,15 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
          ! ALDA
          if (iHxc==2) then
            if(l_tddft_rsum)     H_x=H_x+TDDFT_ALDA_eh_space_R_kernel(is_k,os_k,is_p,os_p,tddft_wf,'CPL')
-           if(l_tddft_gsum)     H_x=H_x+TDDFT_ALDA_eh_space_G_kernel(BS_n_g_fxc,&
+           if(l_tddft_gsum.and.BS_K_is_ALDA) H_x=H_x+TDDFT_ALDA_eh_space_G_kernel(BS_n_g_fxc,&
 &                                 BS_T_grp(i_Tgrp_p),i_Tp, BS_T_grp(i_Tgrp_k),i_Tk)
+           if(BS_K_is_Chi) then
+             call TDDFT_Chi_pair_G(Chi_static,&
+&              cmplx(BS_T_grp(i_Tgrp_k)%O_tddft_L(:,i_Tk,1,1),kind=DP),&
+&              cmplx(BS_T_grp(i_Tgrp_p)%O_tddft_R(:,i_Tp,1,1),kind=DP),chi_pair,io_Chi_err)
+             if (io_Chi_err/=0) call error('[Chi/BSK] inverse-Fourier transition projection failed')
+             H_x=H_x+cmplx(chi_pair,kind=SP)/(4._SP*pi)
+           endif
          endif
          !
          ! Correlations
@@ -853,6 +919,9 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
      YAMBO_FREE(FXC_K_diagonal)
    else if (BS_K_is_ALDA) then
      YAMBO_FREE(F_xc_mat)
+   else if (BS_K_is_Chi) then
+     YAMBO_FREE(Chi_static)
+     call Chi_free()
    endif
    !
  endif
@@ -896,5 +965,6 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
 #endif
  !
  call timing('X T_space Kernel',OPR='stop')
+ if (BS_K_is_Chi.and.iq==1) call DIPOLE_ALLOC_global()
  !
 end subroutine K_kernel

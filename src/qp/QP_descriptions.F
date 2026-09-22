@@ -47,6 +47,9 @@ subroutine QP_descriptions(qp,X,Xw,Update)
  !
  if (.not.Update) n_descs_save=qp%desc%n
  if (     Update) qp%desc%n   =n_descs_save
+ if (qp%GreenF_retarded) then
+   call IO_desc_add(qp%desc,str='Conventional retarded G',kind='l',L=.TRUE.,check=.TRUE.,ops=(/'=='/))
+ endif
  !
  if (allocated(RIM_qpg)) then
    !

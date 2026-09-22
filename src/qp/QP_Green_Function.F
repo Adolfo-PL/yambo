@@ -7,15 +7,18 @@
 !
 subroutine QP_Green_Function(qp,E,GFdb_read_err)
  !
- ! This routine calcualtes a modified definition of the GF that
+ ! Without GRetarded this routine calculates a modified definition of the GF that
  ! yields an always positive spectral function. This is because the 
  ! Im(G) can be easily post-processed.
  !
- ! So regardless of the temperature the G defined here is
+ ! The historical G defined here is
  !
  ! G = conjg( G_causal )
+ ! With GRetarded the conventional retarded Dyson propagator is exported,
+ ! including the positive imaginary part of the sampled energy; A=-Im(G)/pi.
  !
- use pars,          ONLY:SP,pi,cZERO
+ use pars,          ONLY:SP,DP,pi,cZERO
+ use Chi_Green_m,   ONLY:Chi_Dyson
  use com,           ONLY:msg
  use units,         ONLY:HA2EV
  use QP_m,          ONLY:QP_t,QP_Sc,QP_Vnl_xc,QP_Vxc,QP_table,&
@@ -80,13 +83,19 @@ subroutine QP_Green_Function(qp,E,GFdb_read_err)
    !
    do iw=1,W%n_freqs
      !
-     qp%GreenF(iqp,iw)=1._SP/(real(qp%GreenF_W(iqp,iw))-Eo-qp%S_total(iqp,iw))
+     if (qp%GreenF_retarded) then
+       qp%GreenF(iqp,iw)=cmplx(Chi_Dyson(cmplx(qp%GreenF_W(iqp,iw),kind=DP),&
+&                       real(Eo,DP),cmplx(qp%S_total(iqp,iw),kind=DP)),kind=SP)
+     else
+       qp%GreenF(iqp,iw)=1._SP/(real(qp%GreenF_W(iqp,iw))-Eo-qp%S_total(iqp,iw))
+     endif
      !
    enddo
    !
    ! Spectral Function Integral
    !
    QP_G_amplitude_integral(iqp)=RIntegrate(aimag(qp%GreenF(iqp,:)),real(qp%GreenF_W(iqp,:)),W%n_freqs)/pi
+   if (qp%GreenF_retarded) QP_G_amplitude_integral(iqp)=-QP_G_amplitude_integral(iqp)
    !
    ! Search for a finer energy range 
    !

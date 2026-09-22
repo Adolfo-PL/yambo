@@ -19,6 +19,8 @@ subroutine INIT_load(defs,en,q,k,X,Xw,Dip)
  use X_m,           ONLY:Chi_mode,X_t,q_plus_G_direction,Q_Shift_Order,&
 &                        global_gauge,Chi_linalg_mode, &
 &                        X_terminator_Kind,X_terminator_E,X_DbGd_percentual
+ use Chi_m,         ONLY:Chi_G_mode,Chi_G_db,Chi_G_norm_tol,Chi_G_check_tol,Chi_rcond_floor,&
+&                        Chi_G_axis,Chi_G_nu_steps,Chi_G_nu_range
  use DIPOLES,       ONLY:DIPOLE_t
  use com,           ONLY:grid_paths
  use stderr,        ONLY:slash
@@ -261,6 +263,7 @@ subroutine INIT_load(defs,en,q,k,X,Xw,Dip)
  call it(defs,'GDmRnge',  '[GW] G_gw damping range',QP_G_dr,E_unit)
  call it(defs,'dScStep',  '[GW] Energy step to evaluate Z factors',QP_dSc_delta,E_unit,verb_level=V_qp)
  call it(defs,'DysSolver','[GW] Dyson Equation solver ("n","s","g","q")',QP_solver,protect=.FALSE.,case="a")
+ call it('f',defs,'GRetarded','[GW/PPA] Export conventional retarded Dyson G (DysSolver="g")')
  call it(defs,'GsampType','[GW] Type of sampling ("ra" FF-RA, "1l" MPA-1l, "2l" MPA-2l)',QP_G_solver)
  call it(defs,'GEnSteps', '[GW] Green`s Function (GF) energy steps',QP_Sc_steps)
  call it(defs,'GEnRnge',  '[GW] GF energy range',QP_G_er,E_unit)
@@ -286,6 +289,15 @@ subroutine INIT_load(defs,en,q,k,X,Xw,Dip)
  call it('f',defs,'DrClassic', '[X] Use a classical model for the drude term',verb_level=V_resp)
  call it('f',defs,'mpERdb',  '[Xm] Write to disk MPA poles and residues')
  call it('f',defs,'WriteXo', '[X] Write on the-fly the IP response function',verb_level=V_resp)
+ call it('f',defs,'ChiFxc',  '[X] chi0 (KS), P (QP-corrected) and fxc=chi0^-1-P^-1 on disk (ndb.Chi)')
+ call it(defs,'ChiGMode','[Chi] Bubble input: LEVELS/G0/COHSEX/DYSON',Chi_G_mode,case="A")
+ call it(defs,'ChiGDb','[Chi] COHSEX ndb.QP or retarded DYSON ndb.G',Chi_G_db)
+ call it(defs,'ChiGAxis','[Chi] Export response on IMAG axis or native REAL grid',Chi_G_axis,case="A")
+ call it(defs,'ChiGNuSteps','[Chi] Number of continuous imaginary-axis response samples',Chi_G_nu_steps)
+ call it(defs,'ChiGNuRnge','[Chi] Imaginary-axis response frequency range',Chi_G_nu_range,E_unit)
+ call it(defs,'ChiGNormTol','[Chi] Maximum spectral integral error (no renormalization)',Chi_G_norm_tol)
+ call it(defs,'ChiGCheckTol','[Chi] Maximum relative G0 bubble error against X_irredux',Chi_G_check_tol)
+ call it(defs,'ChiRcondMin','[Chi] Minimum reciprocal condition number for inversion',Chi_rcond_floor)
  !
  ! BSE/BSK
  !
@@ -299,7 +311,7 @@ subroutine INIT_load(defs,en,q,k,X,Xw,Dip)
  call it(defs,'BSEEhEny','[BSK] Electron-hole energy range',BS_eh_en,E_unit,verb_level=V_resp)
  call it(defs,'BSKCut',  '[BSK] Cutoff on the BSE Kernel, 0=full 1=none',BS_K_cutoff,verb_level=V_resp)
  call it(defs,'BSKIOmode','[BSK] ("1D_linear"/"2D_standard" + "norestart")',BSK_IO_mode,verb_level=V_resp)
- call it(defs,'BSKmod',  '[BSE] IP/Hartree/HF/ALDA/SEX/BSfxc',BSK_mode,protect=.FALSE.,case="A")
+ call it(defs,'BSKmod',  '[BSE] IP/Hartree/HF/ALDA/CHI/SEX/BSfxc',BSK_mode,protect=.FALSE.,case="A")
  call it(defs,'Gauge' ,  '[BSE/X] Gauge (length|velocity)',global_gauge,verb_level=V_resp)
  call it('f',defs,'NoCondSumRule' ,'[BSE/X] Do not impose the conductivity sum rule in velocity gauge',verb_level=V_resp)
  call it('f',defs,'MetDamp' ,      '[BSE] Define '//slash//'w+=sqrt('//slash//'w*('//slash//'w+i'//slash//'eta))',verb_level=V_resp)

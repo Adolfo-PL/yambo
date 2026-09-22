@@ -35,6 +35,7 @@ lib/archive/git.list
 *modules.dep
 *.save
 *.f90
+!tests/chi_green/*.F90
 *.i
 *.s
 *.swp*

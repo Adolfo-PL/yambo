@@ -177,6 +177,31 @@ integer function io_QP_and_GF(what,qp,ID)
    call io_elemental(ID,R0=QP_G_Zoom_treshold)
    call io_elemental(ID,VAR="",VAR_SZ=0,MENU=0)
    !
+   ! Explicit propagator convention, chemical potential and KS reference.
+   ! Legacy ndb.G remains readable by existing workflows, but the new bubble
+   ! accepts only databases marked as conventional retarded.
+   if (write_is_on(ID).or.variable_exist(ID,"G_RETARDED")) then
+     call io_elemental(ID,VAR="G_RETARDED",VAR_SZ=1,MENU=0)
+     call io_elemental(ID,L0=qp%GreenF_retarded,CHECK=.TRUE.,OP=(/"=="/))
+     call io_elemental(ID,VAR="",VAR_SZ=0,MENU=0)
+   else
+     if (io_mode(ID)==VERIFY.and.qp%GreenF_retarded) then
+       io_QP_and_GF=IO_INCOMPATIBLE_VAR
+       call CLOSE_and_menu(.TRUE.)
+       return
+     endif
+     qp%GreenF_retarded=.FALSE.
+   endif
+   if (write_is_on(ID).or.variable_exist(ID,"G_CHEMICAL_POTENTIAL")) then
+     call io_elemental(ID,VAR="G_CHEMICAL_POTENTIAL",VAR_SZ=1,MENU=0)
+     call io_elemental(ID,R0=qp%GreenF_mu,CHECK=.TRUE.,OP=(/"=="/))
+     call io_elemental(ID,VAR="",VAR_SZ=0,MENU=0)
+   else if (qp%GreenF_retarded) then
+     io_QP_and_GF=IO_INCOMPATIBLE_VAR
+     call CLOSE_and_menu(.TRUE.)
+     return
+   endif
+   !
  endif
  !
  io_QP_and_GF=io_status(ID)
@@ -324,6 +349,22 @@ integer function io_QP_and_GF(what,qp,ID)
      !
      call io_bulk(ID,VAR="Green_Functions_Energies",VAR_SZ=(/2,qp%n_states,qp%GreenF_n_steps/))
      call io_bulk(ID,C2=qp%GreenF_W)
+     ! These are additional data for the new retarded format only.
+     if (qp%GreenF_retarded) then
+       if (read_is_on(ID)) then
+         if (.not.allocated(qp%E_bare)) then
+           YAMBO_ALLOC(qp%E_bare,(qp%n_states))
+         endif
+         YAMBO_ALLOC(qp%Sigma_x,(qp%n_states))
+         YAMBO_ALLOC(qp%Vxc_reference,(qp%n_states))
+       endif
+       call io_bulk(ID,VAR="G_REFERENCE_ENERGIES",VAR_SZ=(/qp%n_states/))
+       call io_bulk(ID,R1=qp%E_bare)
+       call io_bulk(ID,VAR="G_SIGMA_X",VAR_SZ=(/2,qp%n_states/))
+       call io_bulk(ID,C1=qp%Sigma_x)
+       call io_bulk(ID,VAR="G_VXC_REFERENCE",VAR_SZ=(/2,qp%n_states/))
+       call io_bulk(ID,C1=qp%Vxc_reference)
+     endif
      !
    endif
    !

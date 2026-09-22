@@ -88,7 +88,7 @@ subroutine INIT_barriers()
  endif
  !
  if (gw0_cohsex) then
-   call switch_off_runlevel('all',except='dyson gw0 em1s dipoles cohsex el_el_corr el_ph_corr ph_el_corr HF_and_locXC '//&
+   call switch_off_runlevel('all',except='dyson gw0 em1s dipoles cohsex el_el_corr el_ph_corr ph_el_corr HF_and_locXC Wpot '//&
 &                            trim(always_on_runlevels))
    goto 1
  endif
@@ -110,7 +110,7 @@ subroutine INIT_barriers()
  endif
  !
  if (gw0_ppa) then
-   on_runlevels='dyson gw0 ppa em1d el_el_corr el_ph_corr ph_el_corr HF_and_locXC rim_w'
+   on_runlevels='dyson gw0 ppa em1d el_el_corr el_ph_corr ph_el_corr HF_and_locXC rim_w Wpot'
    call switch_off_runlevel('all',except=trim(on_runlevels)//' '//trim(always_on_runlevels))
    goto 1
  endif
@@ -130,13 +130,13 @@ subroutine INIT_barriers()
  !
  l_flag=l_bss.or.l_bse
  if (l_flag) then
-   on_runlevels='optics bse bss tddft em1s dipoles em1d ppa photolum rim_w'
+   on_runlevels='optics bse bss tddft em1s dipoles em1d ppa photolum rim_w Wpot'
    call switch_off_runlevel('all',except=trim(on_runlevels)//' '//trim(always_on_runlevels))
    goto 1
  endif
  !
  if (l_screen) then
-   on_runlevels='em1s dipoles em1d ppa X'
+   on_runlevels='em1s dipoles em1d ppa X Wpot'
    call switch_off_runlevel('',except=trim(on_runlevels)//' '//trim(always_on_runlevels))
    goto 1
  endif

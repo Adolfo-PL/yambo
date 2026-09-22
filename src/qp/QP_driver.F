@@ -10,7 +10,7 @@ subroutine QP_driver(X,Xen,Xk,en,k,q,Xw,Dip)
  use pars,          ONLY:SP,pi,cONE,cZERO
  use units,         ONLY:HA2EV
  use drivers,       ONLY:l_life,l_ppa,l_mpa,l_elel_corr,l_elph_corr,l_cohsex,&
-&                        Finite_Tel,l_elphoton_corr,l_rim_w
+&                        Finite_Tel,l_elphoton_corr,l_rim_w,l_sc_run
  use electrons,     ONLY:levels,n_sp_pol,spin
  use R_lattice,     ONLY:bz_samp,RIM_W_is_diagonal,RIM_ng,RIM_W_ng
  use DIPOLES,       ONLY:DIPOLE_t
@@ -22,7 +22,7 @@ subroutine QP_driver(X,Xen,Xk,en,k,q,Xw,Dip)
 &                        QP_nk,QP_state,QP_dSc_test,QP_reset,use_GreenF_Zoom,l_QP_symmetrize,&
 &                        QP_Sc_steps,QP_G_er,QP_G_dr,QP_SET_temperature_pre_factor,&
 &                        GF_is_causal,QP_G_amplitude_integral,use_GreenF_to_eval_QP,&
-&                        l_GW_terminator,QP_G_info
+&                        l_GW_terminator,QP_G_info,QP_retarded_G,QP_G_solver,QP_G_damp
  use parser_m,      ONLY:parser
 #if defined _ELPH
  use ELPH,          ONLY:QP_DW,QP_OMS_Fan
@@ -55,6 +55,23 @@ subroutine QP_driver(X,Xen,Xk,en,k,q,Xw,Dip)
  ! Logicals (and basic setups)
  !==========
  call QP_logicals( )
+ call parser('GRetarded',QP_retarded_G)
+ if (QP_retarded_G) then
+   if (trim(QP_solver)/='g'.or..not.l_ppa.or.l_mpa.or.l_cohsex)&
+&     call error('[G] GRetarded currently requires PPA and DysSolver="g"')
+   if (Finite_Tel.or.l_elph_corr.or.l_elphoton_corr.or.l_sc_run)&
+&     call error('[G] GRetarded currently requires zero-temperature electron-electron GW only')
+   if (trim(QP_G_solver)/='ra'.or.QP_Sc_steps<2.or.any(QP_G_dr<=0._SP))&
+&     call error('[G] GRetarded requires a real energy grid, GEnSteps>=2 and positive GDmRnge')
+   if (use_GreenF_to_eval_QP.or.use_GreenF_Zoom)&
+&     call error('[G] disable GreenF2QP and set GreenFTresh=0 for GRetarded')
+   if (QP_G_damp/=0._SP.or.l_GW_terminator)&
+&     call error('[G] set GDamping=0 and GTermKind="none"; GDmRnge controls retarded sampling')
+   if (allocated(en%Eo)) then
+     if (maxval(abs(en%E-en%Eo))>1.E-5_SP)&
+&       call error('[G] GRetarded requires uncorrected KS starting energies (no GfnQPdb shifts)')
+   endif
+ endif
  !
  ! Some check
  if (QP_n_G_bands(2)>en%nb) call error("Too many bands required in Green's function. Run DFT with more bands!")
@@ -81,6 +98,8 @@ subroutine QP_driver(X,Xen,Xk,en,k,q,Xw,Dip)
  ! Head message
  !==============
  call QP_reset(qp)
+ qp%GreenF_retarded=QP_retarded_G
+ qp%GreenF_mu=en%E_Fermi
  !
  ! Setup Temperature pre-factor
  !==============================
@@ -108,7 +127,7 @@ subroutine QP_driver(X,Xen,Xk,en,k,q,Xw,Dip)
    !
    call IO_desc_add(qp%desc,kind="s",str='GW solver',S="Full Green`s function",check=.TRUE.,ops=(/"=="/))
    !
-   GF_is_causal=Finite_Tel.or.l_elph_corr 
+   GF_is_causal=Finite_Tel.or.l_elph_corr.or.QP_retarded_G
    !
  else if (l_life) then
    call section('*','Dyson equation: QP lifetimes')
@@ -163,6 +182,11 @@ subroutine QP_driver(X,Xen,Xk,en,k,q,Xw,Dip)
  !============
  !
  call QP_state_table_setup(en)
+ if (QP_retarded_G) then
+   if (any(QP_table(:,1)/=QP_table(:,2))) call error('[G] GRetarded currently supports diagonal Sigma only')
+   if (.not.allocated(QP_Vnl_xc).or..not.allocated(QP_Vxc))&
+&     call error('[G] GRetarded requires both exchange and starting Vxc matrix elements')
+ endif
  !
  ! Here I copy several informations to the qp_t type.
  ! This is because I want the qp to be completely independent of the run
@@ -317,6 +341,12 @@ subroutine QP_driver(X,Xen,Xk,en,k,q,Xw,Dip)
 #endif
    !
    call QP_Green_Function(qp,en,-1)
+   if (QP_retarded_G) then
+     YAMBO_ALLOC(qp%Sigma_x,(QP_n_states))
+     YAMBO_ALLOC(qp%Vxc_reference,(QP_n_states))
+     qp%Sigma_x=QP_Vnl_xc
+     qp%Vxc_reference=QP_Vxc
+   endif
    !
    call QP_report_and_write(k,qp,en,-1)
    call local_free()
@@ -421,6 +451,8 @@ subroutine QP_driver(X,Xen,Xk,en,k,q,Xw,Dip)
      YAMBO_FREE(qp%GreenF)
      YAMBO_FREE(qp%GreenF_W)
      YAMBO_FREE(qp%S_total)
+     YAMBO_FREE(qp%Sigma_x)
+     YAMBO_FREE(qp%Vxc_reference)
      YAMBO_FREE(QP_G_info)
      YAMBO_FREE(QP_G_amplitude_integral)
      YAMBO_FREE(QP_G_zoom_er)
