@@ -19,7 +19,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  use D_lattice,     ONLY:nsym,DL_vol,i_time_rev,i_space_inv,sop_inv,sop_tab
  use R_lattice,     ONLY:qindx_X,bz_samp,&
 &                        qindx_B,qindx_B_max,qindx_B_load,RIM_W,RIM_W_d,&
-&                        RIM_ng,RIM_W_is_diagonal,RIM_W_ng
+&                        RIM_ng,RIM_W_is_diagonal,RIM_W_ng,bare_qpg
  use com,           ONLY:msg
  use stderr,        ONLY:intc
  use LIVE_t,        ONLY:live_timing
@@ -116,7 +116,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  integer :: ID_Chi,io_Chi_err,ig,jg
  integer, external :: io_Chi
  logical :: l_KfnQPdb
- real(SP) :: chi_norm,chi_antiherm
+ real(SP) :: chi_norm,chi_antiherm,chi_scale,chi_raw_norm,chi_raw_antiherm,chi_diff
  complex(DP) :: chi_pair
  complex(DP), allocatable :: Chi_static(:,:)
  !
@@ -362,14 +362,25 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
      if (Chi_n_freqs<1) call error('[Chi/BSK] ndb.Chi contains no frequency samples')
      if (abs(Chi_freqs(1))>1.E-7_SP) &
 &      call error('[Chi/BSK] first ndb.Chi frequency must be exactly zero for static Casida')
-     chi_norm=max(1._SP,maxval(abs(Chi_fxc(:,:,1))))
+     ! Hermiticity is judged twice: on the stored fxc, as before, and on
+     ! |q+G| fxc |q+G'| = 4 pi (A^-1 - B^-1), which is O(1) in every block.
+     ! At q=0 the stored head is O(1/q0**2) and hides the body from the first.
+     chi_raw_norm=1._SP
+     chi_raw_antiherm=0._SP
+     chi_norm=0._SP
      chi_antiherm=0._SP
      do jg=1,Chi_ng
        do ig=1,Chi_ng
-         chi_antiherm=max(chi_antiherm,abs(Chi_fxc(ig,jg,1)-conjg(Chi_fxc(jg,ig,1))))
+         chi_diff=abs(Chi_fxc(ig,jg,1)-conjg(Chi_fxc(jg,ig,1)))
+         chi_scale=abs(bare_qpg(iq,ig))*abs(bare_qpg(iq,jg))
+         chi_raw_norm=max(chi_raw_norm,abs(Chi_fxc(ig,jg,1)))
+         chi_raw_antiherm=max(chi_raw_antiherm,chi_diff)
+         chi_norm=max(chi_norm,abs(Chi_fxc(ig,jg,1))*chi_scale)
+         chi_antiherm=max(chi_antiherm,chi_diff*chi_scale)
        enddo
      enddo
-     if (chi_antiherm/chi_norm>1.E-4_SP) &
+     if (chi_raw_antiherm>1.E-4_SP*chi_raw_norm.or.&
+&        (chi_antiherm>1.E-4_SP*chi_norm.and.chi_antiherm>tiny(1._SP))) &
 &      call error('[Chi/BSK] zero-frequency fxc is not Hermitian; static Casida is invalid')
      YAMBO_ALLOC(Chi_static,(Chi_ng,Chi_ng))
      Chi_static=cmplx(Chi_fxc(:,:,1),kind=DP)

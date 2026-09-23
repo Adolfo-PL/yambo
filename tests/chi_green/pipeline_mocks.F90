@@ -61,6 +61,8 @@ module R_lattice
  complex(SP),allocatable::bare_qpg(:,:)
  real(SP)::q0_def_norm=1.E-5_SP
  integer::g_rot(2,1)=reshape([1,2],[2,1])
+ ! Test knob: -1 flips the mock native optical head and wings.
+ real(SP)::optical_sign=1._SP
 end module
 module D_lattice
  use pars
@@ -394,6 +396,13 @@ subroutine X_irredux(iq,s,m,e,k,w,x,d)
  do iw=1,w%n_freqs
    factor=1._SP/(w%p(iw)-2._SP)-1._SP/(w%p(iw)+2._SP)
    m%blc(:,:,iw)=factor*reshape([1.04_SP,.4_SP,.4_SP,1.04_SP],[2,2])
+   if (iq==1) then
+     ! Native optical limit: head O(q0**2), wings O(q0), body O(1); the values
+     ! the independent bubble produces from the mock dipole and k star.
+     m%blc(1,1,iw)=optical_sign*2._SP*q0_def_norm**2*factor
+     m%blc(1,2,iw)=optical_sign*cmplx(0._SP,-1.2_SP,SP)*q0_def_norm*factor
+     m%blc(2,1,iw)=optical_sign*cmplx(0._SP, 1.2_SP,SP)*q0_def_norm*factor
+   endif
  enddo
 end subroutine
 subroutine error(s)

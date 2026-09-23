@@ -117,8 +117,11 @@ subroutine Chi_fxc_eval(iq,iq_mem,X,Xen,Xk,Xw,Dip)
    endif
    allocate(G0_full(ng,ng,nw))
    call Chi_G_bubble(iq,X,Xk,Xw,Dip,.TRUE.,G0_full)
-   Chi_G0_error=maxval(abs(G0_full-C0_full))/max(maxval(abs(C0_full)),tiny(1._SP))
-   call msg('r','[Chi/G] G0 bubble relative error against KS Xo',Chi_G0_error)
+   ! Raw max-norm as before, plus the Coulomb-symmetrized one that can see an
+   ! error in the optical head and wings. Never weaker than the raw check.
+   Chi_G0_error=max(maxval(abs(G0_full-C0_full))/max(maxval(abs(C0_full)),tiny(1._SP)),&
+&                   symmetrized_error(G0_full,C0_full))
+   call msg('r','[Chi/G] G0 bubble relative error against KS Xo (raw/symmetrized max)',Chi_G0_error)
    if (Chi_G0_error>Chi_G_check_tol) call error('[Chi/G] G0 baseline mismatch; kernel export aborted')
    if (trim(Chi_G_axis)=='IMAG') then
      ! Only the kernel export uses this continuous T=0 imaginary grid.
@@ -278,6 +281,30 @@ subroutine Chi_fxc_eval(iq,iq_mem,X,Xen,Xk,Xw,Dip)
      call zgetri(ng,M,ng,ipiv,work,lwork,info)
      if (info/=0) call error('[Chi] matrix inversion failed for '//label)
    end subroutine
+   !
+   real(SP) function symmetrized_error(M,R)
+     ! Compare in the basis the inversion uses, D M D with D=sqrt(4 pi)/|q+G|
+     ! (4 pi cancels in the ratio). At q=0 the raw head and wings are O(q0**2)
+     ! and O(q0) of the body, so a raw max-norm cannot see an error in them.
+     complex(SP), intent(in) :: M(:,:,:),R(:,:,:)
+     real(DP) :: s(size(M,1)),num,den,w
+     integer  :: i,j,k
+     do i=1,size(M,1)
+       s(i)=1._DP/abs(cmplx(bare_qpg(iq,i),kind=DP))
+     enddo
+     num=0._DP
+     den=0._DP
+     do k=1,size(M,3)
+       do j=1,size(M,2)
+         do i=1,size(M,1)
+           w=s(i)*s(j)
+           num=max(num,abs(cmplx(M(i,j,k)-R(i,j,k),kind=DP))*w)
+           den=max(den,abs(cmplx(R(i,j,k),kind=DP))*w)
+         enddo
+       enddo
+     enddo
+     symmetrized_error=real(num/max(den,tiny(1._DP)),SP)
+   end function symmetrized_error
    !
    subroutine gather(M,full)
      type(PAR_matrix)          :: M

@@ -94,6 +94,7 @@ with tempfile.TemporaryDirectory(prefix='yambo-chi-green-') as directory:
         subprocess.run([str(executable)], cwd=build, check=True)
         for scenario, message in [('conditioning', 'ill-conditioned'),
                                   ('optical_missing', 'optical DIP_iR is unavailable'),
+                                  ('optical_head', 'G0 baseline mismatch'),
                                   ('missing_state', 'cover every response band'),
                                   ('legacy', 'legacy spectra are unsupported'),
                                   ('reference', 'starting energies differ'),

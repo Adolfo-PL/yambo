@@ -45,6 +45,14 @@ program test_pipeline
    call Chi_G_bubble(1,x,k,w,d,.TRUE.,serial)
    call error('missing optical dipoles accepted')
  endif
+ if(trim(argument)=='optical_head')then
+   ! Right q0 scaling, wrong sign on head and wings. A raw max-norm sees
+   ! only 2.3e-5 of the body and would pass; the symmetrized check sees 2.
+   bare_qpg(1,1)=q0_def_norm
+   optical_sign=-1._SP
+   call Chi_fxc_eval(1,1,x,Chi_KS_levels,k,w,d)
+   call error('wrong optical head accepted')
+ endif
  if(trim(argument)=='conditioning') Chi_rcond_floor=0.99_SP
  call Chi_fxc_eval(2,1,x,Chi_KS_levels,k,w,d)
  call require(size(saved_freq)==3,'separate imaginary export grid')
@@ -77,6 +85,13 @@ program test_pipeline
  call require(maxval(abs(partial(2,2,:)-serial(2,2,:)))<100._SP*epsilon(1._SP),&
 &              'optical body does not scale with q0')
  q0_def_norm=q0_def_norm/2._SP
+ ! The same optical point through the full export, with the native |q0|.
+ bare_qpg(1,1)=q0_def_norm
+ call Chi_fxc_eval(1,1,x,Chi_KS_levels,k,w,d)
+ call require(Chi_G0_error<1.E-5_SP,'optical G0 baseline agrees in the symmetrized basis')
+ call require(maxval(abs(saved_fxc))<1.E-12_SP,'optical G0 kernel vanishes')
+ call require(maxval(abs(X_par(1)%blc-original))<1.E-12_SP,'optical run restores screening')
+ bare_qpg(1,1)=1._SP
  ! Exercise the actual PPA sampling-grid preparation in both conventions.
  QP_retarded_G=.TRUE.; QP_G_damp=.7_SP
  call QP_prepare_G_grid(w%p,'ra')
