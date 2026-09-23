@@ -396,13 +396,19 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
        YAMBO_ALLOC(V_xc,(fft_size,n_spin))
        V_xc=0._SP
      endif
-     if(n_spin>1) YAMBO_ALLOC(magn,(fft_size,3))
+     if(n_spin>1) then
+       YAMBO_ALLOC(magn,(fft_size,3))
+     endif
      call XC_potential_driver(Ken,Xk,WF_kind,WF_xc_functional,2)
      YAMBO_ALLOC(F_xc_mat,(fft_size,n_spin,n_spin,n_spin,n_spin))
      call Build_F_xc_mat(V_xc,F_xc,F_xc_mat)
      YAMBO_FREE(F_xc)
-     if(l_BS_magnons .or. n_spinor==2 .or. l_Fxc_from_Vxc) YAMBO_FREE(V_xc)
-     if(n_spin>1) YAMBO_FREE(magn)
+     if(l_BS_magnons .or. n_spinor==2 .or. l_Fxc_from_Vxc) then
+       YAMBO_FREE(V_xc)
+     endif
+     if(n_spin>1) then
+       YAMBO_FREE(magn)
+     endif
      call TDDFT_ALDA_lower_cutoff(FXC_mode)
    endif
    !
