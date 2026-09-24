@@ -38,7 +38,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  use collision_el,  ONLY:elemental_collision_free
  use ALLOC,         ONLY:DIPOLE_ALLOC_global
  use IO_int,        ONLY:io_control
- use IO_m,          ONLY:REP,OP_WR,RD,WR_CL,OP_APP,deliver_IO_error_message,WR,RD_CL,DUMP
+ use IO_m,          ONLY:REP,OP_WR,RD,WR_CL,OP_APP,deliver_IO_error_message,WR,OP_RD_CL,DUMP
  use TDDFT,         ONLY:FXC_K_diagonal,F_xc_gspace,FXC_n_g_corr,io_BS_Fxc, &
 &                        FXC_mode,tddft_wf_t,l_Fxc_from_Vxc
  use xc_functionals,ONLY:V_xc,F_xc,F_xc_mat,magn,XC_potential_driver
@@ -346,9 +346,11 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
 &      call error('[Chi/BSK] only scalar, unpolarized transitions are supported')
      call parser('KfnQPdb',l_KfnQPdb)
      if (l_KfnQPdb) call error('[Chi/BSK] use KS transitions; KfnQPdb would double count the QP shift')
-     call io_control(ACTION=RD_CL,COM=REP,MODE=DUMP,SEC=(/1/),ID=ID_Chi)
+     ! OP_RD_CL: RD_CL only reads an already-open unit and never assigns an ID.
+     call io_control(ACTION=OP_RD_CL,COM=REP,MODE=DUMP,SEC=(/1/),ID=ID_Chi)
      io_Chi_err=io_Chi(X,Chi_w,ID_Chi)
-     if (io_Chi_err/=0) call error('[Chi/BSK] cannot read ndb.Chi header')
+     if (io_Chi_err/=0) call error('[Chi/BSK] cannot read ndb.Chi header (IO code '//trim(intc(io_Chi_err))//&
+&      '); put ndb.Chi in the job directory or list its job in -J')
      if (iq==1) then
        if (.not.Chi_optical_q0_known) call error('[Chi/BSK] ndb.Chi lacks the optical q0 direction')
        if (maxval(abs(Chi_optical_q0-BSS_q0))>&
@@ -356,9 +358,9 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
 &        call error('[Chi/BSK] optical q0 direction or normalization differs from ndb.Chi')
      endif
      if (Chi_ng/=BS_n_g_fxc) call error('[Chi/BSK] BSENGfxc must equal the ndb.Chi G-basis size')
-     call io_control(ACTION=RD_CL,COM=REP,MODE=DUMP,SEC=(/2*iq,2*iq+1/),ID=ID_Chi)
+     call io_control(ACTION=OP_RD_CL,COM=REP,MODE=DUMP,SEC=(/2*iq,2*iq+1/),ID=ID_Chi)
      io_Chi_err=io_Chi(X,Chi_w,ID_Chi)
-     if (io_Chi_err/=0) call error('[Chi/BSK] cannot read ndb.Chi q fragment')
+     if (io_Chi_err/=0) call error('[Chi/BSK] cannot read ndb.Chi q fragment (IO code '//trim(intc(io_Chi_err))//')')
      if (Chi_n_freqs<1) call error('[Chi/BSK] ndb.Chi contains no frequency samples')
      if (abs(Chi_freqs(1))>1.E-7_SP) &
 &      call error('[Chi/BSK] first ndb.Chi frequency must be exactly zero for static Casida')
