@@ -29,7 +29,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  use BS,            ONLY:BS_bands,BS_res_K_corr,BS_W,BS_W_is_diagonal,&
 &                        BS_res_K_exchange,BS_Block_size,BS_n_g_W,&
 &                        O_ng,BS_n_g_exch,BS_n_g_fxc,BS_identifier,BS_LiveTiming_steps,&
-&                        BS_K_dim,BS_K_is_ALDA,BS_K_is_Chi,BS_cpl_K_exchange,&
+&                        BS_K_dim,BS_K_is_ALDA,BS_K_is_Chi,BS_K_coupling,BS_cpl_K_exchange,&
 &                        BS_cpl_K_corr,K_EXCH_collision,K_CORR_collision,&
 &                        WF_phase,n_BS_blks,BS_blk,BS_T_grp,&
 &                        BS_nT_grps,BS_blks_free,l_BS_ares_from_res,&
@@ -113,12 +113,13 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  !
  logical :: BS_blk_done(n_BS_blks),l_partial_kernel_loaded
  integer :: n_steps,m_steps,i_steps
- integer :: ID_Chi,io_Chi_err,chi_ierr,ig,jg
+ integer :: ID_Chi,io_Chi_err,chi_ierr,ig,jg,chi_grp_p
  integer, external :: io_Chi
  logical :: l_KfnQPdb
  real(SP) :: chi_norm,chi_antiherm,chi_scale,chi_raw_norm,chi_raw_antiherm,chi_diff
  complex(DP) :: chi_pair
  complex(DP), allocatable :: Chi_static(:,:)
+ complex(SP), allocatable :: chi_R_res(:,:),chi_R_cpl(:,:)
  !
  ! Constants & Setup
  !==================
@@ -342,6 +343,9 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
    !
    if (BS_K_is_Chi) then
      if (ncpu/=1) call error('[Chi/BSK] transition projection is currently serial only')
+     if (BS_K_coupling.and..not.l_BS_ares_from_res) &
+&      call error('[Chi/BSK] coupling needs the anti-resonant blocks built from the resonant ones')
+     chi_grp_p=0
      if (n_spinor/=1.or.n_sp_pol/=1.or.n_spin/=1.or.l_BS_magnons) &
 &      call error('[Chi/BSK] only scalar, unpolarized transitions are supported')
      call parser('KfnQPdb',l_KfnQPdb)
@@ -585,6 +589,23 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
      endif
    endif
    !
+   ! Chi right vertices. The R and C blocks of a column share one O_tddft_R cache,
+   ! filled by whichever block comes first, but the coupling vertex is the
+   ! de-excitation density (v<->c, flipped optical head). Keep both for the column.
+   if(iHxc==2 .and. l_tddft_gsum .and. BS_K_is_Chi .and. chi_grp_p/=i_Tgrp_p) then
+     if (allocated(chi_R_res)) deallocate(chi_R_res)
+     if (allocated(chi_R_cpl)) deallocate(chi_R_cpl)
+     allocate(chi_R_res(size(BS_T_grp(i_Tgrp_p)%O_tddft_R,1),size(BS_T_grp(i_Tgrp_p)%O_tddft_R,2)))
+     call TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_Tgrp_p,NG,l_bs_tddft_wf_in_loop,tddft_wf,"R",BS_K_is_Chi)
+     chi_R_res=BS_T_grp(i_Tgrp_p)%O_tddft_R(:,:,1,1)
+     if (BS_K_coupling) then
+       allocate(chi_R_cpl(size(chi_R_res,1),size(chi_R_res,2)))
+       call TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_Tgrp_p,NG,l_bs_tddft_wf_in_loop,tddft_wf,"C",BS_K_is_Chi)
+       chi_R_cpl=BS_T_grp(i_Tgrp_p)%O_tddft_R(:,:,1,1)
+     endif
+     chi_grp_p=i_Tgrp_p
+   endif
+   !
    ! Correlation oscillators
    !----------------------
    if(iHxc==3) then
@@ -773,11 +794,11 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
            if(BS_K_is_Chi) then
              call TDDFT_Chi_pair_G(Chi_static,&
 &              cmplx(BS_T_grp(i_Tgrp_k)%O_tddft_L(:,i_Tk,1,1),kind=DP),&
-&              cmplx(BS_T_grp(i_Tgrp_p)%O_tddft_R(:,i_Tp,1,1),kind=DP),chi_pair,chi_ierr)
+&              cmplx(chi_R_res(:,i_Tp),kind=DP),chi_pair,chi_ierr)
              if (chi_ierr/=0) call error('[Chi/BSK] transition projection failed: code '//trim(intc(chi_ierr))//&
 &              ' ng_fxc='//trim(intc(BS_n_g_fxc))//' fxc='//trim(intc(size(Chi_static,1)))//'x'//&
 &              trim(intc(size(Chi_static,2)))//' L='//trim(intc(size(BS_T_grp(i_Tgrp_k)%O_tddft_L,1)))//&
-&              ' R='//trim(intc(size(BS_T_grp(i_Tgrp_p)%O_tddft_R,1))))
+&              ' R='//trim(intc(size(chi_R_res,1))))
              H_x=H_x+cmplx(chi_pair,kind=SP)/(4._SP*pi)
            endif
          endif
@@ -813,11 +834,11 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
            if(BS_K_is_Chi) then
              call TDDFT_Chi_pair_G(Chi_static,&
 &              cmplx(BS_T_grp(i_Tgrp_k)%O_tddft_L(:,i_Tk,1,1),kind=DP),&
-&              cmplx(BS_T_grp(i_Tgrp_p)%O_tddft_R(:,i_Tp,1,1),kind=DP),chi_pair,chi_ierr)
+&              cmplx(chi_R_cpl(:,i_Tp),kind=DP),chi_pair,chi_ierr)
              if (chi_ierr/=0) call error('[Chi/BSK] transition projection failed: code '//trim(intc(chi_ierr))//&
 &              ' ng_fxc='//trim(intc(BS_n_g_fxc))//' fxc='//trim(intc(size(Chi_static,1)))//'x'//&
 &              trim(intc(size(Chi_static,2)))//' L='//trim(intc(size(BS_T_grp(i_Tgrp_k)%O_tddft_L,1)))//&
-&              ' R='//trim(intc(size(BS_T_grp(i_Tgrp_p)%O_tddft_R,1))))
+&              ' R='//trim(intc(size(chi_R_cpl,1))))
              H_x=H_x+cmplx(chi_pair,kind=SP)/(4._SP*pi)
            endif
          endif
@@ -946,6 +967,8 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
      YAMBO_FREE(F_xc_mat)
    else if (BS_K_is_Chi) then
      YAMBO_FREE(Chi_static)
+     if (allocated(chi_R_res)) deallocate(chi_R_res)
+     if (allocated(chi_R_cpl)) deallocate(chi_R_cpl)
      call Chi_free()
    endif
    !
