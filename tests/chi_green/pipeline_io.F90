@@ -57,10 +57,11 @@ integer function io_QP_and_GF(s,qp,id)
      qp%E_bare(i)=real(2*band-3,SP)
      delta=-.2_SP
      if(band==2)delta=.4_SP
-     qp%E(i)=qp%E_bare(i)+delta
+     ! A real COHSEX database carries a small Im(E) from the damped static W.
+     qp%E(i)=qp%E_bare(i)+delta+cmplx(0._SP,.005_SP,SP)
    enddo
    if(index(s,'residue')>0)qp%Z(1)=.7_SP
-   if(index(s,'linewidth')>0)qp%E(1)=qp%E(1)+cmplx(0._SP,.01_SP,SP)
+   if(index(s,'linewidth')>0)qp%E(1)=qp%E(1)+cmplx(0._SP,.1_SP,SP)
    if(index(s,'crossing')>0)qp%E(1)=1._SP
    if(index(s,'reference')>0)qp%E_bare(1)=qp%E_bare(1)+1._SP
    if(index(s,'offdiag')>0)qp%table(1,2)=2

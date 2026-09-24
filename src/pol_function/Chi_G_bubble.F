@@ -159,6 +159,8 @@ subroutine Chi_G_load_static(qp,X,Xk)
  ! A native COHSEX QP energy already includes SEX+COH-Vxc once. Its static
  ! Dyson G has a single unit-weight pole; no broadened spectral grid is needed.
  use pars, ONLY:SP,DP
+ use units, ONLY:HA2EV
+ use com, ONLY:msg
  use QP_m, ONLY:QP_t
  use Chi_m, ONLY:Chi_KS_levels,Chi_G_mu,Chi_G_static_energy,Chi_G_static_occupation,Chi_G_norm
  use Chi_Green_m, ONLY:Chi_fermi
@@ -171,7 +173,7 @@ subroutine Chi_G_load_static(qp,X,Xk)
  type(X_t), intent(in) :: X
  type(bz_samp), intent(in) :: Xk
  logical, allocatable :: covered(:,:,:)
- real(DP) :: pole,occupation,tolerance
+ real(DP) :: pole,occupation,tolerance,width,max_width
  integer :: i,a,ik,s
  if (.not.allocated(qp%E).or..not.allocated(qp%Z)) call error('[Chi/G] missing COHSEX QP energies/residues')
  tolerance=max(1.E-6_DP,100._DP*real(epsilon(1._SP),DP))
@@ -182,6 +184,7 @@ subroutine Chi_G_load_static(qp,X,Xk)
  covered=.FALSE.
  Chi_G_static_energy=0._DP; Chi_G_static_occupation=0._DP; Chi_G_norm=0._SP
  Chi_G_mu=Chi_KS_levels%E_Fermi
+ max_width=0._DP
  do i=1,qp%n_states
    a=qp%table(i,1); ik=qp%table(i,3); s=spin(qp%table(i,:))
    if (qp%table(i,2)/=a) call error('[Chi/G] off-diagonal COHSEX states are unsupported')
@@ -194,7 +197,13 @@ subroutine Chi_G_load_static(qp,X,Xk)
    pole=real(qp%E(i),DP)
    if (.not.ieee_is_finite(pole).or..not.ieee_is_finite(real(aimag(qp%E(i)),DP)))&
 &     call error('[Chi/G] nonfinite COHSEX energy')
-   if (abs(real(aimag(qp%E(i)),DP))>tolerance) call error('[Chi/G] static COHSEX cannot have a QP linewidth')
+   ! Static Sigma is Hermitian, but Yambo's default time-ordered static W is taken
+   ! at w=0+i*eta, which leaves Im(Sigma_SEX) of order eta/Delta times the
+   ! correction. Use the real pole; reject an imaginary part that large.
+   width=abs(real(aimag(qp%E(i)),DP))
+   max_width=max(max_width,width)
+   if (width>tolerance.and.width>0.25_DP*abs(pole-real(qp%E_bare(i),DP)))&
+&    call error('[Chi/G] static COHSEX cannot have a QP linewidth')
    if (.not.ieee_is_finite(real(qp%Z(i),DP)).or..not.ieee_is_finite(real(aimag(qp%Z(i)),DP)))&
 &     call error('[Chi/G] nonfinite COHSEX residue')
    if (abs(cmplx(qp%Z(i),kind=DP)-1._DP)>tolerance)&
@@ -208,6 +217,7 @@ subroutine Chi_G_load_static(qp,X,Xk)
    covered(a,ik,s)=.TRUE.
  enddo
  if (.not.all(covered)) call error('[Chi/G] COHSEX QPkrange must cover every response band, k point and spin')
+ call msg('r','[Chi/G] max |Im E| dropped from COHSEX poles (damped static W) [eV]',real(max_width*HA2EV,SP))
  deallocate(covered)
 end subroutine
 !
