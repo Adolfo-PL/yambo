@@ -2,8 +2,10 @@
 
 This change adds an initial diagonal, frozen-screening GW route to the
 `ChiFxc` export. The existing level-correction route remains the default:
-`ChiGMode="LEVELS"`. The G modes are `G0`, `COHSEX` and `DYSON`.
-`COHSEX` works with native static screening; `DYSON` uses PPA dynamic screening.
+`ChiGMode="LEVELS"`. The G modes are `G0`, `COHSEX`, `QP` and `DYSON`.
+`COHSEX` works with native static screening; `QP` takes the energies of any
+diagonal GW run (G0W0 or GW0, PPA/MPA or real axis) as unit-weight poles;
+`DYSON` uses PPA dynamic screening.
 
 Base: Adolfo-PL/yambo, branch `claude/nbd-file-generation-path-yidcr2`,
 commit `2d64938d8328b184ffbf7ce82972d737a8e5c12a`.
@@ -67,6 +69,7 @@ Before export, it must agree with the native `X_irredux` KS response within
 ```
 ChiGMode="G0":    chi0=P_G0; fxc=0
 ChiGMode="COHSEX":chi0=P_G0; P=P_G_COHSEX; fxc=chi0^-1-P_G_COHSEX^-1
+ChiGMode="QP":    chi0=P_G0; P=P_G_QP;     fxc=chi0^-1-P_G_QP^-1
 ChiGMode="DYSON": chi0=P_G0; P=P_G; fxc=chi0^-1-P_G^-1
 ```
 
@@ -168,6 +171,39 @@ different KS reference energies, and corrected poles that cross the fixed
 KS chemical potential. Such crossings need a separate treatment of the
 chemical potential and occupations. `ChiGNormTol` is used only for the
 dynamic spectral route; static poles have exact unit weight.
+
+### GW energies as unit-weight poles: QP route
+
+`ChiGMode="QP"` builds the same pole bubble from the energies of any diagonal
+GW `ndb.QP` written by the Newton solver: COHSEX, G0W0 or GW0, with PPA/MPA or
+real-axis screening. Each state becomes
+
+```
+A_nk(E) = delta(E - Re E_QP,nk)
+```
+
+The linearized energy `E_QP = e_KS + Z <Sigma(e_KS) - Vxc>` already contains Z,
+but the pole keeps unit weight. The loader therefore drops the residue Z and
+Im E, and reports both in the report file (`Z dropped from QP poles`, `max |Im E|
+dropped from QP poles`). A width larger than a quarter of the state's QP shift
+is a lifetime rather than damping noise; it is dropped with a warning that
+points to `DYSON`. Weighting the poles by Z alone would break the spectral sum
+rule, so it is not offered. All other checks are those of the COHSEX route:
+diagonal states, full band/k/spin coverage, the KS reference energies and no
+crossing of the KS chemical potential. A Green-function `ndb.G` is rejected;
+use the Newton `ndb.QP`. `ChiGMode="COHSEX"` keeps its strict checks and still
+rejects a non-COHSEX database.
+
+For G0W0 energies, run PPA GW with the Newton solver and a `QPkrange` that
+covers every response band and k point, then set:
+
+```text
+ChiGMode= "QP"
+ChiGDb= "gw/ndb.QP"
+```
+
+The `ndb.Chi` header records `QP poles from G0W0 (PPA/MPA)` (or the actual
+self-energy kind) as its QP action.
 
 For an optical Casida calculation, create a matrix BSE input from the same
 `SAVE`, set `BSKmod="CHI"`, and set `BSENGfxc` to the exact G-basis size stored
@@ -355,8 +391,8 @@ static terms over frequencies. `Green_Functions_Energies` includes eta.
 
 ## Current scope and validation
 
-The response G0 and COHSEX paths support optical q=0, serial CPUs and k-only
-MPI. The DYSON optical limit remains unsupported. They reject GPU execution,
+The response G0, COHSEX and QP paths support optical q=0, serial CPUs and
+k-only MPI. The DYSON optical limit remains unsupported. They reject GPU execution,
 finite temperature, metallic KS references, double grids,
 transition-energy filtering and response terminators. The retarded GW
 export requires PPA, diagonal Sigma, unshifted KS starting energies and no

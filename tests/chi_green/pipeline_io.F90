@@ -41,6 +41,8 @@ integer function io_QP_and_GF(s,qp,id)
  integer::id,i,iw,band,kpt,n
  real(SP)::energy,delta
  qp%nk=2;qp%nb=2;qp%n_states=4;qp%GreenF_n_steps=2001;qp%GreenF_retarded=.TRUE.
+ ! A Newton ndb.QP carries no Green-function grid.
+ if(index(s,'.QP')>0.and.index(s,'greenf')==0)qp%GreenF_n_steps=0
  qp%GreenF_mu=0._SP
  if(index(s,'missing')>0)qp%n_states=3
  if(index(s,'legacy')>0)qp%GreenF_retarded=.FALSE.
@@ -49,6 +51,9 @@ integer function io_QP_and_GF(s,qp,id)
  if(index(s,'.QP')>0)then
    QP_DB_kind=QP_SE_COHSEX
    if(index(s,'wrong_kind')>0)QP_DB_kind=0
+   ! A G0W0 (PPA, Newton) database: same Re E as the COHSEX fixture, but Z/=1
+   ! and a small lifetime, both of which ChiGMode="QP" must drop.
+   if(index(s,'g0w0')>0)QP_DB_kind=QP_SE_GoWo_PPA
    allocate(qp%E(qp%n_states),qp%Z(qp%n_states))
    qp%k=0._SP;qp%Z=1._SP
    do i=1,qp%n_states
@@ -61,6 +66,11 @@ integer function io_QP_and_GF(s,qp,id)
      qp%E(i)=qp%E_bare(i)+delta+cmplx(0._SP,.005_SP,SP)
    enddo
    if(index(s,'residue')>0)qp%Z(1)=.7_SP
+   if(index(s,'g0w0')>0)then
+     qp%Z=.8_SP
+     qp%E=qp%E+cmplx(0._SP,.015_SP,SP)
+   endif
+   if(index(s,'lifetime')>0)qp%E(1)=qp%E(1)+cmplx(0._SP,.1_SP,SP)
    if(index(s,'linewidth')>0)qp%E(1)=qp%E(1)+cmplx(0._SP,.1_SP,SP)
    if(index(s,'crossing')>0)qp%E(1)=1._SP
    if(index(s,'reference')>0)qp%E_bare(1)=qp%E_bare(1)+1._SP

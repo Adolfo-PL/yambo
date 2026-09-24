@@ -58,6 +58,7 @@ module Chi_m
  ! poles from a native static ndb.QP; DYSON reads conventional retarded ndb.G.
  character(schlen) :: Chi_G_mode="LEVELS",Chi_G_db=""
  character(schlen) :: Chi_G_axis="IMAG"
+ character(schlen) :: Chi_G_source="none"   ! self-energy kind of the ndb.QP read in COHSEX/QP mode
  integer :: Chi_G_nu_steps=16
  real(SP) :: Chi_G_nu_range(2)=(/0._SP,1._SP/)
  real(SP) :: Chi_G_norm_tol=0.05_SP,Chi_G_check_tol=1.E-4_SP

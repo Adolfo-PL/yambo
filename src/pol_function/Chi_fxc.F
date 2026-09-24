@@ -39,7 +39,7 @@ subroutine Chi_fxc_eval(iq,iq_mem,X,Xen,Xk,Xw,Dip)
 &                        Chi_header_done,Chi_QP_applied,Chi_QP_action
  use Chi_m,         ONLY:Chi_G_mode,Chi_G0_error,Chi_G_check_tol,Chi_rcond,Chi_rcond_floor,Chi_convention,&
 &                        Chi_optical_q0,Chi_optical_q0_known
- use Chi_m,         ONLY:Chi_G_axis,Chi_G_nu_steps,Chi_G_nu_range
+ use Chi_m,         ONLY:Chi_G_axis,Chi_G_nu_steps,Chi_G_nu_range,Chi_G_source
  use QP_CTL_m,      ONLY:QP_ctl_DB_user
  use parallel_m,    ONLY:master_cpu,PAR_COM_X_WORLD,PAR_COM_X_WORLD_RL_resolved
  use parallel_int,  ONLY:PP_redux_wait,PP_wait
@@ -235,11 +235,14 @@ subroutine Chi_fxc_eval(iq,iq_mem,X,Xen,Xk,Xw,Dip)
      Chi_QP_action ="none"
      if (l_QP_db) Chi_QP_action=trim(QP_ctl_DB_user(1)%action)
      if (trim(Chi_G_mode)/='LEVELS') then
-       Chi_QP_applied=trim(Chi_G_mode)=='DYSON'.or.trim(Chi_G_mode)=='COHSEX'
+       Chi_QP_applied=trim(Chi_G_mode)=='DYSON'.or.trim(Chi_G_mode)=='COHSEX'.or.trim(Chi_G_mode)=='QP'
        Chi_QP_action=trim(Chi_G_mode)
+       if (trim(Chi_G_mode)=='QP') Chi_QP_action='QP poles from '//trim(Chi_G_source)
        Chi_convention='Bare density vertices; G0/G Dyson bubble; fxc=chi0^-1-P_G^-1, unsymmetrized [Ha]'
        if (trim(Chi_G_mode)=='COHSEX')&
 &        Chi_convention='Bare vertices; static COHSEX unit-weight G poles; fxc=chi0^-1-P_G^-1, unsymmetrized [Ha]'
+       if (trim(Chi_G_mode)=='QP')&
+&        Chi_convention='Bare vertices; unit-weight poles at Re E_QP, Z dropped; fxc=chi0^-1-P_G^-1, unsymmetrized [Ha]'
      endif
      call io_control(ACTION=OP_WR_CL,COM=REP,SEC=(/1/),ID=ID)
      io_err=io_Chi(X,Chi_w,ID)

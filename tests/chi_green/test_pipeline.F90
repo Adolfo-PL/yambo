@@ -135,6 +135,7 @@ program test_pipeline
    call require(maxval(abs(saved_fxc(:,:,iw)-expected))<100._SP*epsilon(1._SP),'static COHSEX kernel')
  enddo
  call require(maxval(abs(X_par(1)%blc-original))<1.E-12_SP,'COHSEX preserves native screening')
+ call require(trim(Chi_G_source)=='COHSEX','COHSEX source recorded')
  call Chi_G_bubble(1,x,k,w,d,.FALSE.,serial)
  do iw=1,w%n_freqs
    factor0=2._SP/(w%p(iw)-2.6_SP)
@@ -162,6 +163,34 @@ program test_pipeline
  enddo
  PAR_IND_Xk_bz%element_1D=.TRUE.
  call Chi_G_free()
+ ! G0W0 energies as unit-weight poles (ChiGMode="QP"). The fixture has the same
+ ! Re E as the COHSEX one but Z=0.8 and a small width: both must be dropped, so
+ ! the kernel must equal the COHSEX kernel exactly.
+ Chi_G_mode='QP';Chi_G_db='g0w0.ndb.QP'
+ if(index(trim(argument),'qp_')==1)Chi_G_db=trim(argument(4:))//'.ndb.QP'
+ call Chi_G_load(x,k)
+ call require(trim(Chi_G_source)=='G0W0 (PPA/MPA)','QP mode records the G0W0 source')
+ call require(.not.allocated(Chi_G_energy),'QP mode does not create a spectral energy grid')
+ call require(all(Chi_G_norm==1._SP),'QP poles keep unit weight despite Z/=1')
+ call require(abs(Chi_G_static_energy(1,1,1)+1.2_DP)<100._DP*epsilon(1._SP),'QP valence pole at Re E')
+ call require(abs(Chi_G_static_energy(2,1,1)-1.4_DP)<100._DP*epsilon(1._SP),'QP conduction pole at Re E')
+ call require(n_warnings==0,'a damping-size width is not reported as a lifetime')
+ X_par(1)%blc=original
+ call Chi_fxc_eval(2,1,x,Chi_KS_levels,k,w,d)
+ do iw=1,3
+   factor0=1._SP/(saved_freq(iw)-2._SP)-1._SP/(saved_freq(iw)+2._SP)
+   factor1=1._SP/(saved_freq(iw)-2.6_SP)-1._SP/(saved_freq(iw)+2.6_SP)
+   expected=(1._SP/factor0-1._SP/factor1)*gram_inverse
+   call require(maxval(abs(saved_fxc(:,:,iw)-expected))<100._SP*epsilon(1._SP),'G0W0-energy QP kernel')
+ enddo
+ call require(maxval(abs(X_par(1)%blc-original))<1.E-12_SP,'QP mode preserves native screening')
+ call Chi_G_free()
+ ! A real lifetime is dropped too, but with a warning pointing at DYSON.
+ Chi_G_db='g0w0_lifetime.ndb.QP'
+ call Chi_G_load(x,k)
+ call require(n_warnings==1,'QP mode warns when it drops a real linewidth')
+ call require(abs(Chi_G_static_energy(1,1,1)+1.2_DP)<100._DP*epsilon(1._SP),'lifetime dropped from the pole')
+ call Chi_G_free()
  Chi_G_mode='DYSON'
  Chi_G_db='fixture.ndb.G'
  if(trim(argument)=='missing_state')Chi_G_db='missing.ndb.G'
@@ -186,7 +215,7 @@ program test_pipeline
  call require(maxval(aimag(qp%GreenF))<0._SP,'retarded Green spectral sign')
  call QP_reset(qp)
  deallocate(QP_G_amplitude_integral,QP_table,QP_Sc,QP_Vnl_xc,QP_Vxc)
- print *,'PASS: G0/Dyson/COHSEX pipeline, k partitions, sampling damping and frozen screening'
+ print *,'PASS: G0/Dyson/COHSEX/QP pipeline, k partitions, sampling damping and frozen screening'
 contains
  subroutine require(ok,label)
    logical::ok

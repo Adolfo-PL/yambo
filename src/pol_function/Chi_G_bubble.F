@@ -69,7 +69,7 @@ subroutine Chi_G_bubble(iq,X,Xk,Xw,Dip,is_G0,response)
          pair(iw)=Chi_G0_pair(z(iw),real(Chi_KS_levels%E(a,ik,i_spin),DP),&
 &            real(Chi_KS_levels%E(b,ikp,i_spin),DP),fa,fb)
        enddo
-     else if (trim(Chi_G_mode)=='COHSEX') then
+     else if (trim(Chi_G_mode)=='COHSEX'.or.trim(Chi_G_mode)=='QP') then
        fa=Chi_G_static_occupation(a,ik,i_spin)*real(spin_occ,DP)
        fb=Chi_G_static_occupation(b,ikp,i_spin)*real(spin_occ,DP)
        if (fa==fb) cycle
@@ -155,14 +155,21 @@ subroutine Chi_G_parallel_check(X)
  if (.not.allocated(PAR_IND_Xk_bz%element_1D)) call error('[Chi/G] native BZ k ownership is undefined')
 end subroutine
 !
-subroutine Chi_G_load_static(qp,X,Xk)
+subroutine Chi_G_load_static(qp,X,Xk,strict)
  ! A native COHSEX QP energy already includes SEX+COH-Vxc once. Its static
  ! Dyson G has a single unit-weight pole; no broadened spectral grid is needed.
+ ! strict=.TRUE. (ChiGMode="COHSEX") also demands Z=1 and no real linewidth.
+ ! strict=.FALSE. (ChiGMode="QP") takes any diagonal GW ndb.QP (G0W0, GW0,
+ ! PPA/MPA or real axis) as A_n(E)=delta(E-Re E_n): the Newton energy already
+ ! contains Z through E=e+Z<Sigma-Vxc>, but the pole keeps unit weight, so the
+ ! residue Z and any linewidth are dropped here and reported.
  use pars, ONLY:SP,DP
  use units, ONLY:HA2EV
  use com, ONLY:msg
  use QP_m, ONLY:QP_t
- use Chi_m, ONLY:Chi_KS_levels,Chi_G_mu,Chi_G_static_energy,Chi_G_static_occupation,Chi_G_norm
+ use Chi_m, ONLY:Chi_KS_levels,Chi_G_mu,Chi_G_static_energy,Chi_G_static_occupation,Chi_G_norm,&
+&                 Chi_G_source
+ use stderr, ONLY:real2ch
  use Chi_Green_m, ONLY:Chi_fermi
  use X_m, ONLY:X_t
  use R_lattice, ONLY:bz_samp
@@ -172,10 +179,15 @@ subroutine Chi_G_load_static(qp,X,Xk)
  type(QP_t), intent(in) :: qp
  type(X_t), intent(in) :: X
  type(bz_samp), intent(in) :: Xk
+ logical, intent(in) :: strict
  logical, allocatable :: covered(:,:,:)
- real(DP) :: pole,occupation,tolerance,width,max_width
- integer :: i,a,ik,s
- if (.not.allocated(qp%E).or..not.allocated(qp%Z)) call error('[Chi/G] missing COHSEX QP energies/residues')
+ real(DP) :: pole,occupation,tolerance,width,max_width,z_min,z_max,max_real_width
+ integer :: i,a,ik,s,n_real_width
+ character(6) :: what
+ what='QP'
+ if (strict) what='COHSEX'
+ if (.not.allocated(qp%E)) call error('[Chi/G] missing '//trim(what)//' QP energies')
+ if (strict.and..not.allocated(qp%Z)) call error('[Chi/G] missing COHSEX QP energies/residues')
  tolerance=max(1.E-6_DP,100._DP*real(epsilon(1._SP),DP))
  allocate(covered(X%ib(1):X%ib(2),Xk%nibz,n_sp_pol))
  allocate(Chi_G_static_energy(X%ib(2),Xk%nibz,n_sp_pol))
@@ -184,40 +196,60 @@ subroutine Chi_G_load_static(qp,X,Xk)
  covered=.FALSE.
  Chi_G_static_energy=0._DP; Chi_G_static_occupation=0._DP; Chi_G_norm=0._SP
  Chi_G_mu=Chi_KS_levels%E_Fermi
- max_width=0._DP
+ max_width=0._DP; max_real_width=0._DP; n_real_width=0
+ z_min=huge(1._DP); z_max=-huge(1._DP)
  do i=1,qp%n_states
    a=qp%table(i,1); ik=qp%table(i,3); s=spin(qp%table(i,:))
-   if (qp%table(i,2)/=a) call error('[Chi/G] off-diagonal COHSEX states are unsupported')
+   if (qp%table(i,2)/=a) call error('[Chi/G] off-diagonal '//trim(what)//' states are unsupported')
    if (a<X%ib(1).or.a>X%ib(2)) cycle
-   if (ik<1.or.ik>Xk%nibz.or.s<1.or.s>n_sp_pol) call error('[Chi/G] invalid COHSEX state index')
-   if (covered(a,ik,s)) call error('[Chi/G] duplicate COHSEX state')
+   if (ik<1.or.ik>Xk%nibz.or.s<1.or.s>n_sp_pol) call error('[Chi/G] invalid '//trim(what)//' state index')
+   if (covered(a,ik,s)) call error('[Chi/G] duplicate '//trim(what)//' state')
    if (.not.ieee_is_finite(real(qp%E_bare(i),DP)).or.&
 &      abs(real(qp%E_bare(i),DP)-real(Chi_KS_levels%E(a,ik,s),DP))>1.E-5_DP)&
-&     call error('[Chi/G] COHSEX starting energies differ from the saved KS levels')
+&     call error('[Chi/G] '//trim(what)//' starting energies differ from the saved KS levels')
    pole=real(qp%E(i),DP)
    if (.not.ieee_is_finite(pole).or..not.ieee_is_finite(real(aimag(qp%E(i)),DP)))&
-&     call error('[Chi/G] nonfinite COHSEX energy')
+&     call error('[Chi/G] nonfinite '//trim(what)//' energy')
    ! Static Sigma is Hermitian, but Yambo's default time-ordered static W is taken
    ! at w=0+i*eta, which leaves Im(Sigma_SEX) of order eta/Delta times the
-   ! correction. Use the real pole; reject an imaginary part that large.
+   ! correction. Use the real pole; reject an imaginary part that large in
+   ! COHSEX mode. A dynamical GW width is a lifetime: QP mode drops it by
+   ! construction and says so.
    width=abs(real(aimag(qp%E(i)),DP))
    max_width=max(max_width,width)
-   if (width>tolerance.and.width>0.25_DP*abs(pole-real(qp%E_bare(i),DP)))&
-&    call error('[Chi/G] static COHSEX cannot have a QP linewidth')
-   if (.not.ieee_is_finite(real(qp%Z(i),DP)).or..not.ieee_is_finite(real(aimag(qp%Z(i)),DP)))&
-&     call error('[Chi/G] nonfinite COHSEX residue')
-   if (abs(cmplx(qp%Z(i),kind=DP)-1._DP)>tolerance)&
-&     call error('[Chi/G] static COHSEX requires unit residues')
+   if (width>tolerance.and.width>0.25_DP*abs(pole-real(qp%E_bare(i),DP))) then
+     if (strict) call error('[Chi/G] static COHSEX cannot have a QP linewidth')
+     n_real_width=n_real_width+1
+     max_real_width=max(max_real_width,width)
+   endif
+   if (allocated(qp%Z)) then
+     if (.not.ieee_is_finite(real(qp%Z(i),DP)).or..not.ieee_is_finite(real(aimag(qp%Z(i)),DP)))&
+&       call error('[Chi/G] nonfinite '//trim(what)//' residue')
+     if (strict.and.abs(cmplx(qp%Z(i),kind=DP)-1._DP)>tolerance)&
+&       call error('[Chi/G] static COHSEX requires unit residues')
+     z_min=min(z_min,real(qp%Z(i),DP)); z_max=max(z_max,real(qp%Z(i),DP))
+   endif
    occupation=Chi_fermi(pole,real(Chi_G_mu,DP),0._DP)
    if (abs(occupation-real(Chi_KS_levels%f(a,ik,s),DP)/real(spin_occ,DP))>tolerance)&
-&     call error('[Chi/G] COHSEX poles cross the fixed KS chemical potential; occupations require a new treatment')
+&     call error('[Chi/G] '//trim(what)//' poles cross the fixed KS chemical potential; occupations require a new treatment')
    Chi_G_static_energy(a,ik,s)=pole
    Chi_G_static_occupation(a,ik,s)=occupation
    Chi_G_norm(a,ik,s)=1._SP
    covered(a,ik,s)=.TRUE.
  enddo
- if (.not.all(covered)) call error('[Chi/G] COHSEX QPkrange must cover every response band, k point and spin')
- call msg('r','[Chi/G] max |Im E| dropped from COHSEX poles (damped static W) [eV]',real(max_width*HA2EV,SP))
+ if (.not.all(covered)) call error('[Chi/G] '//trim(what)//' QPkrange must cover every response band, k point and spin')
+ if (strict) then
+   call msg('r','[Chi/G] max |Im E| dropped from COHSEX poles (damped static W) [eV]',real(max_width*HA2EV,SP))
+ else
+   call msg('r','[Chi/G] QP poles: unit weight at Re E from '//trim(Chi_G_source))
+   call msg('r','[Chi/G] max |Im E| dropped from QP poles [eV]',real(max_width*HA2EV,SP))
+   if (z_max>=z_min) call msg('r','[Chi/G] Z dropped from QP poles (min/max Re Z)',(/real(z_min,SP),real(z_max,SP)/))
+   if (n_real_width>0) then
+     call msg('r','[Chi/G] states whose dropped Im E exceeds 25% of their QP shift',n_real_width)
+     call warning('[Chi/G] QP mode dropped linewidths up to '//trim(real2ch(real(max_real_width*HA2EV,SP)))//&
+&                 ' eV; lifetimes need ChiGMode="DYSON"')
+   endif
+ endif
  deallocate(covered)
 end subroutine
 !
@@ -226,13 +258,13 @@ subroutine Chi_G_load(X,Xk)
  use pars, ONLY:SP,DP
  use Chi_m, ONLY:Chi_KS_levels,Chi_G_mode,Chi_G_db,Chi_G_energy,Chi_G_weight,Chi_G_occupation,&
 &                 Chi_G_norm,Chi_G_norm_tol,Chi_G_mu,Chi_G_kbt
- use Chi_m, ONLY:Chi_G_static_energy
+ use Chi_m, ONLY:Chi_G_static_energy,Chi_G_source
  use Chi_Green_m, ONLY:Chi_spectral_weights,Chi_fermi,Chi_Dyson
  use X_m, ONLY:X_t
  use R_lattice, ONLY:bz_samp
  use electrons, ONLY:spin,n_sp_pol
  use QP_m, ONLY:QP_t,QP_reset,QP_G_er,QP_G_dr,GF_is_causal,QP_G_Zoom_treshold
- use global_XC, ONLY:QP_DB_kind,QP_SE_COHSEX
+ use global_XC, ONLY:QP_DB_kind,QP_SE_COHSEX,QP_SE_GoWo_PPA,QP_SE_GoWo,QP_SE_GWo_PPA,QP_SE_GWo
  use IO_int, ONLY:io_control
  use IO_m, ONLY:OP_RD_CL,DUMP,REP
  use com, ONLY:msg
@@ -249,7 +281,7 @@ subroutine Chi_G_load(X,Xk)
  complex(DP), allocatable :: reconstructed(:)
  integer, external :: io_QP_and_GF
  if (allocated(Chi_G_energy).or.allocated(Chi_G_static_energy)) return
- if (len_trim(Chi_G_db)==0) call error('[Chi/G] ChiGDb must name a COHSEX ndb.QP or a retarded ndb.G')
+ if (len_trim(Chi_G_db)==0) call error('[Chi/G] ChiGDb must name a COHSEX/GW ndb.QP or a retarded ndb.G')
  ! The generic reader modifies GW globals; preserve them in this response run.
  saved_er=QP_G_er; saved_dr=QP_G_dr; saved_zoom=QP_G_Zoom_treshold
  saved_causal=GF_is_causal; saved_kind=QP_DB_kind
@@ -264,9 +296,27 @@ subroutine Chi_G_load(X,Xk)
  if (qp%nb<X%ib(2)) call error('[Chi/G] ChiGDb does not cover the response band range')
  if (maxval(abs(qp%k-Xk%pt))>1.E-5_SP) call error('[Chi/G] ChiGDb k-point ordering differs from X')
  if (.not.allocated(qp%E_bare)) call error('[Chi/G] ChiGDb lacks KS reference energies')
- if (trim(Chi_G_mode)=='COHSEX') then
-   if (disk_kind/=QP_SE_COHSEX) call error('[Chi/G] COHSEX mode requires an actual COHSEX ndb.QP')
-   call Chi_G_load_static(qp,X,Xk)
+ if (trim(Chi_G_mode)=='COHSEX'.or.trim(Chi_G_mode)=='QP') then
+   select case (disk_kind)
+     case (QP_SE_COHSEX)
+       Chi_G_source='COHSEX'
+     case (QP_SE_GoWo_PPA)
+       Chi_G_source='G0W0 (PPA/MPA)'
+     case (QP_SE_GoWo)
+       Chi_G_source='G0W0 (real axis)'
+     case (QP_SE_GWo_PPA)
+       Chi_G_source='GW0 (PPA/MPA)'
+     case (QP_SE_GWo)
+       Chi_G_source='GW0 (real axis)'
+     case default
+       Chi_G_source='unsupported'
+   end select
+   if (trim(Chi_G_mode)=='COHSEX'.and.disk_kind/=QP_SE_COHSEX)&
+&    call error('[Chi/G] COHSEX mode requires an actual COHSEX ndb.QP; use ChiGMode="QP" for GW energies')
+   if (trim(Chi_G_source)=='unsupported')&
+&    call error('[Chi/G] QP mode needs a diagonal COHSEX or GW ndb.QP (G0W0/GW0, PPA/MPA or real axis)')
+   if (qp%GreenF_n_steps>0) call error('[Chi/G] QP mode reads the Newton ndb.QP, not a Green-function ndb.G')
+   call Chi_G_load_static(qp,X,Xk,trim(Chi_G_mode)=='COHSEX')
    call QP_reset(qp)
    return
  endif

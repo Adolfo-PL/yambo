@@ -176,7 +176,7 @@ module QP_CTL_m
  type(ctl)::QP_ctl_DB_user(1)
 end module
 module global_XC
- integer,parameter::QP_SE_COHSEX=7
+ integer,parameter::QP_SE_COHSEX=7,QP_SE_GoWo_PPA=8,QP_SE_GoWo=9,QP_SE_GWo_PPA=10,QP_SE_GWo=11
  integer::QP_DB_kind=0
 end module
 module IO_m
@@ -194,9 +194,12 @@ end module
 module com
  use pars
  interface msg
-   module procedure msg_scalar,msg_vector,msg_integer
+   module procedure msg_novalue,msg_scalar,msg_vector,msg_integer
  end interface
 contains
+ subroutine msg_novalue(a,b)
+   character(*)::a,b
+ end subroutine
  subroutine msg_scalar(a,b,c)
    character(*)::a,b
    real(SP)::c
@@ -217,6 +220,12 @@ contains
    integer::i
    character(24)::s
    write(s,'(i0)')i
+ end function
+ function real2ch(r)result(s)
+   use pars
+   real(SP)::r
+   character(24)::s
+   write(s,'(es12.4)')r
  end function
 end module
 module LIVE_t
@@ -320,6 +329,7 @@ module pipeline_output
  use pars
  complex(SP),allocatable::saved_c0(:,:,:),saved_p(:,:,:),saved_fxc(:,:,:),saved_freq(:)
  real(SP),allocatable::saved_rcond(:,:)
+ integer::n_warnings=0
 end module
 subroutine scatter_Bamp(s)
  use pars
@@ -404,6 +414,12 @@ subroutine X_irredux(iq,s,m,e,k,w,x,d)
      m%blc(2,1,iw)=optical_sign*cmplx(0._SP, 1.2_SP,SP)*q0_def_norm*factor
    endif
  enddo
+end subroutine
+subroutine warning(s)
+ use pipeline_output
+ character(*)::s
+ print *,'WARNING: ',trim(s)
+ n_warnings=n_warnings+1
 end subroutine
 subroutine error(s)
 #ifdef _TEST_MPI

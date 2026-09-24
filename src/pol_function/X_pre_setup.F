@@ -123,8 +123,8 @@ subroutine X_pre_setup(Xen,Xk,X)
  call parser('ChiFxc',l_Chi_fxc)
  if (l_Chi_fxc) then
    if (trim(Chi_G_mode)/='LEVELS'.and.trim(Chi_G_mode)/='G0'.and.&
-&      trim(Chi_G_mode)/='DYSON'.and.trim(Chi_G_mode)/='COHSEX')&
-&     call error('[Chi] ChiGMode must be LEVELS, G0, COHSEX or DYSON')
+&      trim(Chi_G_mode)/='DYSON'.and.trim(Chi_G_mode)/='COHSEX'.and.trim(Chi_G_mode)/='QP')&
+&     call error('[Chi] ChiGMode must be LEVELS, G0, COHSEX, QP or DYSON')
    if (Chi_G_norm_tol<=0._SP.or.Chi_G_norm_tol>=1._SP.or.Chi_G_check_tol<=0._SP.or.&
 &      Chi_rcond_floor<0._SP.or.Chi_rcond_floor>=1._SP) call error('[Chi] invalid validation tolerances')
    if (trim(Chi_G_mode)/='LEVELS') then
@@ -133,7 +133,7 @@ subroutine X_pre_setup(Xen,Xk,X)
 &       call error('[Chi/G] invalid imaginary frequency range/steps')
      if (have_gpu) call error('[Chi/G] CPU execution required; GPU bubble kernels are not implemented')
      if (X%iq(1)==1.and.trim(Chi_G_mode)=='DYSON')&
-&      call error('[Chi/G] optical q=0 DYSON needs an intraband spectral/Drude treatment; use G0 or COHSEX')
+&      call error('[Chi/G] optical q=0 DYSON needs an intraband spectral/Drude treatment; use G0, COHSEX or QP')
      if (l_X_terminator.or.use_X_DbGd) call error('[Chi/G] disable XTermKind and double-grid interpolation')
      if (X%ehe(1)>0._SP.or.X%ehe(2)>0._SP)&
 &       call error('[Chi/G] transition-energy filtering is unsupported; set EhEngyXs or EhEngyXd to zero')
@@ -148,7 +148,7 @@ subroutine X_pre_setup(Xen,Xk,X)
 &       call error('[Chi/G] disable external X energy corrections; G0 must use the KS reference')
      X%ordering='R'
      X%cg_percentual=0._SP
-     if (trim(Chi_G_mode)=='DYSON'.or.trim(Chi_G_mode)=='COHSEX') call Chi_G_load(X,Xk)
+     if (trim(Chi_G_mode)=='DYSON'.or.trim(Chi_G_mode)=='COHSEX'.or.trim(Chi_G_mode)=='QP') call Chi_G_load(X,Xk)
    endif
  endif
  if (l_Chi_fxc) then

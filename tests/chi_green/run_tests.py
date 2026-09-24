@@ -106,6 +106,12 @@ with tempfile.TemporaryDirectory(prefix='yambo-chi-green-') as directory:
                                   ('static_reference', 'starting energies differ'),
                                   ('static_offdiag', 'off-diagonal COHSEX'),
                                   ('static_duplicate', 'duplicate COHSEX state'),
+                                  ('static_g0w0', 'actual COHSEX ndb.QP'),
+                                  ('qp_wrong_kind', 'diagonal COHSEX or GW ndb.QP'),
+                                  ('qp_greenf', 'not a Green-function ndb.G'),
+                                  ('qp_missing', 'cover every response band'),
+                                  ('qp_crossing', 'cross the fixed KS chemical potential'),
+                                  ('qp_offdiag', 'off-diagonal QP states'),
                                   ('mpi_band', 'use k-only MPI'),
                                   ('mpi_q', 'use k-only MPI'),
                                   ('mpi_g', 'use k-only MPI')]:
