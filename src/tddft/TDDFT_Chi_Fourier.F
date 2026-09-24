@@ -22,11 +22,17 @@ contains
    complex(DP) :: work(size(d_left))
    integer :: ng
 
-   ierr=1
+   ! ierr: 1 empty left vertex, 2 right vertex size, 3 fxc rows, 4 fxc columns
    value=(0._DP,0._DP)
    ng=size(d_left)
+   ierr=1
    if (ng<1) return
-   if (size(d_right)/=ng.or.size(fxc,1)/=ng.or.size(fxc,2)/=ng) return
+   ierr=2
+   if (size(d_right)/=ng) return
+   ierr=3
+   if (size(fxc,1)/=ng) return
+   ierr=4
+   if (size(fxc,2)/=ng) return
    work=matmul(fxc,d_right)
    value=dot_product(d_left,work)
    ierr=0

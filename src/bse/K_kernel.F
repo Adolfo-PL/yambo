@@ -774,7 +774,10 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
              call TDDFT_Chi_pair_G(Chi_static,&
 &              cmplx(BS_T_grp(i_Tgrp_k)%O_tddft_L(:,i_Tk,1,1),kind=DP),&
 &              cmplx(BS_T_grp(i_Tgrp_p)%O_tddft_R(:,i_Tp,1,1),kind=DP),chi_pair,chi_ierr)
-             if (chi_ierr/=0) call error('[Chi/BSK] inverse-Fourier transition projection failed')
+             if (chi_ierr/=0) call error('[Chi/BSK] transition projection failed: code '//trim(intc(chi_ierr))//&
+&              ' ng_fxc='//trim(intc(BS_n_g_fxc))//' fxc='//trim(intc(size(Chi_static,1)))//'x'//&
+&              trim(intc(size(Chi_static,2)))//' L='//trim(intc(size(BS_T_grp(i_Tgrp_k)%O_tddft_L,1)))//&
+&              ' R='//trim(intc(size(BS_T_grp(i_Tgrp_p)%O_tddft_R,1))))
              H_x=H_x+cmplx(chi_pair,kind=SP)/(4._SP*pi)
            endif
          endif
@@ -811,7 +814,10 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
              call TDDFT_Chi_pair_G(Chi_static,&
 &              cmplx(BS_T_grp(i_Tgrp_k)%O_tddft_L(:,i_Tk,1,1),kind=DP),&
 &              cmplx(BS_T_grp(i_Tgrp_p)%O_tddft_R(:,i_Tp,1,1),kind=DP),chi_pair,chi_ierr)
-             if (chi_ierr/=0) call error('[Chi/BSK] inverse-Fourier transition projection failed')
+             if (chi_ierr/=0) call error('[Chi/BSK] transition projection failed: code '//trim(intc(chi_ierr))//&
+&              ' ng_fxc='//trim(intc(BS_n_g_fxc))//' fxc='//trim(intc(size(Chi_static,1)))//'x'//&
+&              trim(intc(size(Chi_static,2)))//' L='//trim(intc(size(BS_T_grp(i_Tgrp_k)%O_tddft_L,1)))//&
+&              ' R='//trim(intc(size(BS_T_grp(i_Tgrp_p)%O_tddft_R,1))))
              H_x=H_x+cmplx(chi_pair,kind=SP)/(4._SP*pi)
            endif
          endif
