@@ -113,7 +113,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  !
  logical :: BS_blk_done(n_BS_blks),l_partial_kernel_loaded
  integer :: n_steps,m_steps,i_steps
- integer :: ID_Chi,io_Chi_err,ig,jg
+ integer :: ID_Chi,io_Chi_err,chi_ierr,ig,jg
  integer, external :: io_Chi
  logical :: l_KfnQPdb
  real(SP) :: chi_norm,chi_antiherm,chi_scale,chi_raw_norm,chi_raw_antiherm,chi_diff
@@ -606,7 +606,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
    !DEV_OMP &       ig_W,iq_W,iq_W_s,iq_W_bz,iq_W_bz_mq,ig_W_mq,iq_W_mq,iq_W_s_mq,H_x,H_c, &
    !DEV_OMP &       i_p_bz_last,i_k_bz_last,i_pmq_bz_last,i_kmq_bz_last, &
    !DEV_OMP &       iq_W_bz_last,ig_W_last,iq_W_bz_mq_last,ig_W_mq_last, &
-   !DEV_OMP &       i_k_bz_mem,i_kmq_bz_mem,qindx_tmp,BS_mat_tmp,tddft_wf )
+   !DEV_OMP &       i_k_bz_mem,i_kmq_bz_mem,qindx_tmp,BS_mat_tmp,tddft_wf,chi_pair,chi_ierr )
    !
    call OPENMP_update(master_thread)   
    !
@@ -773,8 +773,8 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
            if(BS_K_is_Chi) then
              call TDDFT_Chi_pair_G(Chi_static,&
 &              cmplx(BS_T_grp(i_Tgrp_k)%O_tddft_L(:,i_Tk,1,1),kind=DP),&
-&              cmplx(BS_T_grp(i_Tgrp_p)%O_tddft_R(:,i_Tp,1,1),kind=DP),chi_pair,io_Chi_err)
-             if (io_Chi_err/=0) call error('[Chi/BSK] inverse-Fourier transition projection failed')
+&              cmplx(BS_T_grp(i_Tgrp_p)%O_tddft_R(:,i_Tp,1,1),kind=DP),chi_pair,chi_ierr)
+             if (chi_ierr/=0) call error('[Chi/BSK] inverse-Fourier transition projection failed')
              H_x=H_x+cmplx(chi_pair,kind=SP)/(4._SP*pi)
            endif
          endif
@@ -810,8 +810,8 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
            if(BS_K_is_Chi) then
              call TDDFT_Chi_pair_G(Chi_static,&
 &              cmplx(BS_T_grp(i_Tgrp_k)%O_tddft_L(:,i_Tk,1,1),kind=DP),&
-&              cmplx(BS_T_grp(i_Tgrp_p)%O_tddft_R(:,i_Tp,1,1),kind=DP),chi_pair,io_Chi_err)
-             if (io_Chi_err/=0) call error('[Chi/BSK] inverse-Fourier transition projection failed')
+&              cmplx(BS_T_grp(i_Tgrp_p)%O_tddft_R(:,i_Tp,1,1),kind=DP),chi_pair,chi_ierr)
+             if (chi_ierr/=0) call error('[Chi/BSK] inverse-Fourier transition projection failed')
              H_x=H_x+cmplx(chi_pair,kind=SP)/(4._SP*pi)
            endif
          endif
