@@ -175,6 +175,14 @@ program test_pipeline
  call require(abs(Chi_G_static_energy(1,1,1)+1.2_DP)<100._DP*epsilon(1._SP),'QP valence pole at Re E')
  call require(abs(Chi_G_static_energy(2,1,1)-1.4_DP)<100._DP*epsilon(1._SP),'QP conduction pole at Re E')
  call require(n_warnings==0,'a damping-size width is not reported as a lifetime')
+ call require(abs(Chi_G_mu-.1_SP)<100._SP*epsilon(1._SP),'chemical potential at the middle of the QP gap')
+ ! Yambo keeps E_Fermi in the unshifted frame. A stale value above the QP
+ ! valence poles (-1.2) must not be mistaken for a chemical potential.
+ call Chi_G_free()
+ Chi_KS_levels%E_Fermi=-1.5_SP
+ call Chi_G_load(x,k)
+ call require(abs(Chi_G_static_energy(1,1,1)+1.2_DP)<100._DP*epsilon(1._SP),'unshifted E_Fermi is ignored')
+ Chi_KS_levels%E_Fermi=0._SP
  X_par(1)%blc=original
  call Chi_fxc_eval(2,1,x,Chi_KS_levels,k,w,d)
  do iw=1,3
@@ -199,6 +207,15 @@ program test_pipeline
  call Chi_G_load(x,k)
  call require(minval(Chi_G_norm)>.98_SP,'loader retains unnormalized spectral weight')
  call require(maxval(Chi_G_norm)<1._SP,'loader does not hide finite spectral tails')
+ call require(abs(Chi_G_mu-.1_SP)<1.E-3_SP,'Dyson chemical potential at the middle of the QP peaks')
+ call Chi_G_free()
+ ! ndb.G stores Yambo's unshifted E_Fermi. It must not set the occupations of the
+ ! (shifted) spectral grid: the valence peak (-1.2, grid point 941) stays filled.
+ Chi_KS_levels%E_Fermi=-1.5_SP
+ call Chi_G_load(x,k)
+ call require(Chi_G_occupation(1,1,1,941)==1._DP.and.Chi_G_occupation(2,1,1,1071)==0._DP,&
+&             'unshifted E_Fermi does not set the Dyson occupations')
+ Chi_KS_levels%E_Fermi=0._SP
  call Chi_G_free()
  ! Exercise production QP_Green_Function, including the XC subtraction.
  QP_Sc_steps=3;QP_n_states=1;use_GreenF_Zoom=.FALSE.;use_GreenF_to_eval_QP=.FALSE.

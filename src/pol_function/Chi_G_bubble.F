@@ -170,7 +170,6 @@ subroutine Chi_G_load_static(qp,X,Xk,strict)
  use Chi_m, ONLY:Chi_KS_levels,Chi_G_mu,Chi_G_static_energy,Chi_G_static_occupation,Chi_G_norm,&
 &                 Chi_G_source
  use stderr, ONLY:real2ch
- use Chi_Green_m, ONLY:Chi_fermi
  use X_m, ONLY:X_t
  use R_lattice, ONLY:bz_samp
  use electrons, ONLY:n_sp_pol,spin,spin_occ
@@ -181,7 +180,7 @@ subroutine Chi_G_load_static(qp,X,Xk,strict)
  type(bz_samp), intent(in) :: Xk
  logical, intent(in) :: strict
  logical, allocatable :: covered(:,:,:)
- real(DP) :: pole,occupation,tolerance,width,max_width,z_min,z_max,max_real_width
+ real(DP) :: pole,occupation,tolerance,width,max_width,z_min,z_max,max_real_width,top_occ,bottom_empty
  integer :: i,a,ik,s,n_real_width
  character(6) :: what
  what='QP'
@@ -195,8 +194,8 @@ subroutine Chi_G_load_static(qp,X,Xk,strict)
  allocate(Chi_G_norm(X%ib(2),Xk%nibz,n_sp_pol))
  covered=.FALSE.
  Chi_G_static_energy=0._DP; Chi_G_static_occupation=0._DP; Chi_G_norm=0._SP
- Chi_G_mu=Chi_KS_levels%E_Fermi
  max_width=0._DP; max_real_width=0._DP; n_real_width=0
+ top_occ=-huge(1._DP); bottom_empty=huge(1._DP)
  z_min=huge(1._DP); z_max=-huge(1._DP)
  do i=1,qp%n_states
    a=qp%table(i,1); ik=qp%table(i,3); s=spin(qp%table(i,:))
@@ -229,15 +228,30 @@ subroutine Chi_G_load_static(qp,X,Xk,strict)
 &       call error('[Chi/G] static COHSEX requires unit residues')
      z_min=min(z_min,real(qp%Z(i),DP)); z_max=max(z_max,real(qp%Z(i),DP))
    endif
-   occupation=Chi_fermi(pole,real(Chi_G_mu,DP),0._DP)
-   if (abs(occupation-real(Chi_KS_levels%f(a,ik,s),DP)/real(spin_occ,DP))>tolerance)&
-&     call error('[Chi/G] '//trim(what)//' poles cross the fixed KS chemical potential; occupations require a new treatment')
+   ! Occupations stay those of the insulating T=0 KS reference. Yambo shifts
+   ! E%E so that its Fermi level is zero but keeps the unshifted value in
+   ! E_Fermi (OCCUPATIONS_Fermi), so E_Fermi is not a chemical potential in the
+   ! frame of these poles. What must hold is that the QP spectrum stays gapped.
+   occupation=real(Chi_KS_levels%f(a,ik,s),DP)/real(spin_occ,DP)
+   if (occupation>0.5_DP) then
+     top_occ=max(top_occ,pole)
+   else
+     bottom_empty=min(bottom_empty,pole)
+   endif
    Chi_G_static_energy(a,ik,s)=pole
    Chi_G_static_occupation(a,ik,s)=occupation
    Chi_G_norm(a,ik,s)=1._SP
    covered(a,ik,s)=.TRUE.
  enddo
  if (.not.all(covered)) call error('[Chi/G] '//trim(what)//' QPkrange must cover every response band, k point and spin')
+ if (top_occ>=bottom_empty) call error('[Chi/G] '//trim(what)//&
+&  ' poles close the gap: an occupied pole lies above an empty one; occupations require a new treatment')
+ ! Chemical potential in the frame of the poles: the middle of the QP gap.
+ if (top_occ>-huge(1._DP).and.bottom_empty<huge(1._DP)) then
+   Chi_G_mu=real((top_occ+bottom_empty)/2._DP,SP)
+   call msg('r','[Chi/G] '//trim(what)//' gap of the response window (min empty - max occupied) [eV]',&
+&           real((bottom_empty-top_occ)*HA2EV,SP))
+ endif
  if (strict) then
    call msg('r','[Chi/G] max |Im E| dropped from COHSEX poles (damped static W) [eV]',real(max_width*HA2EV,SP))
  else
@@ -262,7 +276,8 @@ subroutine Chi_G_load(X,Xk)
  use Chi_Green_m, ONLY:Chi_spectral_weights,Chi_fermi,Chi_Dyson
  use X_m, ONLY:X_t
  use R_lattice, ONLY:bz_samp
- use electrons, ONLY:spin,n_sp_pol
+ use electrons, ONLY:spin,n_sp_pol,spin_occ
+ use units, ONLY:HA2EV
  use QP_m, ONLY:QP_t,QP_reset,QP_G_er,QP_G_dr,GF_is_causal,QP_G_Zoom_treshold
  use global_XC, ONLY:QP_DB_kind,QP_SE_COHSEX,QP_SE_GoWo_PPA,QP_SE_GoWo,QP_SE_GWo_PPA,QP_SE_GWo
  use IO_int, ONLY:io_control
@@ -274,10 +289,10 @@ subroutine Chi_G_load(X,Xk)
  type(bz_samp), intent(in) :: Xk
  type(QP_t) :: qp
  real(SP) :: saved_er(2),saved_dr(2),saved_zoom
- integer :: saved_kind,disk_kind,ID,io_err,i,a,ik,s,iw,n,info
+ integer :: saved_kind,disk_kind,ID,io_err,i,a,ik,s,iw,n,info,ipk
  logical :: saved_causal
  logical, allocatable :: covered(:,:,:)
- real(DP) :: norm,reference_tolerance
+ real(DP) :: norm,reference_tolerance,peak,top_occ,bottom_empty
  complex(DP), allocatable :: reconstructed(:)
  integer, external :: io_QP_and_GF
  if (allocated(Chi_G_energy).or.allocated(Chi_G_static_energy)) return
@@ -321,8 +336,11 @@ subroutine Chi_G_load(X,Xk)
    return
  endif
  if (.not.qp%GreenF_retarded) call error('[Chi/G] rebuild ndb.G with GRetarded; legacy spectra are unsupported')
- Chi_G_mu=qp%GreenF_mu
- if (abs(Chi_G_mu-Chi_KS_levels%E_Fermi)>1.E-5_SP) call error('[Chi/G] KS/G energy references differ')
+ ! G_CHEMICAL_POTENTIAL is Yambo's E_Fermi, which stays in the unshifted frame
+ ! while the energies (and this spectral grid) are shifted to put the Fermi
+ ! level at zero (OCCUPATIONS_Fermi). It identifies the reference; it is not the
+ ! chemical potential of the grid. That is set below from the QP peaks.
+ if (abs(qp%GreenF_mu-Chi_KS_levels%E_Fermi)>1.E-5_SP) call error('[Chi/G] KS/G energy references differ')
  n=qp%GreenF_n_steps
  if (n<2) call error('[Chi/G] at least two spectral energy samples required')
  allocate(reconstructed(n))
@@ -333,6 +351,7 @@ subroutine Chi_G_load(X,Xk)
  allocate(Chi_G_occupation(X%ib(2),Xk%nibz,n_sp_pol,n))
  allocate(Chi_G_norm(X%ib(2),Xk%nibz,n_sp_pol))
  Chi_G_energy=0._DP; Chi_G_weight=0._DP; Chi_G_occupation=0._DP; Chi_G_norm=0._SP
+ top_occ=-huge(1._DP); bottom_empty=huge(1._DP)
  reference_tolerance=1.E-5_DP
  do i=1,qp%n_states
    a=qp%table(i,1); ik=qp%table(i,3); s=spin(qp%table(i,:))
@@ -359,12 +378,32 @@ subroutine Chi_G_load(X,Xk)
      call msg('r','[Chi/G] spectral integral at rejected state',real(norm,SP))
      call error('[Chi/G] expand/refine GEnRnge/GEnSteps; spectral weight is not normalized')
    endif
-   do iw=1,n
-     Chi_G_occupation(a,ik,s,iw)=Chi_fermi(Chi_G_energy(a,ik,s,iw),real(Chi_G_mu,DP),real(Chi_G_kbt,DP))
-   enddo
+   ! QP peak of this state, to place the chemical potential inside the QP gap
+   ipk=maxloc(-aimag(qp%GreenF(i,:)),1)
+   peak=real(qp%GreenF_W(i,ipk),DP)
+   if (real(Chi_KS_levels%f(a,ik,s),DP)/real(spin_occ,DP)>0.5_DP) then
+     top_occ=max(top_occ,peak)
+   else
+     bottom_empty=min(bottom_empty,peak)
+   endif
    covered(a,ik,s)=.TRUE.
  enddo
  if (.not.all(covered)) call error('[Chi/G] QPkrange must cover every response band, k point and spin')
+ if (top_occ<=-huge(1._DP).or.bottom_empty>=huge(1._DP))&
+&  call error('[Chi/G] the response bands must include both occupied and empty states')
+ if (top_occ>=bottom_empty) call error('[Chi/G] ndb.G peaks close the gap: an occupied QP peak lies above an empty one')
+ ! T=0 insulator: occupy the spectral weight below the middle of the QP gap.
+ Chi_G_mu=real((top_occ+bottom_empty)/2._DP,SP)
+ call msg('r','[Chi/G] chemical potential of the spectral grid (mid QP gap) [eV]',real(Chi_G_mu*HA2EV,SP))
+ do s=1,n_sp_pol
+   do ik=1,Xk%nibz
+     do a=X%ib(1),X%ib(2)
+       do iw=1,n
+         Chi_G_occupation(a,ik,s,iw)=Chi_fermi(Chi_G_energy(a,ik,s,iw),real(Chi_G_mu,DP),real(Chi_G_kbt,DP))
+       enddo
+     enddo
+   enddo
+ enddo
  call msg('r','[Chi/G] spectral integral min/max',&
 & (/minval(Chi_G_norm(X%ib(1):,:,:)),maxval(Chi_G_norm(X%ib(1):,:,:))/))
  deallocate(covered,reconstructed)

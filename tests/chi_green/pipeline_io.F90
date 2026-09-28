@@ -36,6 +36,7 @@ integer function io_QP_and_GF(s,qp,id)
  use pars
  use QP_m
  use global_XC
+ use Chi_m, only:Chi_KS_levels
  character(*)::s
  type(QP_t)::qp
  integer::id,i,iw,band,kpt,n
@@ -43,7 +44,8 @@ integer function io_QP_and_GF(s,qp,id)
  qp%nk=2;qp%nb=2;qp%n_states=4;qp%GreenF_n_steps=2001;qp%GreenF_retarded=.TRUE.
  ! A Newton ndb.QP carries no Green-function grid.
  if(index(s,'.QP')>0.and.index(s,'greenf')==0)qp%GreenF_n_steps=0
- qp%GreenF_mu=0._SP
+ ! QP_driver stores Yambo's E_Fermi, which is in the unshifted energy frame.
+ qp%GreenF_mu=Chi_KS_levels%E_Fermi
  if(index(s,'missing')>0)qp%n_states=3
  if(index(s,'legacy')>0)qp%GreenF_retarded=.FALSE.
  n=qp%GreenF_n_steps
@@ -72,7 +74,8 @@ integer function io_QP_and_GF(s,qp,id)
    endif
    if(index(s,'lifetime')>0)qp%E(1)=qp%E(1)+cmplx(0._SP,.1_SP,SP)
    if(index(s,'linewidth')>0)qp%E(1)=qp%E(1)+cmplx(0._SP,.1_SP,SP)
-   if(index(s,'crossing')>0)qp%E(1)=1._SP
+   ! An occupied pole above the lowest empty one (1.4): the QP gap closes.
+   if(index(s,'crossing')>0)qp%E(1)=2._SP
    if(index(s,'reference')>0)qp%E_bare(1)=qp%E_bare(1)+1._SP
    if(index(s,'offdiag')>0)qp%table(1,2)=2
    if(index(s,'duplicate')>0)qp%table(2,:)=qp%table(1,:)

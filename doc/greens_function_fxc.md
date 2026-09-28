@@ -23,9 +23,13 @@ G_nk(z) = 1 / [z - epsilon_KS,nk - DeltaSigma_nk(z)]
 A_nk(E) = -Im G_nk(E + i eta) / pi
 ```
 
-All energies here are absolute in Yambo's KS energy reference. The chemical
-potential enters the occupations. Equivalently, energies measured relative
-to the chemical potential give `G(z)=1/[z+mu-epsilon_KS-DeltaSigma]`.
+All energies here are in Yambo's internal KS frame, which OCCUPATIONS_Fermi
+shifts so that the Fermi level (the VBM of an insulator) is zero. Yambo keeps
+the unshifted Fermi energy in `E_Fermi`; `ndb.G` stores it as
+`G_CHEMICAL_POTENTIAL` only to identify the reference. The loaders never use
+it as a chemical potential: occupations are those of the T=0 KS reference, and
+the chemical potential of the response is placed in the middle of the QP gap
+(between the highest occupied and the lowest empty QP pole or peak).
 Positive `GDmRnge` controls eta; `GDamping` must be zero so Sigma and G are
 evaluated at the same complex energy. The retarded PPA path preserves this
 imaginary part when preparing its self-energy sampling grid.
@@ -167,9 +171,9 @@ The imaginary export grid can contain many frequencies even though native
 screening is static. Its response matrix and native frequency grid are
 preserved. The loader rejects a non-COHSEX QP database, nonunit residues,
 linewidths, off-diagonal or duplicate states, incomplete state coverage,
-different KS reference energies, and corrected poles that cross the fixed
-KS chemical potential. Such crossings need a separate treatment of the
-chemical potential and occupations. `ChiGNormTol` is used only for the
+different KS reference energies, and corrected poles that close the gap (an
+occupied pole above an empty one). Such crossings need a separate treatment of
+the chemical potential and occupations. `ChiGNormTol` is used only for the
 dynamic spectral route; static poles have exact unit weight.
 
 ### GW energies as unit-weight poles: QP route
@@ -189,8 +193,8 @@ dropped from QP poles`). A width larger than a quarter of the state's QP shift
 is a lifetime rather than damping noise; it is dropped with a warning that
 points to `DYSON`. Weighting the poles by Z alone would break the spectral sum
 rule, so it is not offered. All other checks are those of the COHSEX route:
-diagonal states, full band/k/spin coverage, the KS reference energies and no
-crossing of the KS chemical potential. A Green-function `ndb.G` is rejected;
+diagonal states, full band/k/spin coverage, the KS reference energies and an
+open QP gap. A Green-function `ndb.G` is rejected;
 use the Newton `ndb.QP`. `ChiGMode="COHSEX"` keeps its strict checks and still
 rejects a non-COHSEX database.
 
@@ -359,7 +363,7 @@ yambo -F chi_dyson.in -J chi_dyson
 ```
 
 The loader checks the k mesh and ordering, band/spin coverage, diagonal
-state table, KS starting energies, chemical potential, positive damping,
+state table, KS starting energies, energy reference, an open QP gap, positive damping,
 causality, spectral norms, and consistency of exported G with its Dyson
 self-energy. A partial QPkrange fails explicitly. `ChiGNormTol=0.05` is an
 initial diagnostic threshold, not a convergence claim: tighten it while
