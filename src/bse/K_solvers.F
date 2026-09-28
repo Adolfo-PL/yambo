@@ -14,7 +14,7 @@ subroutine K_solvers(iq,Ken,Xk,q,X_static,W_bss)
  use X_m,            ONLY:X_t
  use BS_solvers,     ONLY:BSS_desc,BSS_free,BS_mat,run_Haydock,&
 &                         run_inversion,run_Diago,run_Slepc
- use BS,             ONLY:BS_K_has_been_calculated_loaded,&
+ use BS,             ONLY:BS_K_has_been_calculated_loaded,BS_K_Chi_dynamic,&
  &                       BS_blks_free,l_BS_abs,l_BS_kerr,l_BS_magnons,l_BS_dichroism
  use parallel_m,     ONLY:master_cpu,CPU_structure
  use IO_int,         ONLY:IO_and_Messaging_switch
@@ -49,6 +49,19 @@ subroutine K_solvers(iq,Ken,Xk,q,X_static,W_bss)
  ! I/O. All read. Only master writes.
  ! 
  call IO_and_Messaging_switch("+io_out",CONDITION=master_cpu)
+ !
+ ! Frequency-dependent CHI kernel: one solve per frequency replaces the requested solver
+ !
+ if (BS_K_Chi_dynamic) then
+   call K_Chi_dynamic(iq,W_bss)
+   call BSS_free( )
+   call BSS_MAGN_free( )
+   call BSS_DICH_free( )
+   call BSS_PL_free( )
+   YAMBO_FREE(BS_mat)
+   call BS_blks_free(1)
+   return
+ endif
  !
  ! Diagonalization
  !

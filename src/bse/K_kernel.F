@@ -29,7 +29,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  use BS,            ONLY:BS_bands,BS_res_K_corr,BS_W,BS_W_is_diagonal,&
 &                        BS_res_K_exchange,BS_Block_size,BS_n_g_W,&
 &                        O_ng,BS_n_g_exch,BS_n_g_fxc,BS_identifier,BS_LiveTiming_steps,&
-&                        BS_K_dim,BS_K_is_ALDA,BS_K_is_Chi,BS_K_coupling,BS_cpl_K_exchange,&
+&                        BS_K_dim,BS_K_is_ALDA,BS_K_is_Chi,BS_K_Chi_dynamic,BS_K_coupling,BS_cpl_K_exchange,&
 &                        BS_cpl_K_corr,K_EXCH_collision,K_CORR_collision,&
 &                        WF_phase,n_BS_blks,BS_blk,BS_T_grp,&
 &                        BS_nT_grps,BS_blks_free,l_BS_ares_from_res,&
@@ -53,6 +53,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  use parser_m,      ONLY:parser
  use Chi_m,         ONLY:Chi_ng,Chi_n_freqs,Chi_freqs,Chi_fxc,Chi_free
  use Chi_m,         ONLY:Chi_optical_q0,Chi_optical_q0_known
+ use Chi_m,         ONLY:Chi_dyn_V,Chi_dyn_s,Chi_dyn_filled,Chi_dyn_c,Chi_dyn_free
  use BS_solvers,    ONLY:BSS_q0
  use TDDFT_Chi_Fourier_m, ONLY:TDDFT_Chi_pair_G
  !
@@ -113,7 +114,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  !
  logical :: BS_blk_done(n_BS_blks),l_partial_kernel_loaded
  integer :: n_steps,m_steps,i_steps
- integer :: ID_Chi,io_Chi_err,chi_ierr,ig,jg,chi_grp_p
+ integer :: ID_Chi,io_Chi_err,chi_ierr,ig,jg,chi_grp_p,i_T_dyn
  integer, external :: io_Chi
  logical :: l_KfnQPdb
  real(SP) :: chi_norm,chi_antiherm,chi_scale,chi_raw_norm,chi_raw_antiherm,chi_diff
@@ -366,31 +367,44 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
      io_Chi_err=io_Chi(X,Chi_w,ID_Chi)
      if (io_Chi_err/=0) call error('[Chi/BSK] cannot read ndb.Chi q fragment (IO code '//trim(intc(io_Chi_err))//')')
      if (Chi_n_freqs<1) call error('[Chi/BSK] ndb.Chi contains no frequency samples')
-     if (abs(Chi_freqs(1))>1.E-7_SP) &
+     if (BS_K_Chi_dynamic) then
+       ! fxc(w) stays out of the BSE matrix. The transition vertices are kept below and
+       ! K_Chi_dynamic projects fxc at every BSE frequency (checked there against ndb.Chi).
+       call Chi_dyn_free()
+       allocate(Chi_dyn_V(Chi_ng,BS_K_dim(1),2),Chi_dyn_s(BS_K_dim(1)),Chi_dyn_filled(BS_K_dim(1)))
+       Chi_dyn_V=(0._DP,0._DP)
+       Chi_dyn_s=0._DP
+       Chi_dyn_filled=.FALSE.
+       Chi_dyn_c=real(Co,DP)/(4._DP*real(pi,DP))
+       call msg('r','[Chi/BSK] frequency-dependent kernel from ndb.Chi @q',iq)
+       call msg('r','[Chi/BSK] ndb.Chi frequencies',Chi_n_freqs)
+     else
+       if (abs(Chi_freqs(1))>1.E-7_SP) &
 &      call error('[Chi/BSK] first ndb.Chi frequency must be exactly zero for static Casida')
-     ! Hermiticity is judged twice: on the stored fxc, as before, and on
-     ! |q+G| fxc |q+G'| = 4 pi (A^-1 - B^-1), which is O(1) in every block.
-     ! At q=0 the stored head is O(1/q0**2) and hides the body from the first.
-     chi_raw_norm=1._SP
-     chi_raw_antiherm=0._SP
-     chi_norm=0._SP
-     chi_antiherm=0._SP
-     do jg=1,Chi_ng
-       do ig=1,Chi_ng
-         chi_diff=abs(Chi_fxc(ig,jg,1)-conjg(Chi_fxc(jg,ig,1)))
-         chi_scale=abs(bare_qpg(iq,ig))*abs(bare_qpg(iq,jg))
-         chi_raw_norm=max(chi_raw_norm,abs(Chi_fxc(ig,jg,1)))
-         chi_raw_antiherm=max(chi_raw_antiherm,chi_diff)
-         chi_norm=max(chi_norm,abs(Chi_fxc(ig,jg,1))*chi_scale)
-         chi_antiherm=max(chi_antiherm,chi_diff*chi_scale)
+       ! Hermiticity is judged twice: on the stored fxc, as before, and on
+       ! |q+G| fxc |q+G'| = 4 pi (A^-1 - B^-1), which is O(1) in every block.
+       ! At q=0 the stored head is O(1/q0**2) and hides the body from the first.
+       chi_raw_norm=1._SP
+       chi_raw_antiherm=0._SP
+       chi_norm=0._SP
+       chi_antiherm=0._SP
+       do jg=1,Chi_ng
+         do ig=1,Chi_ng
+           chi_diff=abs(Chi_fxc(ig,jg,1)-conjg(Chi_fxc(jg,ig,1)))
+           chi_scale=abs(bare_qpg(iq,ig))*abs(bare_qpg(iq,jg))
+           chi_raw_norm=max(chi_raw_norm,abs(Chi_fxc(ig,jg,1)))
+           chi_raw_antiherm=max(chi_raw_antiherm,chi_diff)
+           chi_norm=max(chi_norm,abs(Chi_fxc(ig,jg,1))*chi_scale)
+           chi_antiherm=max(chi_antiherm,chi_diff*chi_scale)
+         enddo
        enddo
-     enddo
-     if (chi_raw_antiherm>1.E-4_SP*chi_raw_norm.or.&
+       if (chi_raw_antiherm>1.E-4_SP*chi_raw_norm.or.&
 &        (chi_antiherm>1.E-4_SP*chi_norm.and.chi_antiherm>tiny(1._SP))) &
 &      call error('[Chi/BSK] zero-frequency fxc is not Hermitian; static Casida is invalid')
-     YAMBO_ALLOC(Chi_static,(Chi_ng,Chi_ng))
-     Chi_static=cmplx(Chi_fxc(:,:,1),kind=DP)
-     call msg('r','[Chi/BSK] static inverse-Fourier kernel from ndb.Chi @q',iq)
+       YAMBO_ALLOC(Chi_static,(Chi_ng,Chi_ng))
+       Chi_static=cmplx(Chi_fxc(:,:,1),kind=DP)
+       call msg('r','[Chi/BSK] static inverse-Fourier kernel from ndb.Chi @q',iq)
+     endif
    endif
    !
    call WF_load(WF,NG(1),NG(2),(/1,Ken%nbm/),(/1,Xk%nibz/),space='R',title="-TDDFT",keep_states_to_load=.true.)
@@ -598,10 +612,22 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
      allocate(chi_R_res(size(BS_T_grp(i_Tgrp_p)%O_tddft_R,1),size(BS_T_grp(i_Tgrp_p)%O_tddft_R,2)))
      call TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_Tgrp_p,NG,l_bs_tddft_wf_in_loop,tddft_wf,"R",BS_K_is_Chi)
      chi_R_res=BS_T_grp(i_Tgrp_p)%O_tddft_R(:,:,1,1)
-     if (BS_K_coupling) then
+     ! The dynamic solver needs the de-excitation vertex also in TDA (anti-resonant block)
+     if (BS_K_coupling.or.BS_K_Chi_dynamic) then
        allocate(chi_R_cpl(size(chi_R_res,1),size(chi_R_res,2)))
        call TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_Tgrp_p,NG,l_bs_tddft_wf_in_loop,tddft_wf,"C",BS_K_is_Chi)
        chi_R_cpl=BS_T_grp(i_Tgrp_p)%O_tddft_R(:,:,1,1)
+     endif
+     if (BS_K_Chi_dynamic) then
+       ! Column coordinate of this group in the resonant space (also for "C" blocks)
+       do i_Tp=1,BS_T_grp(i_Tgrp_p)%size
+         i_T_dyn=BS_blk(i_block)%coordinate(2)+i_Tp-1
+         if (i_T_dyn>BS_K_dim(1)) call error('[Chi/BSK] BSEChiDyn: use BSEmod= "coupling" or "resonant"')
+         Chi_dyn_V(:,i_T_dyn,1)=cmplx(chi_R_res(:,i_Tp),kind=DP)
+         Chi_dyn_V(:,i_T_dyn,2)=cmplx(chi_R_cpl(:,i_Tp),kind=DP)
+         Chi_dyn_s(i_T_dyn)=sqrt(real(BS_T_grp(i_Tgrp_p)%f(i_Tp),DP))
+         Chi_dyn_filled(i_T_dyn)=.TRUE.
+       enddo
      endif
      chi_grp_p=i_Tgrp_p
    endif
@@ -791,7 +817,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
            if(l_tddft_rsum)     H_x=H_x+TDDFT_ALDA_eh_space_R_kernel(is_k,os_k,is_p,os_p,tddft_wf,'RES')
            if(l_tddft_gsum.and.BS_K_is_ALDA) H_x=H_x+TDDFT_ALDA_eh_space_G_kernel(BS_n_g_fxc,&
 &                                   BS_T_grp(i_Tgrp_p),i_Tp, BS_T_grp(i_Tgrp_k),i_Tk)
-           if(BS_K_is_Chi) then
+           if(BS_K_is_Chi.and..not.BS_K_Chi_dynamic) then
              call TDDFT_Chi_pair_G(Chi_static,&
 &              cmplx(BS_T_grp(i_Tgrp_k)%O_tddft_L(:,i_Tk,1,1),kind=DP),&
 &              cmplx(chi_R_res(:,i_Tp),kind=DP),chi_pair,chi_ierr)
@@ -831,7 +857,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
            if(l_tddft_rsum)     H_x=H_x+TDDFT_ALDA_eh_space_R_kernel(is_k,os_k,is_p,os_p,tddft_wf,'CPL')
            if(l_tddft_gsum.and.BS_K_is_ALDA) H_x=H_x+TDDFT_ALDA_eh_space_G_kernel(BS_n_g_fxc,&
 &                                 BS_T_grp(i_Tgrp_p),i_Tp, BS_T_grp(i_Tgrp_k),i_Tk)
-           if(BS_K_is_Chi) then
+           if(BS_K_is_Chi.and..not.BS_K_Chi_dynamic) then
              call TDDFT_Chi_pair_G(Chi_static,&
 &              cmplx(BS_T_grp(i_Tgrp_k)%O_tddft_L(:,i_Tk,1,1),kind=DP),&
 &              cmplx(chi_R_cpl(:,i_Tp),kind=DP),chi_pair,chi_ierr)
@@ -966,10 +992,13 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
    else if (BS_K_is_ALDA) then
      YAMBO_FREE(F_xc_mat)
    else if (BS_K_is_Chi) then
-     YAMBO_FREE(Chi_static)
+     if (allocated(Chi_static)) then
+       YAMBO_FREE(Chi_static)
+     endif
      if (allocated(chi_R_res)) deallocate(chi_R_res)
      if (allocated(chi_R_cpl)) deallocate(chi_R_cpl)
-     call Chi_free()
+     ! K_Chi_dynamic still needs fxc(w) and its frequencies
+     if (.not.BS_K_Chi_dynamic) call Chi_free()
    endif
    !
  endif

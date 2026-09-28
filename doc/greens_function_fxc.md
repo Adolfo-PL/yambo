@@ -219,11 +219,94 @@ normalization, G basis, and zero-frequency Hermiticity before projection.
 The BSE path currently requires one CPU rank, scalar unpolarized states,
 and a matrix solver. Its static Casida matrix uses only the first (zero)
 frequency of the exported kernel. Start by comparing `G0` against the
-ordinary KS calculation; then compare the `COHSEX` result. These optical
-steps still require an end-to-end check with a real Yambo calculation. Use
-a new BSE job when changing the response database or optical direction;
-Chi kernel restarts are rejected because the old kernel cannot be
-verified against the new inputs.
+ordinary KS calculation; then compare the `COHSEX` result. With coupling,
+the BSE bands and the G basis of the `ndb.Chi`, the static Casida response
+reproduces the `ndb.Chi` response at zero frequency exactly (checked on
+monolayer WS2). Use a new BSE job when changing the response database or
+optical direction; Chi kernel restarts are rejected because the old kernel
+cannot be verified against the new inputs.
+
+### Frequency-dependent Casida: `BSEChiDyn`
+
+A static kernel reproduces the zero-frequency response but cannot move the
+absorption peaks: the Casida poles stay close to the KS transitions and only
+their weights change. `BSEChiDyn` uses the whole real-axis kernel instead.
+With `BSKmod="CHI"`, `K_kernel` keeps fxc out of the BSE matrix and stores the
+transition vertices; `K_Chi_dynamic` then solves, at every BSE frequency
+z = w + i eta,
+
+```
+Resp(w)  = -Co B^T [ z - H0 - Kf(z) ]^-1 A
+Kf_xy(z) = spin_occ/(Nk V) diag(sqrt f) V_x^H fxc(z) V_y diag(sqrt f)
+```
+
+`H0` is the ordinary BSE matrix (KS transition energies plus exchange), `V_x`
+the vertices of the static projection (excitation vertices, and de-excitation
+vertices for the anti-resonant pairs), `A` and `B` the residual vectors of the
+diagonalization solver. All blocks see the same retarded fxc(z). Since
+fxc = chi0^-1 - P^-1, the Woodbury identity makes the coupled response equal
+to P plus local fields whenever the BSE transitions build the same chi0 as the
+`ndb.Chi`: same bands, k grid, G basis, frequencies and damping. For a
+z-independent Hermitian fxc it equals the diagonalization result.
+
+```text
+BSKmod= "CHI"
+BSEChiDyn
+BSEmod= "coupling"
+BSENGexx= <G-basis size of ndb.Chi>  RL
+BSENGfxc= <G-basis size of ndb.Chi>  RL
+% BEnRange
+ <first Re w> | <last Re w> | eV       # the ndb.Chi grid
+%
+BEnSteps= <number of ndb.Chi frequencies>
+% BDmRange
+ <eta> | <eta> | eV
+%
+BSEprop= "abs"
+```
+
+The `ndb.Chi` must be a real-axis, retarded export (`ChiGAxis="REAL"` in the G
+modes, which force retarded ordering; `GrFnTpXd="R"` in LEVELS mode). fxc is
+not interpolated in frequency: the BSE grid must be the `ndb.Chi` grid, and the
+error message prints the `BEnRange`, `BEnSteps` and `BDmRange` to use. The
+solver replaces the requested `BSSmod` and writes `o-<job>.eps_q1_chidyn_bse`
+and `o-<job>.eel_q1_chidyn_bse`. Each frequency costs one dense LU solve of
+size N (TDA, twice) or 2N (coupling); frequencies are distributed over OpenMP
+threads, each holding about three (2N)^2 complex(8) matrices with coupling.
+The restrictions of the static path apply (one MPI rank, scalar unpolarized
+states), plus the length gauge and absorption only.
+
+Three conditions matter in practice:
+
+- **Use coupling.** fxc(z) inverts the full resonant plus anti-resonant
+  bubbles. In TDA their mixing is dropped and the KS poles are not cancelled.
+  In silicon, TDA makes the main peak 1.9 times too high and eps1(0) 13%
+  too large.
+  The solver warns when TDA is used.
+- **The BSE band window must not split a degenerate multiplet.** Yambo warns
+  `User bands ... break level degeneracy`. A split multiplet makes the
+  transition basis depend on the wavefunction gauge. The zero-frequency
+  response hardly notices, but near resonances the dynamic identity fails. In
+  silicon, bands 3-6 (split Gamma multiplets) give up to 25% error at the
+  peaks, whereas bands 1-8 agree to 3e-4.
+- **More bands in `ndb.Chi` than in the BSE break the identity.** fxc(z) is the
+  inverse difference of the full bubbles, while the BSE window contains only
+  part of chi0. The exact reference is an `ndb.Chi` built with the BSE bands;
+  a wider `ndb.Chi` gives an approximation whose error has to be converged.
+
+Validation on bulk silicon (LDA Troullier-Martins pseudopotential, 4x4x4
+Gamma-centred grid with 64 BZ points, symmorphic operations, 15 G vectors,
+LEVELS mode with a 1 eV scissor on P, retarded ordering, 81 real frequencies
+0-8 eV, eta = 0.1 eV, bands 1-8):
+
+| Run | Reference | Max. relative difference |
+| --- | --- | --- |
+| Hartree BSE, coupling | KS RPA+LF of `ndb.Chi` | 5.6e-4 |
+| `BSEChiDyn`, coupling | QP RPA+LF of `ndb.Chi` | 3.0e-4 |
+| IP column of the same run | KS IP of `ndb.Chi` | 1.1e-4 |
+
+The dynamic kernel moves the main eps2 peak from the KS position (4.0 eV) to
+the QP position (5.0 eV) with the QP height; the static kernel cannot.
 
 ### MPI for the response
 
@@ -402,8 +485,9 @@ transition-energy filtering and response terminators. The retarded GW
 export requires PPA, diagonal Sigma, unshifted KS starting energies and no
 GW terminator, Green-function zoom, GreenF2QP, self-consistent GW or mixed
 electron-phonon/photon self-energies. Off-diagonal Sigma and the GW response
-vertex remain separate extensions. The optical G0/COHSEX path has synthetic
-tests but has not yet been validated on a real material or a full Yambo build.
+vertex remain separate extensions. The optical COHSEX and QP kernels and the
+static Casida projection have been run on monolayer WS2; the frequency-dependent
+Casida solver has been validated end to end on bulk silicon (see above).
 
 Portable tests compile the production numerical module:
 
@@ -443,6 +527,20 @@ The default runs use two and three ranks for a two-k-point fixture, testing
 an empty rank as well. This test has not been executed in the Windows
 validation environment, which has no MPI runtime. It does not exercise
 Yambo's native communicator creation or wavefunction distribution.
+
+The frequency-dependent Casida numerics have their own test, which compiles
+the production module against LAPACK:
+
+```sh
+python tests/chi_dynamic/run_tests.py --fc gfortran
+python tests/chi_dynamic/run_tests.py --fc gfortran --openmp
+```
+
+It checks the exact pair-space identity against a G-space Dyson inversion for
+arbitrary non-Hermitian fxc(z), with coupling and in TDA; the static limit
+against the matrix assembled as in `K_stored_in_a_big_matrix` and the
+Lorentzian sums of `K_diago_response_functions`; error codes; and a threaded
+frequency loop against the serial one.
 
 These tests use mock material and database IO. They do not establish a
  complete Yambo build, NetCDF round-trip, real MPI material run, or a material

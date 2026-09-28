@@ -79,6 +79,18 @@ module Chi_m
  complex(SP), allocatable :: Chi_P(:,:,:)      ! P    (ng,ng,n_freqs)
  complex(SP), allocatable :: Chi_fxc(:,:,:)    ! fxc  (ng,ng,n_freqs)
  !
+ ! Frequency-dependent Casida (BSKmod="CHI", BSEChiDyn). K_kernel leaves fxc out of the
+ ! BSE matrix and keeps the transition vertices instead; K_Chi_dynamic projects fxc(w)
+ ! at every BSE frequency. Index t is the resonant transition (BS_mat row/column).
+ !   Chi_dyn_V(:,t,1) excitation vertex    (O_tddft_R, mode "R")
+ !   Chi_dyn_V(:,t,2) de-excitation vertex (O_tddft_R, mode "C")
+ !   Chi_dyn_s(t)     sqrt of the transition occupation factor
+ !   Chi_dyn_c        Co/(4 pi) of K_kernel
+ complex(DP), allocatable :: Chi_dyn_V(:,:,:)
+ real(DP),    allocatable :: Chi_dyn_s(:)
+ logical,     allocatable :: Chi_dyn_filled(:)
+ real(DP)                 :: Chi_dyn_c=0._DP
+ !
  contains
    !
    subroutine Chi_alloc(ng,nw)
@@ -98,6 +110,13 @@ module Chi_m
      YAMBO_FREE(Chi_fxc)
      YAMBO_FREE(Chi_rcond)
    end subroutine Chi_free
+   subroutine Chi_dyn_free()
+     if (allocated(Chi_dyn_V)) deallocate(Chi_dyn_V)
+     if (allocated(Chi_dyn_s)) deallocate(Chi_dyn_s)
+     if (allocated(Chi_dyn_filled)) deallocate(Chi_dyn_filled)
+     Chi_dyn_c=0._DP
+   end subroutine Chi_dyn_free
+   !
    ! Spectra live across q points and are released by the driver.
    subroutine Chi_G_free()
      if (allocated(Chi_G_energy)) deallocate(Chi_G_energy)

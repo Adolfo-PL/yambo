@@ -231,7 +231,7 @@ subroutine INIT_activate()
      call initactivate(1,'BSENGfxc FxcLibxc FxcMode UseNLCC')
      if( (WF_exx_fraction>0.) .or. (WF_exx_screening>0.) ) call initactivate(1,'BSENGBlk WehDiag WehCpl')
    endif
-   if(l_chi_bs_fxc) call initactivate(1,'BSENGfxc')
+   if(l_chi_bs_fxc) call initactivate(1,'BSENGfxc BSEChiDyn')
    !
    ! BSE + TDDFT = no BS db, Fxc + LF on-fly
    ! Special case: The BSE equation is used to build up the BSE_Fxc kernel.
