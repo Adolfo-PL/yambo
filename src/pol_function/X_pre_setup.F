@@ -14,7 +14,7 @@ subroutine X_pre_setup(Xen,Xk,X)
 &                        Chi_rcond_floor,Chi_G_kbt,Chi_G_mu
  use Chi_m,         ONLY:Chi_G_axis,Chi_G_nu_steps,Chi_G_nu_range
  use electrons,     ONLY:levels,n_sp_pol
- use drivers,       ONLY:l_bs_fxc,l_col_cut,Finite_Tel,l_cohsex,l_rt_carriers_in_use,l_rpa_IP
+ use drivers,       ONLY:l_bs_fxc,l_col_cut,Finite_Tel,l_cohsex,l_rt_carriers_in_use,l_rpa_IP,l_gw0,l_life,l_bss
  use R_lattice,     ONLY:nqibz,bz_samp
  use QP_m,          ONLY:COHSEX_use_empties
  use TDDFT,         ONLY:FXC_n_g_corr
@@ -128,6 +128,10 @@ subroutine X_pre_setup(Xen,Xk,X)
    if (Chi_G_norm_tol<=0._SP.or.Chi_G_norm_tol>=1._SP.or.Chi_G_check_tol<=0._SP.or.&
 &      Chi_rcond_floor<0._SP.or.Chi_rcond_floor>=1._SP) call error('[Chi] invalid validation tolerances')
    if (trim(Chi_G_mode)/='LEVELS') then
+     ! These modes force retarded ordering on this response: the screening of a GW or
+     ! BSE run in the same job would change. Build ndb.Chi in a screening-only job.
+     if (l_gw0.or.l_life.or.l_bss) &
+&      call error('[Chi/G] ChiGMode /= "LEVELS" changes the response ordering: run it in a screening-only job')
      if (trim(Chi_G_axis)/='REAL'.and.trim(Chi_G_axis)/='IMAG') call error('[Chi/G] ChiGAxis must be REAL or IMAG')
      if (Chi_G_nu_steps<1.or.Chi_G_nu_range(1)<0._SP.or.Chi_G_nu_range(2)<Chi_G_nu_range(1))&
 &       call error('[Chi/G] invalid imaginary frequency range/steps')

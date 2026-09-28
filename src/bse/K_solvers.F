@@ -58,7 +58,7 @@ subroutine K_solvers(iq,Ken,Xk,q,X_static,W_bss)
  ! Frequency-dependent CHI kernel: one solve per frequency replaces the requested solver
  !
  if (BS_K_Chi_dynamic) then
-   call K_Chi_dynamic(iq,W_bss)
+   call K_Chi_dynamic(iq,Xk,W_bss)
    call BSS_free( )
    call BSS_MAGN_free( )
    call BSS_DICH_free( )

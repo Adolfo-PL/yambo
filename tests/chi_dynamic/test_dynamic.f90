@@ -326,7 +326,8 @@ contains
     complex(DP) :: M(2*nt,2*nt),M0(2*nt,2*nt),H0x(2*nt,2*nt),Kb(nt,nt),Rw(nt,nt),Cw(nt,nt)
     complex(DP) :: chib(ng,ng),chi0(ng,ng),bub(ng,ng),f(ng,ng),Pm(ng,ng),vb(ng,ng),zz,work(ng,ng)
     complex(DP) :: Krr(nt,nt),Krc(nt,nt),Kcr(nt,nt),Kcc(nt,nt)
-    real(DP) :: d(ng),sq(nt),dq(nt),dks(nt),rc(2),c_fac,worst
+    real(DP) :: sq(nt),dq(nt),dks(nt),rc(2),c_fac,worst
+    complex(DP) :: d(ng)
     integer :: t,i,iz,info,ipv(ng),iref
     complex(DP) :: lw(4*ng),zs(3)
     call random_vertices(rho_r)
@@ -338,24 +339,30 @@ contains
       dks(t)=0.8_DP+0.35_DP*t
       dq(t)=dks(t)+0.45_DP
     enddo
-    d(1)=40._DP
-    do i=2,ng
-      d(i)=1.5_DP/sqrt(real(i,DP))
-    enddo
-    vb=zero
-    do i=2,ng
-      vb(i,i)=d(i)**2
-    enddo
-    call TDDFT_Chi_dynamic_kernel(vb,rho_r,rho_r,sq,c_fac,Krr,info)
-    call TDDFT_Chi_dynamic_kernel(vb,rho_r,rho_c,sq,c_fac,Krc,info)
-    call TDDFT_Chi_dynamic_kernel(vb,rho_c,rho_r,sq,c_fac,Kcr,info)
-    call TDDFT_Chi_dynamic_kernel(vb,rho_c,rho_c,sq,c_fac,Kcc,info)
     call random_matrix(Rw)
     Rw=-0.2_DP*(Rw+conjg(transpose(Rw)))
     call random_matrix(Cw)
     Cw=0.1_DP*(Cw+transpose(Cw))
     zs=[cmplx(0._DP,0._DP,kind=DP),cmplx(1.3_DP,0.05_DP,kind=DP),cmplx(2.9_DP,0.1_DP,kind=DP)]
-    do iref=1,2
+    do iref=1,3
+      ! iref 1: QP reference, 2: KS reference, 3: QP reference with a cut Coulomb whose
+      ! v_cut(G) < 0 for some G (imaginary d = sqrt(4 pi)/bare_qpg, as in Yambo)
+      d(1)=40._DP
+      do i=2,ng
+        d(i)=1.5_DP/sqrt(real(i,DP))
+      enddo
+      if (iref==3) then
+        d(3)=ci*d(3)
+        d(5)=ci*d(5)
+      endif
+      vb=zero
+      do i=2,ng
+        vb(i,i)=d(i)**2
+      enddo
+      call TDDFT_Chi_dynamic_kernel(vb,rho_r,rho_r,sq,c_fac,Krr,info)
+      call TDDFT_Chi_dynamic_kernel(vb,rho_r,rho_c,sq,c_fac,Krc,info)
+      call TDDFT_Chi_dynamic_kernel(vb,rho_c,rho_r,sq,c_fac,Kcr,info)
+      call TDDFT_Chi_dynamic_kernel(vb,rho_c,rho_c,sq,c_fac,Kcc,info)
       ! BSE matrix: QP energies, exchange, W part; reference energies for the kernel
       M=zero
       M(:nt,:nt)=Krr+Rw
@@ -374,7 +381,7 @@ contains
           failures=failures+1
           cycle
         endif
-        if (iref==1) then
+        if (iref/=2) then
           call TDDFT_Chi_pair_bubble(zz,dq,rho_r,rho_c,sq,c_fac,chi0)
         else
           call TDDFT_Chi_pair_bubble(zz,dks,rho_r,rho_c,sq,c_fac,chi0)
@@ -416,7 +423,7 @@ contains
         H0x(nt+1:,:nt)=ci*Kcr
         H0x(nt+1:,nt+1:)=-Kcc
         do t=1,nt
-          if (iref==1) then
+          if (iref/=2) then
             H0x(t,t)=H0x(t,t)+dq(t); H0x(nt+t,nt+t)=H0x(nt+t,nt+t)-dq(t)
           else
             H0x(t,t)=H0x(t,t)+dks(t); H0x(nt+t,nt+t)=H0x(nt+t,nt+t)-dks(t)
@@ -427,6 +434,7 @@ contains
         call TDDFT_Chi_dynamic_response(zz,H0x,f,rho_r,rho_c,sq,c_fac,a,b,.TRUE.,resp,info)
         if (iref==1) call check('export exc: Casida(QP, v, fxc) = BSE response head',info,c_fac*resp,chib(1,1))
         if (iref==2) call check('export full: Casida(KS, v, fxc) = BSE response head',info,c_fac*resp,chib(1,1))
+        if (iref==3) call check('export exc, cut Coulomb (v<0 at some G): Casida = BSE head',info,c_fac*resp,chib(1,1))
       enddo
     enddo
   end subroutine

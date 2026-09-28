@@ -32,6 +32,11 @@ module BS
  ! BSEChiOut: "none", or write ndb.Chi from this BSE with P = its pair response and
  ! fxc = Pref^-1 - P^-1; "exc": Pref = bubble of the BSE energies, "full": KS bubble
  character(schlen) :: BS_K_Chi_out="none"
+ ! BSEChiKout: with BSEChiDyn, write the Casida matrix (exchange and fxc parts) at the ndb.Chi
+ ! frequencies with Re w in this window [Ha] (off when the upper bound is negative), for all
+ ! transitions or for one valence/conduction band pair (0 = any band)
+ real(SP) :: BS_K_Chi_dump_w(2)=(/-1._SP,-1._SP/)
+ integer  :: BS_K_Chi_dump_b(2)=(/0,0/)
  logical :: BS_not_const_eh_f=.FALSE.
  logical :: BS_perturbative_SOC=.FALSE.
  logical :: BS_K_has_been_calculated_loaded=.FALSE.

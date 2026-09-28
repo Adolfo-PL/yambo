@@ -30,6 +30,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
 &                        BS_res_K_exchange,BS_Block_size,BS_n_g_W,&
 &                        O_ng,BS_n_g_exch,BS_n_g_fxc,BS_identifier,BS_LiveTiming_steps,&
 &                        BS_K_dim,BS_K_is_ALDA,BS_K_is_Chi,BS_K_Chi_dynamic,BS_K_Chi_out,BS_K_coupling,BS_cpl_K_exchange,&
+&                        BS_K_anti_resonant,&
 &                        BS_cpl_K_corr,K_EXCH_collision,K_CORR_collision,&
 &                        WF_phase,n_BS_blks,BS_blk,BS_T_grp,&
 &                        BS_nT_grps,BS_blks_free,l_BS_ares_from_res,&
@@ -350,8 +351,8 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
    !
    if (BS_K_is_Chi) then
      if (ncpu/=1) call error('[Chi/BSK] transition projection is currently serial only')
-     if (BS_K_coupling.and..not.l_BS_ares_from_res) &
-&      call error('[Chi/BSK] coupling needs the anti-resonant blocks built from the resonant ones')
+     if ((BS_K_coupling.or.BS_K_anti_resonant).and..not.l_BS_ares_from_res) &
+&      call error('[Chi/BSK] the anti-resonant blocks must be built from the resonant ones')
      chi_grp_p=0
      if (n_spinor/=1.or.n_sp_pol/=1.or.n_spin/=1.or.l_BS_magnons) &
 &      call error('[Chi/BSK] only scalar, unpolarized transitions are supported')

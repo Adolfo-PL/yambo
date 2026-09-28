@@ -5,7 +5,7 @@
 !
 ! Authors (see AUTHORS file for details):
 !
-subroutine K_Chi_dynamic(iq,W)
+subroutine K_Chi_dynamic(iq,Xk,W)
  !
  ! Casida response with the frequency-dependent kernel fxc(G,G';w) of a real-axis
  ! ndb.Chi (BSKmod="CHI" + BSEChiDyn). The static part of the BSE matrix (transition
@@ -22,6 +22,7 @@ subroutine K_Chi_dynamic(iq,W)
  use pars,           ONLY:SP,DP,cZERO,schlen
  use units,          ONLY:HA2EV
  use frequency,      ONLY:w_samp
+ use R_lattice,      ONLY:bz_samp
  use com,            ONLY:msg,isec
  use stderr,         ONLY:intc,real2ch
  use parallel_m,     ONLY:ncpu
@@ -29,16 +30,19 @@ subroutine K_Chi_dynamic(iq,W)
 &                         l_BS_magnons,l_BS_dichroism,l_BS_photolum
  use BS_solvers,     ONLY:BS_mat,BSS_dipoles_opt,BSS_eh_f,BSS_eh_W,BSS_eh_Z,Co_factor,para_term_w0,BSS_desc
  use X_m,            ONLY:Resp_ii,X_OUTPUT_driver,global_gauge
- use Chi_m,          ONLY:Chi_freqs,Chi_fxc,Chi_n_freqs,Chi_ng,Chi_free,&
+ use R_lattice,      ONLY:bare_qpg
+ use BS_solvers,     ONLY:BSS_eh_E
+ use Chi_m,          ONLY:Chi_0,Chi_freqs,Chi_fxc,Chi_n_freqs,Chi_ng,Chi_free,&
 &                         Chi_dyn_V,Chi_dyn_s,Chi_dyn_filled,Chi_dyn_c,Chi_dyn_free
  use descriptors,    ONLY:IO_desc_add
- use TDDFT_Chi_dynamic_m, ONLY:TDDFT_Chi_dynamic_response
+ use TDDFT_Chi_dynamic_m, ONLY:TDDFT_Chi_dynamic_response,TDDFT_Chi_pair_bubble
  use timing_m,       ONLY:timing
  !
  implicit none
  !
- integer      :: iq
- type(w_samp) :: W
+ integer       :: iq
+ type(bz_samp) :: Xk
+ type(w_samp)  :: W
  !
  ! Work Space
  !
@@ -49,7 +53,9 @@ subroutine K_Chi_dynamic(iq,W)
  complex(DP)              :: resp
  complex(DP), allocatable :: H0(:,:),F(:,:),a(:),b(:),resp_w(:)
  complex(SP)              :: sqrt_f
- real(DP)                 :: ares_err
+ real(DP)                 :: ares_err,bub_err,bub_ref,w_gg
+ complex(DP), allocatable :: bub(:,:)
+ integer                  :: ig,jg
  !
  call timing('ChiDyn Solver',OPR='start')
  !
@@ -119,6 +125,9 @@ subroutine K_Chi_dynamic(iq,W)
  allocate(H0(nh,nh),a(n),b(n),resp_w(nw),err_w(nw))
  H0=cmplx(BS_mat,kind=DP)
  !
+ ! BSEChiKoutW: the Casida matrix pieces as text
+ call K_Chi_Kdump(iq,Xk,nh,H0)
+ !
  ! Residual vectors as in K_diago_left/right_residuals: a = d sqrt(f), b = conj(d) sqrt(f)
  !
  do it=1,n
@@ -139,6 +148,29 @@ subroutine K_Chi_dynamic(iq,W)
  endif
  !
  call msg('r','[Chi/BSK] dynamic Casida: transitions',n)
+ !
+ ! The identity with the ndb.Chi response needs the BSE transitions to rebuild its chi0:
+ ! same bands, k grid, energies and G basis. Compare at the first ndb.Chi frequency in
+ ! the Coulomb-symmetrized basis (head and wings O(1) like the body).
+ if (BS_K_coupling.and.allocated(Chi_0)) then
+   allocate(bub(Chi_ng,Chi_ng))
+   call TDDFT_Chi_pair_bubble(cmplx(Chi_freqs(1),kind=DP),real(BSS_eh_E(:n),DP),Chi_dyn_V(:,:,1),Chi_dyn_V(:,:,2),&
+&                             Chi_dyn_s,Chi_dyn_c,bub)
+   bub_err=0._DP
+   bub_ref=0._DP
+   do jg=1,Chi_ng
+     do ig=1,Chi_ng
+       w_gg=1._DP/abs(cmplx(bare_qpg(iq,ig),kind=DP)*cmplx(bare_qpg(iq,jg),kind=DP))
+       bub_err=max(bub_err,abs(bub(ig,jg)-cmplx(Chi_0(ig,jg,1),kind=DP))*w_gg)
+       bub_ref=max(bub_ref,abs(cmplx(Chi_0(ig,jg,1),kind=DP))*w_gg)
+     enddo
+   enddo
+   deallocate(bub)
+   bub_err=bub_err/max(bub_ref,tiny(1._DP))
+   call msg('r','[Chi/BSK] BSE bubble vs ndb.Chi chi0 (relative, first frequency)',real(bub_err,SP))
+   if (bub_err>1.E-3_DP) call warning('[Chi/BSK] the BSE transitions do not rebuild the ndb.Chi chi0 (bands, '//&
+&    'energies or k grid differ): fxc(w) is then an approximation, not the exact kernel')
+ endif
  ! fxc(w) of ndb.Chi inverts the full (resonant + anti-resonant) bubbles. Without the
  ! coupling blocks the KS poles are not cancelled: weights and positions come out wrong.
  if (.not.BS_K_coupling) call warning('[Chi/BSK] TDA with fxc(w) is inconsistent with ndb.Chi; use BSEmod= "coupling"')

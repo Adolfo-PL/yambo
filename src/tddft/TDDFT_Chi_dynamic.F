@@ -217,9 +217,11 @@ contains
    ! response chib contains the exchange (Lbar) of the BSE. Inversions are done on the
    ! Coulomb-symmetrized matrices x~ = D x D, D = diag(d), as in Chi_fxc:
    !   P~^-1 = chib~^-1 + J, J = diag(0,1,..,1),  fxc = D (chi0~^-1 - P~^-1) D.
+   ! d = sqrt(4 pi)/bare_qpg is complex with a cut Coulomb (v_cut < 0 gives an imaginary
+   ! d), exactly as the BSE exchange divides by bare_qpg**2.
    ! rcond = reciprocal condition numbers of chi0~ and chib~.
    complex(DP), intent(in)  :: chi0(:,:),chib(:,:)
-   real(DP),    intent(in)  :: d(:)
+   complex(DP), intent(in)  :: d(:)
    logical,     intent(in)  :: exch
    complex(DP), intent(out) :: fxc(:,:),P(:,:)
    real(DP),    intent(out) :: rcond(2)

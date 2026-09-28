@@ -367,7 +367,51 @@ frequencies), coupling with the diagonalization solver, length gauge, scalar
 unpolarized states, no transition widths or Z factors, `BSENGexx = BSENGfxc`.
 The export stops if the reference bubble or the BSE response is
 ill-conditioned (`[Chi/BSK] minimum rcond` below `ChiRcondMin`); reduce the
-G basis then. Each frequency costs one LU solve of size 2N.
+G basis then. Each frequency costs one LU solve of size 2N. The Coulomb factor
+is D = sqrt(4 pi)/bare_qpg as a complex number, the form the BSE exchange
+(1/bare_qpg**2) uses, so the identity also holds with a Coulomb cutoff where
+v_cut(q+G) < 0 for some G.
+
+`BSEChiDyn` also compares the bubble of the BSE transitions with the `ndb.Chi`
+chi0 at its first frequency (`[Chi/BSK] BSE bubble vs ndb.Chi chi0`, in the
+Coulomb-symmetrized basis) and warns above 1e-3: the kernel is then an
+approximation, not the exact one (bands, energies or k grid differ). Silicon:
+3e-8 with an exported kernel, 4e-6 with a native `ndb.Chi` of the same bands,
+0.15 (warning) for bands 3-6 against a bands 1-8 `ndb.Chi`.
+
+### The Casida matrix as text: `BSEChiKoutW`, `BSEChiKoutB`
+
+With `BSEChiDyn`, the matrix the dynamic solver inverts can be written at the
+`ndb.Chi` frequencies whose real part lies in a window:
+
+```text
+% BSEChiKoutW
+ 0.0 | 0.0 | eV        # static point z=0 (and z=0+i eta) of an exported ndb.Chi
+%
+% BSEChiKoutB
+ 13 | 14 |             # one valence | conduction pair; 0 | 0 = all transitions
+%
+```
+
+`o-<job>.Ktt_q1_transitions` lists each transition t (index T in the BSE, BZ and
+IBZ k, k in reduced units, v, c, energy E_t in eV, occupation factor f_t and
+residual a_t = d_t sqrt(f_t)). `o-<job>.Ktt_q1_w<iw>` holds, per pair t t',
+the blocks in eV
+
+```
+M(z) = [[ diag(E) + X_rr + F_rr ,           X_rc + F_rc ],
+        [           X_cr + F_cr , -diag(E) + X_cc + F_cc ]]
+```
+
+X is the static part of the BSE matrix without the energies (exchange), F the
+fxc(z) part as it enters M (F_rr = Kf_rr, F_rc = i Kf_rc, F_cr = i Kf_cr,
+F_cc = -Kf_cc). The response is Resp(z) = -Co B^T [z - M(z)]^-1 A with
+A = (a, i b), B = (b, i a), b = conj(a). In TDA only the rr columns are
+written. With a band pair, the file holds those rows and columns of the full
+matrix, not a separate Casida problem. Silicon check: the eigenvalues of M(0)
+rebuilt from the files match the static Casida run to 4e-5 eV (single-precision
+matrix, 8 printed digits); the response at z = 0.1i eV matches the dynamic
+solver to 1e-6.
 
 Silicon, same setup as above (bands 1-8, 15 G, 1 eV scissor through
 `KfnQP_E`), static screening with 12 bands, `BSKmod="SEX"`, `BSENGBlk= 15 RL`:
@@ -559,7 +603,9 @@ static terms over frequencies. `Green_Functions_Energies` includes eta.
 ## Current scope and validation
 
 The response G0, COHSEX and QP paths support optical q=0, serial CPUs and
-k-only MPI. The DYSON optical limit remains unsupported. They reject GPU execution,
+k-only MPI. The DYSON optical limit remains unsupported. They force retarded
+ordering on the response, so they stop in a job that also runs GW or a BSE:
+build `ndb.Chi` in a screening-only job. They reject GPU execution,
 finite temperature, metallic KS references, double grids,
 transition-energy filtering and response terminators. The retarded GW
 export requires PPA, diagonal Sigma, unshifted KS starting energies and no

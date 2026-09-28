@@ -59,8 +59,8 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  integer,     external    :: io_Chi
  integer,     allocatable :: err_w(:)
  real(DP)                 :: herm,scale_max,rc(2)
- real(DP),    allocatable :: E_ref(:),d(:)
- complex(DP), allocatable :: H0(:,:),zz(:),chib(:,:),chi0(:,:),f(:,:),Pm(:,:)
+ real(DP),    allocatable :: E_ref(:)
+ complex(DP), allocatable :: d(:),H0(:,:),zz(:),chib(:,:),chi0(:,:),f(:,:),Pm(:,:)
  type(X_t)                :: X_io
  type(w_samp)             :: W_io
  !
@@ -104,7 +104,8 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
    endif
  enddo
  do ig=1,ng
-   d(ig)=sqrt(4._DP*pi)/abs(cmplx(bare_qpg(iq,ig),kind=DP))
+   ! as the BSE exchange (1/bare_qpg**2): complex and signed with a Coulomb cutoff
+   d(ig)=sqrt(4._DP*pi)/cmplx(bare_qpg(iq,ig),kind=DP)
  enddo
  !
  call msg('r','[Chi/BSK] BSEChiOut kernel reference',trim(BS_K_Chi_out))
@@ -164,8 +165,8 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  scale_max=0._DP
  do jg=1,ng
    do ig=1,ng
-     herm=max(herm,abs(Chi_fxc(ig,jg,1)-conjg(Chi_fxc(jg,ig,1)))/(d(ig)*d(jg)))
-     scale_max=max(scale_max,abs(Chi_fxc(ig,jg,1))/(d(ig)*d(jg)))
+     herm=max(herm,abs(Chi_fxc(ig,jg,1)-conjg(Chi_fxc(jg,ig,1)))/abs(d(ig)*d(jg)))
+     scale_max=max(scale_max,abs(Chi_fxc(ig,jg,1))/abs(d(ig)*d(jg)))
    enddo
  enddo
  call msg('r','[Chi/BSK] static fxc head [Ha] and relative anti-Hermitian part',&
