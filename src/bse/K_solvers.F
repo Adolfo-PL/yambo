@@ -14,7 +14,7 @@ subroutine K_solvers(iq,Ken,Xk,q,X_static,W_bss)
  use X_m,            ONLY:X_t
  use BS_solvers,     ONLY:BSS_desc,BSS_free,BS_mat,run_Haydock,&
 &                         run_inversion,run_Diago,run_Slepc
- use BS,             ONLY:BS_K_has_been_calculated_loaded,BS_K_Chi_dynamic,&
+ use BS,             ONLY:BS_K_has_been_calculated_loaded,BS_K_Chi_dynamic,BS_K_Chi_out,&
  &                       BS_blks_free,l_BS_abs,l_BS_kerr,l_BS_magnons,l_BS_dichroism
  use parallel_m,     ONLY:master_cpu,CPU_structure
  use IO_int,         ONLY:IO_and_Messaging_switch
@@ -49,6 +49,11 @@ subroutine K_solvers(iq,Ken,Xk,q,X_static,W_bss)
  ! I/O. All read. Only master writes.
  ! 
  call IO_and_Messaging_switch("+io_out",CONDITION=master_cpu)
+ !
+ ! BSEChiOut: write the kernel of this BSE (ndb.Chi) before the diagonalization, which
+ ! then reuses the same BS_mat
+ !
+ if (trim(BS_K_Chi_out)/='none') call K_Chi_export(iq,Ken,Xk,W_bss)
  !
  ! Frequency-dependent CHI kernel: one solve per frequency replaces the requested solver
  !

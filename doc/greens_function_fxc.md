@@ -308,6 +308,86 @@ LEVELS mode with a 1 eV scissor on P, retarded ordering, 81 real frequencies
 The dynamic kernel moves the main eps2 peak from the KS position (4.0 eV) to
 the QP position (5.0 eV) with the QP height; the static kernel cannot.
 
+### Kernel from the BSE and exciton binding energies: `BSEChiOut`
+
+A P built from G0W0 Green functions is a QP bubble: it has no electron-hole
+attraction, so Casida with its fxc opens the gap but binds no exciton (in
+monolayer WS2 the static onset stays at the KS gap). The attraction is the W
+term of the BSE. `BSEChiOut` takes P from a coupled BSE instead. With the BSE
+matrix M (transition energies, exchange vbar, and W when `BSKmod="SEX"`) and
+the Chi transition vertices collected on the fly, `K_Chi_export` computes at
+every frequency
+
+```
+chib(z) = Co/(4 pi) B^T [ z - M ]^-1 A        (G-resolved BSE response)
+P^-1    = chib^-1 + vbar
+"exc" : fxc = Pref^-1  - P^-1,  Pref = bubble of the BSE transition energies
+"full": fxc = chi0^-1  - P^-1,  chi0 = KS bubble (Yambo's bare energies)
+```
+
+and writes `ndb.Chi` (chi0 column = Pref or chi0, P, fxc) into the BSE job
+directory. By the Woodbury identity, Casida with the same reference energies,
+the same vbar and this fxc(z) reproduces the BSE response exactly, its exciton
+poles included. The binding energy of the frequency-dependent Casida is
+therefore the BSE binding energy. The first frequency of the file is z = 0
+exactly (static Casida); the remaining ones are the BSE grid (`BSEChiDyn`).
+
+```text
+BSKmod= "SEX"
+BSEmod= "coupling"
+BSSmod= "d"
+BSEChiOut= "exc"                 # or "full"
+BSENGexx= <n> RL                 # vbar and the Chi basis must coincide
+BSENGfxc= <n> RL
+BSENGBlk= <W block>
+KfnQPdb= "E < <gw job>/ndb.QP"   # QP transition energies
+```
+
+Casida then uses a copy of the exported `ndb.Chi` (without the BSE kernel
+database, which would be taken as a restart) with `BSKmod="CHI"`, coupling,
+the same bands, `BSENGexx` and `BSENGfxc`, and:
+
+- "exc": the same `KfnQPdb` (the kernel is measured from the QP bubble; the
+  run stops if the QP corrections are missing);
+- "full": KS energies (the kernel carries the QP shift too; the run stops if QP
+  corrections are applied).
+
+Add `BSEChiDyn` and the BSE grid for the dynamic solver; without it, the static
+diagonalization uses fxc(0).
+
+Every diagonalization now reports its lowest excitations, their relative
+optical strength |R_left R_right|, the lowest bright one (strength above 1% of
+the maximum), the lowest transition of the window and the binding energy
+`gap - lowest bright excitation` (in the `r-` file, `[BSE]` lines). With QP
+transitions the gap is the QP gap on the k grid. For a "full" kernel the
+transitions are KS ones; take the gap from the exporting BSE.
+
+Restrictions: optical q, one MPI rank (OpenMP threads parallelize the
+frequencies), coupling with the diagonalization solver, length gauge, scalar
+unpolarized states, no transition widths or Z factors, `BSENGexx = BSENGfxc`.
+The export stops if the reference bubble or the BSE response is
+ill-conditioned (`[Chi/BSK] minimum rcond` below `ChiRcondMin`); reduce the
+G basis then. Each frequency costs one LU solve of size 2N.
+
+Silicon, same setup as above (bands 1-8, 15 G, 1 eV scissor through
+`KfnQP_E`), static screening with 12 bands, `BSKmod="SEX"`, `BSENGBlk= 15 RL`:
+
+| Run | Lowest bright exciton | Binding energy | Spectrum vs BSE |
+| --- | --- | --- | --- |
+| SEX BSE, coupling (reference) | 3.428 eV | 0.173 eV | - |
+| exported P, QP RPA+LF (`chi_spectrum.py`) | - | - | 1.4e-4 |
+| Casida, "exc", fxc(z), `BSEChiDyn` | peak 3.40 eV | = BSE | 1.4e-4 |
+| Casida, "full", fxc(z), `BSEChiDyn` | peak 3.40 eV | = BSE | 1.4e-4 |
+| Casida, "exc", static fxc(0), QP energies | 3.558 eV | 0.043 eV | 0.71 |
+| Casida, "full", static fxc(0), KS energies | 2.611 eV | none (onset at KS gap) | 0.92 |
+
+The window gap is 3.601 eV (2.601 eV KS gap plus the scissor). Both static
+kernels reproduce eps1(0) (19.84) but not the exciton: the frequency
+dependence of the exact kernel carries the binding. The spectra were compared
+on the 0.1 eV grid with eta = 0.1 eV. In this build, gfortran 13 at -O3
+miscompiled `K_correlation_collisions_std` (the SEX kernel crashed without
+the export and gave NaN with it); the file compiled at -O1 runs correctly.
+
 ### MPI for the response
 
 G0, COHSEX and DYSON support k-point distribution on CPUs. For N ranks,
@@ -487,7 +567,8 @@ GW terminator, Green-function zoom, GreenF2QP, self-consistent GW or mixed
 electron-phonon/photon self-energies. Off-diagonal Sigma and the GW response
 vertex remain separate extensions. The optical COHSEX and QP kernels and the
 static Casida projection have been run on monolayer WS2; the frequency-dependent
-Casida solver has been validated end to end on bulk silicon (see above).
+Casida solver and the BSE kernel export have been validated end to end on bulk
+silicon (see above).
 
 Portable tests compile the production numerical module:
 
@@ -540,7 +621,10 @@ It checks the exact pair-space identity against a G-space Dyson inversion for
 arbitrary non-Hermitian fxc(z), with coupling and in TDA; the static limit
 against the matrix assembled as in `K_stored_in_a_big_matrix` and the
 Lorentzian sums of `K_diago_response_functions`; error codes; and a threaded
-frequency loop against the serial one.
+frequency loop against the serial one. For `BSEChiOut` it checks that the pair
+response of diag(E,-E) is the pair bubble and that Casida with the exported
+"exc" and "full" kernels reproduces the response of a random coupled BSE
+(QP energies, vbar and a random W part) at real and complex frequencies.
 
 These tests use mock material and database IO. They do not establish a
  complete Yambo build, NetCDF round-trip, real MPI material run, or a material

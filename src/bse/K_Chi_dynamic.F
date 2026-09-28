@@ -43,7 +43,7 @@ subroutine K_Chi_dynamic(iq,W)
  ! Work Space
  !
  character(1)             :: sec
- integer                  :: n,nh,nw,iw,it,ierr,iw_bad,n_bad
+ integer                  :: n,nh,nw,iw,it,ierr,iw_bad,n_bad,i0
  integer,     allocatable :: err_w(:)
  real(SP)                 :: tol
  complex(DP)              :: resp
@@ -75,15 +75,21 @@ subroutine K_Chi_dynamic(iq,W)
  ! The BSE frequencies must be the ndb.Chi ones: fxc is not interpolated in w
  !
  nw=W%n_freqs
- if (any(aimag(Chi_freqs)<=0._SP)) &
+ ! An ndb.Chi exported from a BSE (BSEChiOut) starts with the static point z=0 exactly,
+ ! followed by the real-axis grid: skip it.
+ i0=0
+ if (Chi_n_freqs==nw+1) then
+   if (abs(Chi_freqs(1))==0._SP) i0=1
+ endif
+ if (any(aimag(Chi_freqs(1+i0:))<=0._SP)) &
 &  call error('[Chi/BSK] ndb.Chi is not on the damped real axis: rebuild it with ChiGAxis="REAL"')
  iw_bad=0
- if (nw/=Chi_n_freqs) then
+ if (nw/=Chi_n_freqs-i0) then
    iw_bad=-1
  else
    do iw=1,nw
-     tol=max(1.E-6_SP,1.E-5_SP*abs(Chi_freqs(iw)))
-     if (abs(W%p(iw)-Chi_freqs(iw))>tol) then
+     tol=max(1.E-6_SP,1.E-5_SP*abs(Chi_freqs(iw+i0)))
+     if (abs(W%p(iw)-Chi_freqs(iw+i0))>tol) then
        iw_bad=iw
        exit
      endif
@@ -91,12 +97,12 @@ subroutine K_Chi_dynamic(iq,W)
  endif
  if (iw_bad/=0) then
    call msg('r','[Chi/BSK] ndb.Chi frequencies (n, first/last Re [eV], first/last damping [eV])')
-   call msg('r','[Chi/BSK]   n=',Chi_n_freqs)
-   call msg('r','[Chi/BSK]   Re w  ',(/real(Chi_freqs(1))*HA2EV,real(Chi_freqs(Chi_n_freqs))*HA2EV/))
-   call msg('r','[Chi/BSK]   eta   ',(/aimag(Chi_freqs(1))*HA2EV,aimag(Chi_freqs(Chi_n_freqs))*HA2EV/))
+   call msg('r','[Chi/BSK]   n=',Chi_n_freqs-i0)
+   call msg('r','[Chi/BSK]   Re w  ',(/real(Chi_freqs(1+i0))*HA2EV,real(Chi_freqs(Chi_n_freqs))*HA2EV/))
+   call msg('r','[Chi/BSK]   eta   ',(/aimag(Chi_freqs(1+i0))*HA2EV,aimag(Chi_freqs(Chi_n_freqs))*HA2EV/))
    call error('[Chi/BSK] BSE and ndb.Chi frequencies differ: set BEnRange= '//&
-&    trim(real2ch(real(Chi_freqs(1))*HA2EV))//' | '//trim(real2ch(real(Chi_freqs(Chi_n_freqs))*HA2EV))//&
-&    ' eV, BEnSteps= '//trim(intc(Chi_n_freqs))//', BDmRange= '//trim(real2ch(aimag(Chi_freqs(1))*HA2EV))//&
+&    trim(real2ch(real(Chi_freqs(1+i0))*HA2EV))//' | '//trim(real2ch(real(Chi_freqs(Chi_n_freqs))*HA2EV))//&
+&    ' eV, BEnSteps= '//trim(intc(Chi_n_freqs-i0))//', BDmRange= '//trim(real2ch(aimag(Chi_freqs(1+i0))*HA2EV))//&
 &    ' | '//trim(real2ch(aimag(Chi_freqs(Chi_n_freqs))*HA2EV))//' eV')
  endif
  !
@@ -138,7 +144,7 @@ subroutine K_Chi_dynamic(iq,W)
  if (.not.BS_K_coupling) call warning('[Chi/BSK] TDA with fxc(w) is inconsistent with ndb.Chi; use BSEmod= "coupling"')
  call msg('r','[Chi/BSK] dynamic Casida: frequencies (fxc taken on the ndb.Chi grid)',nw)
  call msg('r','[Chi/BSK] fxc head at first/last frequency [Ha]',&
-&         (/real(Chi_fxc(1,1,1)),aimag(Chi_fxc(1,1,1)),real(Chi_fxc(1,1,nw)),aimag(Chi_fxc(1,1,nw))/))
+&         (/real(Chi_fxc(1,1,1+i0)),aimag(Chi_fxc(1,1,1+i0)),real(Chi_fxc(1,1,nw+i0)),aimag(Chi_fxc(1,1,nw+i0))/))
  !
  ! One linear solve per frequency (threads over frequencies)
  !===========================================================
@@ -148,7 +154,7 @@ subroutine K_Chi_dynamic(iq,W)
  allocate(F(Chi_ng,Chi_ng))
  !$omp do schedule(dynamic)
  do iw=1,nw
-   F=cmplx(Chi_fxc(:,:,iw),kind=DP)
+   F=cmplx(Chi_fxc(:,:,iw+i0),kind=DP)
    call TDDFT_Chi_dynamic_response(cmplx(W%p(iw),kind=DP),H0,F,Chi_dyn_V(:,:,1),Chi_dyn_V(:,:,2),&
 &                                  Chi_dyn_s,Chi_dyn_c,a,b,BS_K_coupling,resp,ierr)
    resp_w(iw)=resp

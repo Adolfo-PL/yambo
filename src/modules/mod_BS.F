@@ -29,6 +29,9 @@ module BS
  logical :: BS_K_is_ALDA=.FALSE.
  logical :: BS_K_is_Chi=.FALSE.
  logical :: BS_K_Chi_dynamic=.FALSE.  ! BSKmod="CHI" with fxc(w) from a real-axis ndb.Chi (BSEChiDyn)
+ ! BSEChiOut: "none", or write ndb.Chi from this BSE with P = its pair response and
+ ! fxc = Pref^-1 - P^-1; "exc": Pref = bubble of the BSE energies, "full": KS bubble
+ character(schlen) :: BS_K_Chi_out="none"
  logical :: BS_not_const_eh_f=.FALSE.
  logical :: BS_perturbative_SOC=.FALSE.
  logical :: BS_K_has_been_calculated_loaded=.FALSE.

@@ -22,15 +22,17 @@ subroutine K_diago_driver(iq,W,X_static)
  ! 10/06/2015 Added by HM: Generic slepc method to solve 
  !
  use pars,           ONLY:SP
+ use units,          ONLY:HA2EV
  use stderr,         ONLY:intc
+ use vec_operate,    ONLY:sort
  use BS,             ONLY:BS_K_coupling,BS_H_dim,BS_K_dim,BS_perturbative_SOC,&
 &                         BS_res_ares_n_mat,l_BS_optics,l_BS_dichroism !,BS_Blocks_symmetrize_K,&
  use BS_solvers,     ONLY:io_BSS_diago,BSS_perturbative_width,BSS_mode,&
-&                         BSS_write_eig_2_db,BSS_eh_W,BS_mat,BSS_n_eig,BS_E
+&                         BSS_write_eig_2_db,BSS_eh_W,BS_mat,BSS_n_eig,BS_E,BSS_eh_E
  use X_m,            ONLY:X_t,X_OUTPUT_driver
  use electrons,      ONLY:n_sp_pol,n_spinor
  use frequency,      ONLY:w_samp
- use com,            ONLY:isec
+ use com,            ONLY:isec,msg
  use LIVE_t,         ONLY:live_timing
  use linear_algebra, ONLY:DIAGO
  use interfaces,     ONLY:K_diago_response_functions,LINEAR_ALGEBRA_driver,&
@@ -337,6 +339,8 @@ subroutine K_diago_driver(iq,W,X_static)
    call K_diago_response_functions(iq,i_BS_mat,W,BS_E,BS_R_left_abs,BS_R_right_abs,BS_E_SOC_corr,&
    &               BS_R_left_magn,BS_R_right_magn,BS_R_left_kerr,BS_R_right_kerr,BS_R_right_dich,BS_R_PL)
    !
+   if (l_BS_optics.and.i_BS_mat==1) call binding_report()
+   !
    ! Diagonalization DB (OUT)
    !==========================
    if (io_err/=0) then
@@ -368,6 +372,57 @@ subroutine K_diago_driver(iq,W,X_static)
  call timing(trim(Solver)//' Solver',OPR='stop')
  !
  contains
+   !
+   subroutine binding_report()
+     !
+     ! Lowest excitations (Re E > 0), their optical strength |R_left R_right| relative to the
+     ! strongest one, and the binding energy of the lowest bright one (strength > 1%) with
+     ! respect to the lowest transition of the BSE window: the gap of this run's energies,
+     ! i.e. the QP gap on the k-grid when QP corrections are applied.
+     !
+     integer               :: i1,n_pos,i_bright
+     integer,  allocatable :: indx(:)
+     real(SP), allocatable :: E_pos(:),strength(:)
+     real(SP)              :: s_max,E_gap
+     !
+     n_pos=count(real(BS_E)>1.E-5_SP)
+     if (n_pos==0) return
+     allocate(E_pos(n_pos),strength(n_pos),indx(n_pos))
+     n_pos=0
+     do i1=1,BSS_n_eig
+       if (real(BS_E(i1))<=1.E-5_SP) cycle
+       n_pos=n_pos+1
+       E_pos(n_pos)=real(BS_E(i1))
+       strength(n_pos)=abs(BS_R_left_abs(i1)*BS_R_right_abs(i1))
+     enddo
+     call sort(E_pos,indx=indx)
+     strength=strength(indx)
+     s_max=max(maxval(strength),tiny(1._SP))
+     strength=strength/s_max
+     i_bright=0
+     do i1=1,n_pos
+       if (strength(i1)>1.E-2_SP) then
+         i_bright=i1
+         exit
+       endif
+     enddo
+     !
+     call msg('r','[BSE] lowest excitation energies [eV]',E_pos(:min(6,n_pos))*HA2EV)
+     call msg('r','[BSE] their relative optical strength',strength(:min(6,n_pos)))
+     if (i_bright>0) call msg('r','[BSE] lowest bright excitation (strength > 1%) [eV]',E_pos(i_bright)*HA2EV)
+     if (allocated(BSS_eh_E)) then
+       ! resonant transitions only (the coupling matrix also holds the -E ones)
+       if (.not.any(BSS_eh_E>1.E-5_SP)) return
+       E_gap=minval(BSS_eh_E,mask=BSS_eh_E>1.E-5_SP)
+       call msg('r','[BSE] lowest transition energy of the window (gap) [eV]',E_gap*HA2EV)
+       call msg('r','[BSE] binding energy, gap - lowest excitation [eV]',(E_gap-E_pos(1))*HA2EV)
+       if (i_bright>0) call msg('r','[BSE] binding energy, gap - lowest bright excitation [eV]',&
+&                               (E_gap-E_pos(i_bright))*HA2EV)
+     endif
+     !
+     if (allocated(E_pos)) deallocate(E_pos,strength,indx)
+     !
+   end subroutine binding_report
    !
    subroutine local_alloc(what)
      !

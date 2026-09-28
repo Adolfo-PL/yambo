@@ -29,7 +29,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  use BS,            ONLY:BS_bands,BS_res_K_corr,BS_W,BS_W_is_diagonal,&
 &                        BS_res_K_exchange,BS_Block_size,BS_n_g_W,&
 &                        O_ng,BS_n_g_exch,BS_n_g_fxc,BS_identifier,BS_LiveTiming_steps,&
-&                        BS_K_dim,BS_K_is_ALDA,BS_K_is_Chi,BS_K_Chi_dynamic,BS_K_coupling,BS_cpl_K_exchange,&
+&                        BS_K_dim,BS_K_is_ALDA,BS_K_is_Chi,BS_K_Chi_dynamic,BS_K_Chi_out,BS_K_coupling,BS_cpl_K_exchange,&
 &                        BS_cpl_K_corr,K_EXCH_collision,K_CORR_collision,&
 &                        WF_phase,n_BS_blks,BS_blk,BS_T_grp,&
 &                        BS_nT_grps,BS_blks_free,l_BS_ares_from_res,&
@@ -52,7 +52,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  use PHOTOLUM,      ONLY:BSS_PL_free
  use parser_m,      ONLY:parser
  use Chi_m,         ONLY:Chi_ng,Chi_n_freqs,Chi_freqs,Chi_fxc,Chi_free
- use Chi_m,         ONLY:Chi_optical_q0,Chi_optical_q0_known
+ use Chi_m,         ONLY:Chi_optical_q0,Chi_optical_q0_known,Chi_G_mode
  use Chi_m,         ONLY:Chi_dyn_V,Chi_dyn_s,Chi_dyn_filled,Chi_dyn_c,Chi_dyn_free
  use BS_solvers,    ONLY:BSS_q0
  use TDDFT_Chi_Fourier_m, ONLY:TDDFT_Chi_pair_G
@@ -116,7 +116,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  integer :: n_steps,m_steps,i_steps
  integer :: ID_Chi,io_Chi_err,chi_ierr,ig,jg,chi_grp_p,i_T_dyn
  integer, external :: io_Chi
- logical :: l_KfnQPdb
+ logical :: l_KfnQPdb,l_chi_vtx,l_chi_vtx_only
  real(SP) :: chi_norm,chi_antiherm,chi_scale,chi_raw_norm,chi_raw_antiherm,chi_diff
  complex(DP) :: chi_pair
  complex(DP), allocatable :: Chi_static(:,:)
@@ -169,6 +169,11 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  call section('=',trim(section_title))
  !
  l_bs_exch=(any((/BS_res_K_exchange,BS_cpl_K_exchange/)).or.l_bs_fxc).and..not.(l_BS_magnons.and.n_sp_pol==2)
+ !
+ ! Chi transition vertices: the CHI kernel itself, or a kernel exported from this BSE
+ ! (BSEChiOut, K_Chi_export), which only collects the vertices in the tddft pass.
+ l_chi_vtx     =BS_K_is_Chi.or.trim(BS_K_Chi_out)/='none'
+ l_chi_vtx_only=l_chi_vtx.and..not.BS_K_is_Chi
  l_bs_corr=(any((/BS_res_K_corr,BS_cpl_K_corr/)) .and. .not.l_bs_fxc)
  !
  ! Oscillators Setup
@@ -189,10 +194,10 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
    call msg('r','[BSE] Exchange components ',BS_n_g_exch)
  endif
  !
- if (BS_K_is_ALDA.or.BS_K_is_Chi) then
+ if (BS_K_is_ALDA.or.l_chi_vtx) then
    O_ng_tddft =maxval(qindx_X(iq,:,2))
-   l_tddft_gsum=BS_K_is_Chi.or.(index(FXC_mode,"G-")>0)
-   l_tddft_rsum=(.not.BS_K_is_Chi).and.(index(FXC_mode,"R-")>0)
+   l_tddft_gsum=l_chi_vtx.or.(index(FXC_mode,"G-")>0)
+   l_tddft_rsum=(.not.l_chi_vtx).and.(index(FXC_mode,"R-")>0)
    if( .not.(l_tddft_gsum.or.l_tddft_rsum) ) call error("Wrong FXC_mode:"//trim(FXC_mode))
    if(BS_K_is_ALDA.and.index(FXC_mode,"cut_GmGp")>0) then
      FXC_n_g_corr=BS_n_g_fxc
@@ -205,6 +210,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
    &                      ((iq> 1) .and.                       trim(PARALLEL_default_mode)=="KQmemory" )
    if (BS_K_is_ALDA) call msg('r','[BSE] ALDA components ',BS_n_g_fxc)
    if (BS_K_is_Chi ) call msg('r','[BSE] Chi  components ',BS_n_g_fxc)
+   if (l_chi_vtx_only) call msg('r','[BSE] Chi export components ',BS_n_g_fxc)
  endif
  !
  if (l_bs_corr) then
@@ -223,12 +229,12 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  endif
  !
  call K_restart(iq,X,ID_head,ID,ID_compr,l_partial_kernel_loaded)
- if (BS_K_is_Chi.and.l_partial_kernel_loaded)&
+ if (l_chi_vtx.and.l_partial_kernel_loaded)&
 &  call error('[Chi/BSK] partial restart cannot verify ndb.Chi; use a new BSE job')
  !
  if( l_BSE_kernel_complete ) then
-   if (BS_K_is_Chi) &
-&    call error('[Chi/BSK] kernel restart cannot verify ndb.Chi; use a new BSE job')
+   if (l_chi_vtx) &
+&    call error('[Chi/BSK] kernel restart cannot rebuild the Chi vertices; use a new BSE job')
    return
  endif
  !
@@ -262,7 +268,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
    YAMBO_FREE_GPU(DEV_VAR(RIM_W))
    YAMBO_FREE(RIM_W)
    !
-   if (BS_K_is_Chi.and.iq==1) call DIPOLE_ALLOC_global()
+   if (l_chi_vtx.and.iq==1) call DIPOLE_ALLOC_global()
    return
    !
  endif
@@ -327,7 +333,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
    !
  if ((.not.l_bs_exch).and.iHxc==1) cycle
  !
- if ((.not.(BS_K_is_ALDA.or.BS_K_is_Chi)).and.iHxc==2) cycle
+ if ((.not.(BS_K_is_ALDA.or.l_chi_vtx)).and.iHxc==2) cycle
  !
  if ((.not.l_bs_corr).and.iHxc==3) cycle
  !
@@ -349,8 +355,6 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
      chi_grp_p=0
      if (n_spinor/=1.or.n_sp_pol/=1.or.n_spin/=1.or.l_BS_magnons) &
 &      call error('[Chi/BSK] only scalar, unpolarized transitions are supported')
-     call parser('KfnQPdb',l_KfnQPdb)
-     if (l_KfnQPdb) call error('[Chi/BSK] use KS transitions; KfnQPdb would double count the QP shift')
      ! OP_RD_CL: RD_CL only reads an already-open unit and never assigns an ID.
      call io_control(ACTION=OP_RD_CL,COM=REP,MODE=DUMP,SEC=(/1/),ID=ID_Chi)
      io_Chi_err=io_Chi(X,Chi_w,ID_Chi)
@@ -363,6 +367,18 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
 &        call error('[Chi/BSK] optical q0 direction or normalization differs from ndb.Chi')
      endif
      if (Chi_ng/=BS_n_g_fxc) call error('[Chi/BSK] BSENGfxc must equal the ndb.Chi G-basis size')
+     ! Transition energies: KS for a kernel built on the KS bubble. A kernel exported with
+     ! BSEChiOut= "exc" is built on the bubble of its BSE energies and needs the same QP ones.
+     l_KfnQPdb=.FALSE.
+     if (allocated(Ken%Eo)) l_KfnQPdb=maxval(abs(Ken%Eo-Ken%E))>1.E-6_SP
+     if (trim(Chi_G_mode)=='BSE-EXC') then
+       if (.not.l_KfnQPdb) call error('[Chi/BSK] this ndb.Chi (BSEChiOut= "exc") needs the QP corrections of its BSE (KfnQPdb)')
+       call msg('r','[Chi/BSK] excitonic kernel on QP transitions (ndb.Chi from BSEChiOut= "exc")')
+     else if (l_KfnQPdb) then
+       call error('[Chi/BSK] use KS transitions; QP corrections would double count the QP shift')
+     endif
+     if (trim(Chi_G_mode)=='BSE-KS') call msg('r','[Chi/BSK] kernel from BSEChiOut= "full": it carries the QP shift, '//&
+&      'so binding energies are measured from the QP gap of the exporting BSE, not from these KS transitions')
      call io_control(ACTION=OP_RD_CL,COM=REP,MODE=DUMP,SEC=(/2*iq,2*iq+1/),ID=ID_Chi)
      io_Chi_err=io_Chi(X,Chi_w,ID_Chi)
      if (io_Chi_err/=0) call error('[Chi/BSK] cannot read ndb.Chi q fragment (IO code '//trim(intc(io_Chi_err))//')')
@@ -405,6 +421,22 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
        Chi_static=cmplx(Chi_fxc(:,:,1),kind=DP)
        call msg('r','[Chi/BSK] static inverse-Fourier kernel from ndb.Chi @q',iq)
      endif
+   endif
+   !
+   if (l_chi_vtx_only) then
+     ! BSEChiOut: collect the Chi vertices of every transition for K_Chi_export
+     if (ncpu/=1) call error('[Chi/BSK] BSEChiOut: the vertex pass is serial (MPI); use OpenMP threads')
+     if (n_spinor/=1.or.n_sp_pol/=1.or.n_spin/=1.or.l_BS_magnons) &
+&      call error('[Chi/BSK] BSEChiOut: only scalar, unpolarized transitions are supported')
+     if (.not.BS_res_K_exchange.or.BS_n_g_exch/=BS_n_g_fxc) &
+&      call error('[Chi/BSK] BSEChiOut: exchange on, with BSENGexx equal to BSENGfxc (one G basis for v and P)')
+     call Chi_dyn_free()
+     allocate(Chi_dyn_V(BS_n_g_fxc,BS_K_dim(1),2),Chi_dyn_s(BS_K_dim(1)),Chi_dyn_filled(BS_K_dim(1)))
+     Chi_dyn_V=(0._DP,0._DP)
+     Chi_dyn_s=0._DP
+     Chi_dyn_filled=.FALSE.
+     Chi_dyn_c=real(Co,DP)/(4._DP*real(pi,DP))
+     chi_grp_p=0
    endif
    !
    call WF_load(WF,NG(1),NG(2),(/1,Ken%nbm/),(/1,Xk%nibz/),space='R',title="-TDDFT",keep_states_to_load=.true.)
@@ -592,7 +624,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
    !
    ! TDDFT oscillators
    !----------------------
-   if(iHxc==2 .and. l_tddft_gsum) then
+   if(iHxc==2 .and. l_tddft_gsum .and. .not.l_chi_vtx_only) then
      if (.not.allocated( BS_T_grp(i_Tgrp_k)%O_tddft_L) ) then
        call TDDFT_oscillators_alloc_L(i_Tgrp_k)
        call TDDFT_ALDA_eh_space_G_collisions_L(iq,Xk,i_Tgrp_k,NG,l_bs_tddft_wf_in_loop,tddft_wf,mode_now)
@@ -606,19 +638,20 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
    ! Chi right vertices. The R and C blocks of a column share one O_tddft_R cache,
    ! filled by whichever block comes first, but the coupling vertex is the
    ! de-excitation density (v<->c, flipped optical head). Keep both for the column.
-   if(iHxc==2 .and. l_tddft_gsum .and. BS_K_is_Chi .and. chi_grp_p/=i_Tgrp_p) then
+   if(iHxc==2 .and. l_tddft_gsum .and. l_chi_vtx .and. chi_grp_p/=i_Tgrp_p) then
      if (allocated(chi_R_res)) deallocate(chi_R_res)
      if (allocated(chi_R_cpl)) deallocate(chi_R_cpl)
+     if (.not.allocated(BS_T_grp(i_Tgrp_p)%O_tddft_R)) call TDDFT_oscillators_alloc_R(i_Tgrp_p)
      allocate(chi_R_res(size(BS_T_grp(i_Tgrp_p)%O_tddft_R,1),size(BS_T_grp(i_Tgrp_p)%O_tddft_R,2)))
-     call TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_Tgrp_p,NG,l_bs_tddft_wf_in_loop,tddft_wf,"R",BS_K_is_Chi)
+     call TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_Tgrp_p,NG,l_bs_tddft_wf_in_loop,tddft_wf,"R",.TRUE.)
      chi_R_res=BS_T_grp(i_Tgrp_p)%O_tddft_R(:,:,1,1)
      ! The dynamic solver needs the de-excitation vertex also in TDA (anti-resonant block)
      if (BS_K_coupling.or.BS_K_Chi_dynamic) then
        allocate(chi_R_cpl(size(chi_R_res,1),size(chi_R_res,2)))
-       call TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_Tgrp_p,NG,l_bs_tddft_wf_in_loop,tddft_wf,"C",BS_K_is_Chi)
+       call TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_Tgrp_p,NG,l_bs_tddft_wf_in_loop,tddft_wf,"C",.TRUE.)
        chi_R_cpl=BS_T_grp(i_Tgrp_p)%O_tddft_R(:,:,1,1)
      endif
-     if (BS_K_Chi_dynamic) then
+     if (BS_K_Chi_dynamic.or.l_chi_vtx_only) then
        ! Column coordinate of this group in the resonant space (also for "C" blocks)
        do i_Tp=1,BS_T_grp(i_Tgrp_p)%size
          i_T_dyn=BS_blk(i_block)%coordinate(2)+i_Tp-1
@@ -991,14 +1024,14 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
      YAMBO_FREE(FXC_K_diagonal)
    else if (BS_K_is_ALDA) then
      YAMBO_FREE(F_xc_mat)
-   else if (BS_K_is_Chi) then
+   else if (l_chi_vtx) then
      if (allocated(Chi_static)) then
        YAMBO_FREE(Chi_static)
      endif
      if (allocated(chi_R_res)) deallocate(chi_R_res)
      if (allocated(chi_R_cpl)) deallocate(chi_R_cpl)
-     ! K_Chi_dynamic still needs fxc(w) and its frequencies
-     if (.not.BS_K_Chi_dynamic) call Chi_free()
+     ! K_Chi_dynamic still needs fxc(w) and its frequencies; the export has no ndb.Chi yet
+     if (BS_K_is_Chi.and..not.BS_K_Chi_dynamic) call Chi_free()
    endif
    !
  endif
@@ -1042,6 +1075,6 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
 #endif
  !
  call timing('X T_space Kernel',OPR='stop')
- if (BS_K_is_Chi.and.iq==1) call DIPOLE_ALLOC_global()
+ if (l_chi_vtx.and.iq==1) call DIPOLE_ALLOC_global()
  !
 end subroutine K_kernel

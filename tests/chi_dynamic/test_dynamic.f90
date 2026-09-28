@@ -6,7 +6,8 @@ program test_chi_dynamic
   !     and the Lorentzian sums of K_diago_response_functions, for a static
   !     Hermitian fxc that is real in real space.
   use pars, only: DP
-  use TDDFT_Chi_dynamic_m, only: TDDFT_Chi_dynamic_kernel,TDDFT_Chi_dynamic_response
+  use TDDFT_Chi_dynamic_m, only: TDDFT_Chi_dynamic_kernel,TDDFT_Chi_dynamic_response,&
+&   TDDFT_Chi_pair_response,TDDFT_Chi_pair_bubble,TDDFT_Chi_kernel_from_response
   implicit none
   integer, parameter :: m=3,ng=2*m+1,nt=5
   complex(DP), parameter :: ci=(0._DP,1._DP),zero=(0._DP,0._DP)
@@ -83,6 +84,8 @@ program test_chi_dynamic
   endif
 
   call threaded_check()
+
+  call export_chain_checks()
 
   if (failures>0) then
     print *,failures,' check(s) failed'
@@ -313,6 +316,119 @@ contains
     else
       print *,'PASS: threaded frequency loop reproduces the serial results'
     endif
+  end subroutine
+
+  subroutine export_chain_checks()
+    ! BSEChiOut chain: a BSE-like matrix M (QP energies, exchange with vbar, a random
+    ! "W" part) -> its G-resolved response chib -> fxc = chi_ref^-1 - chib^-1 - vbar ->
+    ! Casida with the reference energies, the exchange and fxc must return chib (head),
+    ! for the QP ("exc") and the KS ("full") reference.
+    complex(DP) :: M(2*nt,2*nt),M0(2*nt,2*nt),H0x(2*nt,2*nt),Kb(nt,nt),Rw(nt,nt),Cw(nt,nt)
+    complex(DP) :: chib(ng,ng),chi0(ng,ng),bub(ng,ng),f(ng,ng),Pm(ng,ng),vb(ng,ng),zz,work(ng,ng)
+    complex(DP) :: Krr(nt,nt),Krc(nt,nt),Kcr(nt,nt),Kcc(nt,nt)
+    real(DP) :: d(ng),sq(nt),dq(nt),dks(nt),rc(2),c_fac,worst
+    integer :: t,i,iz,info,ipv(ng),iref
+    complex(DP) :: lw(4*ng),zs(3)
+    call random_vertices(rho_r)
+    call random_vertices(rho_c)
+    rho_c(1,:)=conjg(rho_r(1,:))
+    c_fac=0.37_DP
+    do t=1,nt
+      sq(t)=sqrt(0.6_DP+0.2_DP*t)
+      dks(t)=0.8_DP+0.35_DP*t
+      dq(t)=dks(t)+0.45_DP
+    enddo
+    d(1)=40._DP
+    do i=2,ng
+      d(i)=1.5_DP/sqrt(real(i,DP))
+    enddo
+    vb=zero
+    do i=2,ng
+      vb(i,i)=d(i)**2
+    enddo
+    call TDDFT_Chi_dynamic_kernel(vb,rho_r,rho_r,sq,c_fac,Krr,info)
+    call TDDFT_Chi_dynamic_kernel(vb,rho_r,rho_c,sq,c_fac,Krc,info)
+    call TDDFT_Chi_dynamic_kernel(vb,rho_c,rho_r,sq,c_fac,Kcr,info)
+    call TDDFT_Chi_dynamic_kernel(vb,rho_c,rho_c,sq,c_fac,Kcc,info)
+    call random_matrix(Rw)
+    Rw=-0.2_DP*(Rw+conjg(transpose(Rw)))
+    call random_matrix(Cw)
+    Cw=0.1_DP*(Cw+transpose(Cw))
+    zs=[cmplx(0._DP,0._DP,kind=DP),cmplx(1.3_DP,0.05_DP,kind=DP),cmplx(2.9_DP,0.1_DP,kind=DP)]
+    do iref=1,2
+      ! BSE matrix: QP energies, exchange, W part; reference energies for the kernel
+      M=zero
+      M(:nt,:nt)=Krr+Rw
+      M(:nt,nt+1:)=ci*(Krc+Cw)
+      M(nt+1:,:nt)=ci*(Kcr+conjg(transpose(Cw)))
+      M(nt+1:,nt+1:)=-(Kcc+conjg(Rw))
+      do t=1,nt
+        M(t,t)=M(t,t)+dq(t)
+        M(nt+t,nt+t)=M(nt+t,nt+t)-dq(t)
+      enddo
+      do iz=1,size(zs)
+        zz=zs(iz)
+        call TDDFT_Chi_pair_response(zz,M,rho_r,rho_c,sq,c_fac,chib,info)
+        if (info/=0) then
+          print *,'FAIL: pair response error',info
+          failures=failures+1
+          cycle
+        endif
+        if (iref==1) then
+          call TDDFT_Chi_pair_bubble(zz,dq,rho_r,rho_c,sq,c_fac,chi0)
+        else
+          call TDDFT_Chi_pair_bubble(zz,dks,rho_r,rho_c,sq,c_fac,chi0)
+        endif
+        call TDDFT_Chi_kernel_from_response(chi0,chib,d,.TRUE.,f,Pm,rc,info)
+        if (info/=0) then
+          print *,'FAIL: kernel_from_response error',info
+          failures=failures+1
+          cycle
+        endif
+        ! P^-1 = chib^-1 + vbar
+        work=Pm
+        call zgetrf(ng,ng,work,ng,ipv,info)
+        call zgetri(ng,work,ng,ipv,lw,size(lw),info)
+        work=work-vb
+        call zgetrf(ng,ng,work,ng,ipv,info)
+        call zgetri(ng,work,ng,ipv,lw,size(lw),info)
+        worst=maxval(abs(work-chib))/maxval(abs(chib))
+        if (iz==1.and.iref==1) then
+          ! the response of M without its kernel is the bubble
+          M0=zero
+          do t=1,nt
+            M0(t,t)=dq(t)
+            M0(nt+t,nt+t)=-dq(t)
+          enddo
+          call TDDFT_Chi_pair_response(cmplx(0.7_DP,0.02_DP,kind=DP),M0,rho_r,rho_c,sq,c_fac,chib,info)
+          call TDDFT_Chi_pair_bubble(cmplx(0.7_DP,0.02_DP,kind=DP),dq,rho_r,rho_c,sq,c_fac,bub)
+          call check('pair response of diag(E,-E) = pair bubble',info,bub(2,3),chib(2,3))
+          call TDDFT_Chi_pair_response(zz,M,rho_r,rho_c,sq,c_fac,chib,info)
+        endif
+        if (worst>1.E-9_DP) then
+          print *,'FAIL: exported P does not satisfy P^-1 = chib^-1 + vbar',worst
+          failures=failures+1
+        endif
+        ! Casida: reference energies + exchange, fxc from the export
+        H0x=zero
+        H0x(:nt,:nt)=Krr
+        H0x(:nt,nt+1:)=ci*Krc
+        H0x(nt+1:,:nt)=ci*Kcr
+        H0x(nt+1:,nt+1:)=-Kcc
+        do t=1,nt
+          if (iref==1) then
+            H0x(t,t)=H0x(t,t)+dq(t); H0x(nt+t,nt+t)=H0x(nt+t,nt+t)-dq(t)
+          else
+            H0x(t,t)=H0x(t,t)+dks(t); H0x(nt+t,nt+t)=H0x(nt+t,nt+t)-dks(t)
+          endif
+        enddo
+        b=sq*rho_r(1,:)
+        a=sq*conjg(rho_r(1,:))
+        call TDDFT_Chi_dynamic_response(zz,H0x,f,rho_r,rho_c,sq,c_fac,a,b,.TRUE.,resp,info)
+        if (iref==1) call check('export exc: Casida(QP, v, fxc) = BSE response head',info,c_fac*resp,chib(1,1))
+        if (iref==2) call check('export full: Casida(KS, v, fxc) = BSE response head',info,c_fac*resp,chib(1,1))
+      enddo
+    enddo
   end subroutine
 
   subroutine inv(mat)
