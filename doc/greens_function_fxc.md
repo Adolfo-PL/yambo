@@ -432,6 +432,42 @@ kernel exported with `BDmRange 0 | 0` sits on the undamped real axis (accepted b
 lambda falls from 3.486 eV and crosses w at 3.4276 eV (BSE 3.4278 eV); at w = 0
 it is 3.558 eV. A damped z = w + i eta, or one band pair, misses the root.
 
+`sbin/chi_tools/sc_scan.py` automates this. It diagonalizes each w-file,
+records lambda(w), and interpolates the crossing. It flags sign changes
+where lambda jumps across a pole of fxc(w), because those are not solutions.
+`--delete` removes each file once it is read, and `--append` merges the
+batches of a scan into one table:
+
+```sh
+python sbin/chi_tools/sc_scan.py o-<job>.Ktt_q1_transitions o-<job>.Ktt_q1_w* \
+       --out sc_scan.dat --exciton <BSE energy> [--delete] [--append]
+```
+
+Silicon, 7 points on 3.30-3.48 eV in three batches: the crossing is at
+3.4272 eV. The finer 0.02 eV grid gives 3.4276 eV. The BSE value is 3.4278 eV.
+
+`sbin/chi_tools/plot_summary.py` draws the figures of the chain. Each figure
+is made only when its inputs are given:
+
+| Figure | Contents |
+| --- | --- |
+| `energies.png` | GW corrections of the states near the gap; the vb->cb gap at every k, KS and QP, with the exciton and static-Casida levels |
+| `spectra.png` | eps2 for the QP transitions, the static-fxc Casida and the fxc(w) Casida |
+| `fxc_omega.png` | ndb.Chi kernel in units of v: head alpha(w), one diagonal body element per shell, and the matrix at w = 0 |
+| `fkq.png` | F part of K_tt' as a matrix; its diagonal next to the exchange X_tt; the diagonal over the zone (`--hex` for hexagonal lattices) |
+| `selfconsistency.png` | lambda(w) and the line lambda = w |
+
+```sh
+python sbin/chi_tools/plot_summary.py --qp o-g0w0.qp --vb 13 \
+   --eps "QP transitions=o-cas_st_exc.eps_q1_diago_bse:ip" \
+   --eps "static fxc(0)=o-cas_st_exc.eps_q1_diago_bse" \
+   --eps "fxc(w)=o-cas_dyn_exc.eps_q1_chidyn_bse" \
+   --chi kx_exc --ktt o-cas_dyn_exc.Ktt_q1_transitions o-cas_dyn_exc.Ktt_q1_w225 \
+   --scan sc_scan.dat --bse-report r-bse_sex_exc_* --static-report r-cas_st_exc_*
+```
+
+The `fxc_omega.png` figure needs `read_ndb_Chi.py` and netCDF4.
+
 Silicon, same setup as above (bands 1-8, 15 G, 1 eV scissor through
 `KfnQP_E`), static screening with 12 bands, `BSKmod="SEX"`, `BSENGBlk= 15 RL`:
 
