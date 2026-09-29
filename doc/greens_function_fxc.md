@@ -425,6 +425,13 @@ The kernel is exact only on the whole transition space. A single band pair
 loses the binding: silicon at z = 3.4 + 0.1i eV gives 3.452 eV with all
 transitions (BSE exciton 3.428 eV) but 3.589 eV with the 4->5 pair alone.
 
+A single matrix is not a binding energy: with the exact kernel the exciton
+solves lambda(w) = w, where lambda is the lowest bright eigenvalue of M(w). A
+kernel exported with `BDmRange 0 | 0` sits on the undamped real axis (accepted by
+`BSEChiDyn` for BSE-exported kernels only). Silicon, full matrix on 3.00-3.50 eV:
+lambda falls from 3.486 eV and crosses w at 3.4276 eV (BSE 3.4278 eV); at w = 0
+it is 3.558 eV. A damped z = w + i eta, or one band pair, misses the root.
+
 Silicon, same setup as above (bands 1-8, 15 G, 1 eV scissor through
 `KfnQP_E`), static screening with 12 bands, `BSKmod="SEX"`, `BSENGBlk= 15 RL`:
 
