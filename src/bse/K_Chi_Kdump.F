@@ -29,7 +29,7 @@ subroutine K_Chi_Kdump(iq,Xk,nh,H0)
  !
  use pars,           ONLY:SP,DP,lchlen,schlen
  use units,          ONLY:HA2EV
- use R_lattice,      ONLY:bz_samp
+ use R_lattice,      ONLY:bz_samp,rl_sop
  use vec_operate,    ONLY:c2a
  use com,            ONLY:msg
  use stderr,         ONLY:intc
@@ -49,7 +49,7 @@ subroutine K_Chi_Kdump(iq,Xk,nh,H0)
  !
  integer                  :: n,m,it,jt,iw,n_w,ierr,iu,ib,nb
  integer,     allocatable :: sel(:)
- real(SP)                 :: k_rlu(3)
+ real(SP)                 :: k_rlu(3),k_iku(3)
  real(DP)                 :: E_t
  real(DP),    allocatable :: s(:)
  complex(DP), allocatable :: Vr(:,:),Vc(:,:),F(:,:),X(:,:,:),Kf(:,:,:)
@@ -106,8 +106,9 @@ subroutine K_Chi_Kdump(iq,Xk,nh,H0)
 &                '            f_t          Re a_t          Im a_t'
  do it=1,m
    jt=sel(it)
-   k_rlu=0._SP
-   if (allocated(Xk%ptbz)) call c2a(v_in=Xk%ptbz(BSS_eh_table(jt,1),:),v_out=k_rlu,mode='ki2a')
+   ! BZ point from its IBZ image and star symmetry, as k_ibz2bz (Xk%ptbz is not set here)
+   k_iku=matmul(rl_sop(:,:,Xk%sstar(BSS_eh_table(jt,1),2)),Xk%pt(Xk%sstar(BSS_eh_table(jt,1),1),:))
+   call c2a(v_in=k_iku,v_out=k_rlu,mode='ki2a')
    a_t=BSS_dipoles_opt(1,jt)*sqrt(cmplx(BSS_eh_f(jt),kind=SP))
    write(iu,'(4i6,3f10.5,2i5,4es16.8)') it,jt,BSS_eh_table(jt,1),Xk%sstar(BSS_eh_table(jt,1),1),k_rlu,&
 &        BSS_eh_table(jt,2),BSS_eh_table(jt,3),real(BSS_eh_E(jt),DP)*HA2EV,real(BSS_eh_f(jt),DP),&
