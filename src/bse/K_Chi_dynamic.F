@@ -32,6 +32,7 @@ subroutine K_Chi_dynamic(iq,Xk,W)
  use X_m,            ONLY:Resp_ii,X_OUTPUT_driver,global_gauge
  use R_lattice,      ONLY:bare_qpg
  use BS_solvers,     ONLY:BSS_eh_E
+ use Chi_m,          ONLY:Chi_G_mode
  use Chi_m,          ONLY:Chi_0,Chi_freqs,Chi_fxc,Chi_n_freqs,Chi_ng,Chi_free,&
 &                         Chi_dyn_V,Chi_dyn_s,Chi_dyn_filled,Chi_dyn_c,Chi_dyn_free
  use descriptors,    ONLY:IO_desc_add
@@ -87,8 +88,15 @@ subroutine K_Chi_dynamic(iq,Xk,W)
  if (Chi_n_freqs==nw+1) then
    if (abs(Chi_freqs(1))==0._SP) i0=1
  endif
- if (any(aimag(Chi_freqs(1+i0:))<=0._SP)) &
-&  call error('[Chi/BSK] ndb.Chi is not on the damped real axis: rebuild it with ChiGAxis="REAL"')
+ ! A kernel exported from a BSE may also sit on the undamped real axis (BDmRange 0): it is
+ ! exact there, which is what a fixed-frequency Casida (BSEChiKoutW) needs at w = E_exciton.
+ if (any(aimag(Chi_freqs(1+i0:))<0._SP)) &
+&  call error('[Chi/BSK] ndb.Chi has frequencies below the real axis: it is not retarded')
+ if (any(aimag(Chi_freqs(1+i0:))<=0._SP)) then
+   if (Chi_G_mode(1:4)/='BSE-') &
+&    call error('[Chi/BSK] ndb.Chi is not on the damped real axis: rebuild it with ChiGAxis="REAL"')
+   call warning('[Chi/BSK] undamped real frequencies: the spectrum has bare poles; meant for BSEChiKoutW')
+ endif
  iw_bad=0
  if (nw/=Chi_n_freqs-i0) then
    iw_bad=-1
