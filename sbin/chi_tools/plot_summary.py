@@ -11,8 +11,9 @@ Each figure is made only when its inputs are given; all are PNG files in --outdi
                        Casida with fxc(w) (= BSE)                     --eps LABEL=FILE ...
   fxc_omega.png        the exported kernel fxc(G,G';w) of ndb.Chi, in units of the Coulomb
                        interaction, ft(G,G') = fxc(G,G') |q+G||q+G'| / 4pi:
-                       head -ft(0,0) = alpha(w) (the "-alpha/q^2" of the LRC kernel), the
-                       first diagonal body elements, and ft(G,G') at w = 0  --chi DIR
+                       the head as alpha(w) = -fxc(0,0) q^2 (the LRC convention fxc = -alpha/q^2,
+                       as read_ndb_Chi.py reports it), one diagonal body element per shell of
+                       |q+G|, and ft(G,G') at w = 0                           --chi DIR
   fkq.png              F_kq = the fxc part of the Casida matrix K_tt' (BSEChiKoutW, rr block):
                        the matrix ordered by transition energy, its diagonal next to the
                        exchange X_tt, and the diagonal over the Brillouin zone
@@ -230,14 +231,14 @@ def fig_fxc(a, lev, outdir):
     eta = np.median(np.abs(w.imag[w.real > 1e-6])) if np.any(w.real > 1e-6) else 0.0
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 4.2), gridspec_kw={'width_ratios': [1.2, 1.2, 1]})
 
-    alpha = -ft[:, 0, 0]
+    alpha = -q['fxc'][o][:, 0, 0] * qpg[0] ** 2      # LRC convention: fxc(0,0) = -alpha/q^2
     ax1.plot(w.real, alpha.real, color=SERIES[0], label=r'Re $\alpha$')
     ax1.plot(w.real, alpha.imag, color=SERIES[1], label=r'Im $\alpha$')
     ax1.axhline(0, color=AXIS, lw=0.8)
     refline(ax1, lev.get('gap'), 'QP gap')
     refline(ax1, lev.get('exciton'), 'exciton', left=True)
     ax1.set_xlabel(r'$\omega$ [eV]' + (f'  (z = $\\omega$ + {eta:.2g}i)' if eta > 0 else ''))
-    ax1.set_ylabel(r'$\alpha(\omega) = -f_{xc}(0,0)\,|q|^2/4\pi$')
+    ax1.set_ylabel(r'$\alpha(\omega) = -f_{xc}(0,0)\,q^2$')
     ax1.set_title(r'Head: long-range $-\alpha/q^2$ part')
     ax1.legend(loc='upper left')
     lim = np.percentile(np.abs(alpha), 97) * 1.4
@@ -363,6 +364,10 @@ def save_fkq(fig, a, lev, outdir, n, z, E, dF, dX, F):
     print(f'  fkq: {n} transitions, z = {z}; diagonal F: mean {dF.mean():.2f} meV, min {dF.min():.2f} meV '
           f'at E_t = {E[np.argmin(dF)]:.3f} eV; diagonal X: mean {dX.mean():.2f} meV'
           + (f'; exciton line {ex:.3f} eV' if ex else ''))
+    ev = np.sort(np.linalg.eigvals(F).real) * 1000.0
+    nz = int(np.sum(np.abs(ev) > 1e-3 * np.abs(ev).max()))
+    print(f'  fkq: trace of Re F {np.trace(F).real * 1000:.1f} meV carried by {nz} non-zero modes; '
+          f'most attractive {", ".join(f"{e:.1f}" for e in ev[:min(4, nz)])} meV (rank <= BSENGfxc)')
     herm = np.abs(F - F.conj().T).max() / max(np.abs(F).max(), 1e-300)
     print(f'  fkq: |F - F^H| / max|F| = {herm:.2e} (non-zero: fxc(z) at complex z is not Hermitian)')
     save(fig, outdir, 'fkq.png')
