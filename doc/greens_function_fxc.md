@@ -413,6 +413,18 @@ rebuilt from the files match the static Casida run to 4e-5 eV (single-precision
 matrix, 8 printed digits); the response at z = 0.1i eV matches the dynamic
 solver to 1e-6.
 
+`sbin/chi_tools/ktt_casida.py` reads these files, builds M(z), and prints its
+lowest eigenvalues with their oscillator strengths, the lowest bright one and
+its binding energy; `--tda`, `--no-fxc` and `--spectrum` are optional:
+
+```sh
+python sbin/chi_tools/ktt_casida.py o-<job>.Ktt_q1_transitions o-<job>.Ktt_q1_w<iw>
+```
+
+The kernel is exact only on the whole transition space. A single band pair
+loses the binding: silicon at z = 3.4 + 0.1i eV gives 3.452 eV with all
+transitions (BSE exciton 3.428 eV) but 3.589 eV with the 4->5 pair alone.
+
 Silicon, same setup as above (bands 1-8, 15 G, 1 eV scissor through
 `KfnQP_E`), static screening with 12 bands, `BSKmod="SEX"`, `BSENGBlk= 15 RL`:
 
