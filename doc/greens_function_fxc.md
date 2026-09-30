@@ -367,7 +367,12 @@ frequencies), coupling with the diagonalization solver, length gauge, scalar
 unpolarized states, no transition widths or Z factors, `BSENGexx = BSENGfxc`.
 The export stops if the reference bubble or the BSE response is
 ill-conditioned (`[Chi/BSK] minimum rcond` below `ChiRcondMin`); reduce the
-G basis then. Each frequency costs one LU solve of size 2N. The Coulomb factor
+G basis then. Monolayer WS2 (bands 11-16, 9 G, no Coulomb cutoff) passes with
+rcond 2e-9: the eight pure-G_z plane waves are nearly dependent, the eigenvalues of
+D chi0 D span 1e-8 to 2.4, and the body of fxc reaches 3e6 in units of v. The head
+and the optical response are exact (the exported P gives the BSE eps to 3e-7, the
+8-digit precision of the text output), but for the kernel itself a smaller basis is
+cleaner. `plot_summary.py --chi` prints this diagnostic. Each frequency costs one LU solve of size 2N. The Coulomb factor
 is D = sqrt(4 pi)/bare_qpg as a complex number, the form the BSE exchange
 (1/bare_qpg**2) uses, so the identity also holds with a Coulomb cutoff where
 v_cut(q+G) < 0 for some G.
@@ -466,7 +471,7 @@ python sbin/chi_tools/plot_summary.py --qp o-g0w0.qp --vb 13 \
    --scan sc_scan.dat --bse-report r-bse_sex_exc_* --static-report r-cas_st_exc_*
 ```
 
-The `fxc_omega.png` figure needs `read_ndb_Chi.py` and netCDF4.
+The `fxc_omega.png` figure needs netCDF4 (the script reads `ndb.Chi` itself).
 
 Silicon, same setup as above (bands 1-8, 15 G, 1 eV scissor through
 `KfnQP_E`), static screening with 12 bands, `BSKmod="SEX"`, `BSENGBlk= 15 RL`:

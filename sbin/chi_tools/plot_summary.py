@@ -139,6 +139,35 @@ def read_rr(path, n, chunk_lines=500000):
     return z, X, F
 
 
+def read_chi(dirname, iq):
+    """Header and q fragment of an ndb.Chi (layout of src/io/io_Chi.F).
+
+    netCDF reverses Fortran's (2,ng,ng,nw): arrays arrive as (nw,ng,ng,2) with (Re,Im)
+    last and each frequency slice transposed, which is undone here ([G,G'] order)."""
+    from netCDF4 import Dataset
+
+    def cplx(v):
+        x = np.asarray(v[:])
+        return x[..., 0] + 1j * x[..., 1]
+
+    with Dataset(os.path.join(dirname, 'ndb.Chi')) as ds:
+        pars = np.asarray(ds.variables['CHI_PARS_1'][:]).ravel()
+        h = {'ng': int(round(pars[0])), 'qpg': cplx(ds.variables['CHI_QPG']).T}
+    for path in (os.path.join(dirname, f'ndb.Chi_fragment_{iq}'), os.path.join(dirname, 'ndb.Chi')):
+        if not os.path.exists(path):
+            continue
+        with Dataset(path) as ds:
+            if f'FXC_Q_{iq}' not in ds.variables:
+                continue
+            q = {'freqs': cplx(ds.variables[f'CHI_FREQ_Q_{iq}'])}
+            for key, name in (('chi0', 'CHI0'), ('P', 'P'), ('fxc', 'FXC')):
+                q[key] = np.transpose(cplx(ds.variables[f'{name}_Q_{iq}']), (0, 2, 1))
+            if f'CHI_RCOND_Q_{iq}' in ds.variables:
+                q['rcond'] = np.asarray(ds.variables[f'CHI_RCOND_Q_{iq}'][:])
+            return h, q
+    raise FileNotFoundError(f'no FXC_Q_{iq} in {dirname}')
+
+
 # ---- figures -------------------------------------------------------------------------------
 def fig_energies(a, lev, outdir):
     d = load_cols(a.qp)                       # k, band, Eo, E-Eo, (Sc)
@@ -213,15 +242,11 @@ def fig_spectra(a, lev, outdir):
 
 
 def fig_fxc(a, lev, outdir):
-    sys.path[:0] = [os.getcwd(), os.path.dirname(os.path.abspath(__file__))]
     try:
-        import read_ndb_Chi as rc
+        h, q = read_chi(a.chi, a.iq)
     except ImportError:
-        print('  !!! fxc_omega: read_ndb_Chi.py (and netCDF4) needed in the current directory, next to this script or on PYTHONPATH')
+        print('  !!! fxc_omega: needs netCDF4 (pip install --user netCDF4)')
         return
-    path = os.path.join(a.chi, 'ndb.Chi')
-    h = rc.read_header(path)
-    q = rc.read_q(a.chi, a.iq)
     HA = 27.211386
     w = q['freqs'] * HA
     qpg = h['qpg'][a.iq - 1][:h['ng']]
@@ -283,6 +308,17 @@ def fig_fxc(a, lev, outdir):
     cb.outline.set_visible(False)
     print(f'  fxc: alpha(0) = {alpha[i0].real:.4f}; ng = {ng}; {len(w)} frequencies '
           f'{w.real.min():.2f}..{w.real.max():.2f} eV')
+    # conditioning: f_xc ~ delta/lambda^2 along small eigenvalues lambda of D chi0 D
+    d = np.sqrt(4 * np.pi) / qpg
+    lam = np.sort(np.abs(np.linalg.eigvals(d[:, None] * q['chi0'][o][i0] * d[None, :])))
+    msg = f'  fxc: |eigenvalues| of D chi0 D at w = 0 span {lam[0]:.1e} .. {lam[-1]:.1e}'
+    if 'rcond' in q:
+        msg += f'; stored min rcond (chi0, P) {q["rcond"][:, 0].min():.1e}, {q["rcond"][:, 1].min():.1e}'
+    print(msg)
+    if lam[0] < 1e-6 * lam[-1]:
+        print('  !!! fxc: nearly dependent plane waves: the body of fxc (up to '
+              f'{np.abs(ft[i0][1:, 1:]).max():.1e} v) is set by near-null directions of chi0.')
+        print('      The head and the optical response are unaffected; for the kernel itself use fewer G.')
     save(fig, outdir, 'fxc_omega.png')
 
 
