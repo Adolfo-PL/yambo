@@ -420,10 +420,13 @@ def fig_scan(a, lev, outdir):
     xs, poles = crossings(w, lam)
     fig, ax = plt.subplots(figsize=(7.5, 4.6))
     ax.plot(w, w, '--', color=MUTED, lw=1.0)
-    ax.text(w[-1], w[-1], r' $\lambda=\omega$', color=INK2, fontsize=8.5, va='center')
-    # do not draw a line across a jump of lambda (a pole of the kernel)
-    seg = np.split(np.arange(len(w)), [j + 1 for j in range(len(w) - 1)
-                                       if abs(lam[j + 1] - lam[j]) > 10 * abs(w[j + 1] - w[j])])
+    ax.text(w[0], w[0], r'  $\lambda=\omega$', color=INK2, fontsize=8.5, va='bottom')
+    # do not draw a line across a jump of lambda (a pole of the kernel): a steep rise, or a
+    # steep step right after one (the hop back to the branch); a steep fall alone is the crossing
+    s = np.diff(lam) / np.diff(w)
+    up = s > 10.0
+    cut = [j + 1 for j in range(len(s)) if up[j] or (j > 0 and up[j - 1] and abs(s[j]) > 10.0)]
+    seg = np.split(np.arange(len(w)), cut)
     for s in seg:
         ax.plot(w[s], lam[s], 'o-', color=SERIES[0], ms=4.5)
     ax.plot([], [], 'o-', color=SERIES[0], ms=4.5, label=r'lowest bright eigenvalue $\lambda(\omega)$ of M($\omega$)')
@@ -431,7 +434,7 @@ def fig_scan(a, lev, outdir):
             vertical=False, ls='-', color=SERIES[2])
     for x in xs:
         ax.plot([x], [x], 'o', ms=9, mfc='none', mec=INK, mew=1.4)
-        ax.annotate(f'self-consistent\n{x:.4f} eV', (x, x), xytext=(-120, 34), textcoords='offset points',
+        ax.annotate(f'self-consistent\n{x:.4f} eV', (x, x), xytext=(30, 45), textcoords='offset points',
                     fontsize=8.5, color=INK, arrowprops=dict(arrowstyle='-', color=MUTED, lw=0.8))
     lo, hi = np.percentile(lam, 2), np.percentile(lam, 98)
     lo, hi = min(lo, w.min()), max(hi, w.max())
@@ -439,7 +442,7 @@ def fig_scan(a, lev, outdir):
     ax.set_xlabel(r'frequency $\omega$ of the kernel $f_{xc}(\omega)$ [eV]')
     ax.set_ylabel(r'$\lambda(\omega)$ [eV]')
     ax.set_title(r'Self-consistency: the exciton is where $\lambda(\omega)=\omega$')
-    ax.legend(loc='upper left')
+    ax.legend(loc='best')
     print(f'  scan: crossing(s) {", ".join(f"{x:.4f}" for x in xs) or "none"} eV'
           + (f'; jumps (kernel poles) near {", ".join(f"{x:.3f}" for x in poles)} eV' if poles else ''))
     save(fig, outdir, 'selfconsistency.png')

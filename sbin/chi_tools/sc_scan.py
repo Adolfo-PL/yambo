@@ -24,6 +24,10 @@ Usage
 
 --delete removes each w-file once it is read (they are ~1 GB each for 2000 transitions);
 --append merges the rows with those already in --out (a scan split into batches).
+
+  python sc_scan.py --table sc.dat [--exciton 2.234196]
+
+re-analyses a finished table (no matrices needed): the crossing, the kernel poles.
 """
 import argparse
 import os
@@ -36,26 +40,64 @@ import ktt_casida as kc   # noqa: E402
 
 
 def crossings(w, lam, jump=10.0):
-    """Zeros of lam(w) - w by linear interpolation, and the sign changes that are jumps.
+    """Zeros of lam(w) - w, and the sign changes that are jumps.
 
-    Near a pole of the kernel lambda(w) changes branch: a sign change with
-    |d lambda / d w| > jump between two grid points is such a jump, not a solution."""
+    Near a pole of the kernel lambda(w) changes branch: the attractive kernel pulls
+    lambda towards -infinity and past the pole it comes back from above. A sign change
+    where lambda RISES faster than jump * w is such a jump, not a solution. A steep fall
+    is a genuine crossing: just below the exciton d lambda / d w is of order -10.
+
+    Each zero is interpolated by the polynomial (degree <= 3) through the grid points
+    on either side that lie on the same branch, i.e. not across a jump."""
     g = lam - w
+    up = np.diff(lam) > jump * np.diff(w)            # jumps between grid points j, j+1
     out, poles = [], []
     for j in range(len(w) - 1):
         if g[j] == 0.0:
             out.append(w[j])
         elif g[j] * g[j + 1] < 0.0:
             x = w[j] - g[j] * (w[j + 1] - w[j]) / (g[j + 1] - g[j])
-            steep = abs(lam[j + 1] - lam[j]) > jump * abs(w[j + 1] - w[j])
-            (poles if steep else out).append(x)
+            if up[j]:
+                poles.append(x)
+                continue
+            lo, hi = j, j + 1
+            if lo > 0 and not up[lo - 1]:
+                lo -= 1
+            if hi < len(w) - 1 and not up[hi]:
+                hi += 1
+            if hi - lo >= 2:
+                c = np.polyfit(w[lo:hi + 1] - w[j], g[lo:hi + 1], hi - lo)
+                r = [w[j] + t.real for t in np.roots(c)
+                     if abs(t.imag) < 1e-12 and 0.0 <= t.real <= w[j + 1] - w[j]]
+                if len(r) == 1:
+                    x = r[0]
+            out.append(x)
     return out, poles
+
+
+def report(rows, exciton=None):
+    xb, pb = crossings(rows[:, 0], rows[:, 1])
+    xl, _ = crossings(rows[:, 0], rows[:, 3])
+    ref = f'   (BSE {exciton:.6f} eV)' if exciton else ''
+    if xb:
+        print(f'lambda_bright(w) = w at  ' + ', '.join(f'{x:.6f}' for x in xb) + ' eV' + ref)
+        if exciton:
+            d = min(xb, key=lambda x: abs(x - exciton)) - exciton
+            print(f'  self-consistent - BSE = {d * 1000:+.4f} meV')
+    else:
+        print('no crossing of lambda_bright(w) = w in the scanned window: widen or move it')
+    if pb:
+        print('lambda_bright jumps across w near ' + ', '.join(f'{x:.3f}' for x in pb) +
+              ' eV: a pole of fxc(w), not a solution')
+    if xl:
+        print(f'lambda_lowest(w) = w at  ' + ', '.join(f'{x:.6f}' for x in xl) + ' eV (dark or bright)')
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[1])
-    ap.add_argument('transitions')
-    ap.add_argument('wfiles', nargs='+')
+    ap.add_argument('transitions', nargs='?')
+    ap.add_argument('wfiles', nargs='*')
+    ap.add_argument('--table', help='only re-analyse a table written by an earlier scan')
     ap.add_argument('--out', default='sc_scan.dat')
     ap.add_argument('--exciton', type=float, help='BSE exciton energy [eV] to compare with')
     ap.add_argument('--bright', type=float, default=0.01, help='relative strength of a bright state')
@@ -64,6 +106,11 @@ def main():
     ap.add_argument('--append', action='store_true',
                     help='merge with the rows already in --out (a scan run in several batches)')
     a = ap.parse_args()
+    if a.table:
+        report(np.loadtxt(a.table, ndmin=2), a.exciton)
+        return
+    if not a.wfiles:
+        ap.error('give the transitions file and the w-files, or --table')
 
     _, tr = kc.read_table(a.transitions)
     n = len(tr)
@@ -109,20 +156,7 @@ def main():
     np.savetxt(a.out, rows, fmt='%.6f',
                header='omega_eV lambda_bright_re lambda_bright_im lambda_lowest_re')
     print(f'\ntable written to {a.out}')
-    xb, pb = crossings(rows[:, 0], rows[:, 1])
-    xl, _ = crossings(rows[:, 0], rows[:, 3])
-    ref = f'   (BSE {a.exciton:.4f} eV)' if a.exciton else ''
-    if xb:
-        print(f'lambda_bright(w) = w at  ' + ', '.join(f'{x:.4f}' for x in xb) + ' eV' + ref)
-        if a.exciton:
-            print(f'  self-consistent - BSE = {min(xb, key=lambda x: abs(x - a.exciton)) - a.exciton:+.4f} eV')
-    else:
-        print('no crossing of lambda_bright(w) = w in the scanned window: widen or move it')
-    if pb:
-        print('lambda_bright jumps across w near ' + ', '.join(f'{x:.3f}' for x in pb) +
-              ' eV: a pole of fxc(w), not a solution')
-    if xl:
-        print(f'lambda_lowest(w) = w at  ' + ', '.join(f'{x:.4f}' for x in xl) + ' eV (dark or bright)')
+    report(rows, a.exciton)
 
 
 if __name__ == '__main__':

@@ -442,18 +442,36 @@ lambda falls from 3.486 eV and crosses w at 3.4276 eV (BSE 3.4278 eV); at w = 0
 it is 3.558 eV. A damped z = w + i eta, or one band pair, misses the root.
 
 `sbin/chi_tools/sc_scan.py` automates this. It diagonalizes each w-file,
-records lambda(w), and interpolates the crossing. It flags sign changes
-where lambda jumps across a pole of fxc(w), because those are not solutions.
-`--delete` removes each file once it is read, and `--append` merges the
-batches of a scan into one table:
+records lambda(w), and interpolates the crossing with a polynomial (degree up
+to 3) through the neighbouring grid points. At a pole of fxc(w) the attractive
+kernel drives lambda towards -infinity and it comes back from above: a sign
+change where lambda rises faster than 10 w is flagged as such a jump, not a
+solution. A steep fall is a crossing: just below the WS2 exciton
+d lambda / d w is about -12. `--delete` removes each file once it is read,
+`--append` merges the batches of a scan into one table, and `--table`
+re-analyses a finished table:
 
 ```sh
 python sbin/chi_tools/sc_scan.py o-<job>.Ktt_q1_transitions o-<job>.Ktt_q1_w* \
        --out sc_scan.dat --exciton <BSE energy> [--delete] [--append]
+python sbin/chi_tools/sc_scan.py --table sc_scan.dat --exciton <BSE energy>
 ```
 
 Silicon, 7 points on 3.30-3.48 eV in three batches: the crossing is at
 3.4272 eV. The finer 0.02 eV grid gives 3.4276 eV. The BSE value is 3.4278 eV.
+
+Monolayer WS2 (bands 11-16, 2025 transitions, 9 G, coupling): lambda(w) is
+2.504 eV at w = 2.0 eV, only 0.04 eV below the 2.543 eV gap, and falls
+steeply as alpha(w) grows towards the exciton.
+
+| Grid | Step | lambda_bright(w) = w | BSE | Difference |
+| --- | --- | --- | --- | --- |
+| 2.00-2.48 eV, 17 points | 30 meV | 2.2320 eV | 2.234196 eV | -2.2 meV |
+| 2.221-2.245 eV, 13 points | 2 meV | 2.234196 eV | 2.234196 eV | < 1 ueV |
+
+On the real axis alpha(w) is real (Im ~ 1e-17) and has a pole near 2.29 eV,
+where P(w) passes through zero between the exciton (2.234 eV) and the next
+bright state (2.604 eV).
 
 `sbin/chi_tools/plot_summary.py` draws the figures of the chain. Each figure
 is made only when its inputs are given:
