@@ -372,7 +372,11 @@ rcond 2e-9: the eight pure-G_z plane waves are nearly dependent, the eigenvalues
 D chi0 D span 1e-8 to 2.4, and the body of fxc reaches 3e6 in units of v. The head
 and the optical response are exact (the exported P gives the BSE eps to 3e-7, the
 8-digit precision of the text output), but for the kernel itself a smaller basis is
-cleaner. `plot_summary.py --chi` prints this diagnostic. Each frequency costs one LU solve of size 2N. The Coulomb factor
+cleaner. `plot_summary.py --chi` prints this diagnostic. The same run with one plane
+wave (`BSENGexx = BSENGfxc = 1`) gives the same BSE (2.2342 eV, binding 0.309 eV), the
+same spectra (5e-7) and the same head alpha(w) (4e-6), with rcond = 1. Its 13->14 fxc
+block is then exactly rank one, F_tt' = -c alpha(z) d_t conj(d_t') with d_t the optical
+dipoles: for in-plane optics the exact kernel is a frequency-dependent LRC kernel. Each frequency costs one LU solve of size 2N. The Coulomb factor
 is D = sqrt(4 pi)/bare_qpg as a complex number, the form the BSE exchange
 (1/bare_qpg**2) uses, so the identity also holds with a Coulomb cutoff where
 v_cut(q+G) < 0 for some G.

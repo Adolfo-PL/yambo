@@ -283,14 +283,17 @@ def fig_fxc(a, lev, outdir):
     ax2.axhline(0, color=AXIS, lw=0.8)
     refline(ax2, lev.get('gap'), 'QP gap')
     refline(ax2, lev.get('exciton'), 'exciton', left=True)
-    body = np.array([ft[:, G, G].real for G in shells])
-    lo, hi = np.percentile(body, 3), np.percentile(body, 97)
-    pad = 0.4 * (hi - lo)
-    ax2.set_ylim(lo - pad, hi + pad)
+    if shells:
+        body = np.array([ft[:, G, G].real for G in shells])
+        lo, hi = np.percentile(body, 3), np.percentile(body, 97)
+        pad = 0.4 * (hi - lo)
+        ax2.set_ylim(lo - pad, hi + pad)
+        ax2.legend(loc='lower left')
+    else:
+        ax2.text(0.5, 0.5, 'one plane wave: no body', transform=ax2.transAxes, ha='center', color=INK2)
     ax2.set_xlabel(r'$\omega$ [eV]')
     ax2.set_ylabel(r'Re $f_{xc}(G,G;\omega)\,|q+G|^2/4\pi$')
     ax2.set_title('Body: diagonal, one G per shell, in units of v(G)')
-    ax2.legend(loc='lower left')
 
     i0 = int(np.argmin(np.abs(w)))
     m = ft[i0].real
