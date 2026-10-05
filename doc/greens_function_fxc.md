@@ -495,6 +495,15 @@ python sbin/chi_tools/plot_summary.py --qp o-g0w0.qp --vb 13 \
 
 The `fxc_omega.png` figure needs netCDF4 (the script reads `ndb.Chi` itself).
 
+`sbin/chi_tools/fxc_export.py` writes the kernel of an `ndb.Chi` as plain text and
+`.npz` for use in other codes: q, the G vectors with |q+G|, and fxc_GG'(q, w) for every
+q fragment present (`--static`: w = 0 only; `--sym`: also fxc |q+G||q+G'|/4pi, whose head
+is -alpha/4pi). A `BSEChiOut` export holds the optical q -> 0 only:
+
+```sh
+python sbin/chi_tools/fxc_export.py kx_exc --out fxc_GGq --static --sym
+```
+
 Silicon, same setup as above (bands 1-8, 15 G, 1 eV scissor through
 `KfnQP_E`), static screening with 12 bands, `BSKmod="SEX"`, `BSENGBlk= 15 RL`:
 
