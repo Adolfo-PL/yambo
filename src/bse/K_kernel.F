@@ -30,6 +30,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
 &                        BS_res_K_exchange,BS_Block_size,BS_n_g_W,&
 &                        O_ng,BS_n_g_exch,BS_n_g_fxc,BS_identifier,BS_LiveTiming_steps,&
 &                        BS_K_dim,BS_K_is_ALDA,BS_K_is_Chi,BS_K_Chi_dynamic,BS_K_Chi_out,BS_K_coupling,BS_cpl_K_exchange,&
+&                        BS_G_inplane,&
 &                        BS_K_anti_resonant,&
 &                        BS_cpl_K_corr,K_EXCH_collision,K_CORR_collision,&
 &                        WF_phase,n_BS_blks,BS_blk,BS_T_grp,&
@@ -53,7 +54,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  use PHOTOLUM,      ONLY:BSS_PL_free
  use parser_m,      ONLY:parser
  use Chi_m,         ONLY:Chi_ng,Chi_n_freqs,Chi_freqs,Chi_fxc,Chi_free
- use Chi_m,         ONLY:Chi_optical_q0,Chi_optical_q0_known,Chi_G_mode
+ use Chi_m,         ONLY:Chi_optical_q0,Chi_optical_q0_known,Chi_G_mode,Chi_G_db
  use Chi_m,         ONLY:Chi_dyn_V,Chi_dyn_s,Chi_dyn_filled,Chi_dyn_c,Chi_dyn_free
  use BS_solvers,    ONLY:BSS_q0
  use TDDFT_Chi_Fourier_m, ONLY:TDDFT_Chi_pair_G
@@ -368,6 +369,9 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
 &        call error('[Chi/BSK] optical q0 direction or normalization differs from ndb.Chi')
      endif
      if (Chi_ng/=BS_n_g_fxc) call error('[Chi/BSK] BSENGfxc must equal the ndb.Chi G-basis size')
+     ! A kernel exported with BSEGinplane is exact only with the exchange on the same G
+     if ((index(Chi_G_db,'BSEGinplane')>0).neqv.BS_G_inplane) &
+&      call error('[Chi/BSK] BSEGinplane must match the ndb.Chi export (exchange and fxc on the same G)')
      ! Transition energies: KS for a kernel built on the KS bubble. A kernel exported with
      ! BSEChiOut= "exc" is built on the bubble of its BSE energies and needs the same QP ones.
      l_KfnQPdb=.FALSE.

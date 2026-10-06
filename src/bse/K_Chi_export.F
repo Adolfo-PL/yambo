@@ -34,13 +34,13 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  use units,          ONLY:HA2EV
  use frequency,      ONLY:w_samp,W_reset,W_duplicate
  use electrons,      ONLY:levels
- use R_lattice,      ONLY:bz_samp,bare_qpg,qindx_X
+ use R_lattice,      ONLY:bz_samp,bare_qpg,qindx_X,g_vec
  use com,            ONLY:msg,isec
  use stderr,         ONLY:intc,real2ch,STRING_match
  use parallel_m,     ONLY:ncpu
  use X_m,            ONLY:X_t,X_reset,global_gauge
  use BS,             ONLY:BS_K_coupling,BS_K_dim,BS_H_dim,BS_res_ares_n_mat,BS_n_g_fxc,BS_bands,BS_K_Chi_out,&
-&                         BSE_L_kind,l_BS_ares_from_res
+&                         BSE_L_kind,l_BS_ares_from_res,BS_G_inplane
  use BS_solvers,     ONLY:BS_mat,BSS_eh_E,BSS_eh_W,BSS_eh_Z,BSS_eh_table,BSS_q0,BSS_dipoles_opt,BSS_eh_f
  use Chi_m,          ONLY:Chi_ng,Chi_n_freqs,Chi_alloc,Chi_free,Chi_freqs,Chi_0,Chi_P,Chi_fxc,Chi_rcond,&
 &                         Chi_QP_applied,Chi_QP_action,Chi_convention,Chi_G_mode,Chi_G_axis,Chi_G_db,&
@@ -70,7 +70,9 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  real(DP)                 :: herm,scale_max,rc(2)
  real(DP),    allocatable :: E_ref(:)
  complex(DP), allocatable :: d(:),H0(:,:),zz(:),chib(:,:),chi0(:,:),f(:,:),Pm(:,:)
- complex(DP), allocatable :: head(:),a(:),b(:),F0(:,:)
+ complex(DP), allocatable :: head(:),a(:),b(:),F0(:,:),chs(:,:),c0s(:,:),fs(:,:),Ps(:,:)
+ integer,     allocatable :: S(:)
+ integer                  :: ns
  complex(DP)              :: rr(9),lam
  real(DP)                 :: head_err
  integer                  :: is,iws(9)
@@ -123,6 +125,18 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
    d(ig)=sqrt(4._DP*pi)/cmplx(bare_qpg(iq,ig),kind=DP)
  enddo
  !
+ ! G set of the kernel: all, or the in-plane ones (BSEGinplane: the exchange acts on them only,
+ ! so chib restricted to them obeys its own Dyson equation and the kernel is exact there)
+ allocate(S(ng))
+ ns=0
+ do ig=1,ng
+   if (BS_G_inplane.and.abs(g_vec(ig,3))>1.E-5_SP) cycle
+   ns=ns+1
+   S(ns)=ig
+ enddo
+ if (S(1)/=1) call error('[Chi/BSK] BSEChiOut: G=0 must be in the kernel G set')
+ if (BS_G_inplane) call msg('r','[Chi/BSK] BSEGinplane: kernel on the in-plane G of the basis',(/ns,ng/))
+ !
  l_full_L=STRING_match(BSE_L_kind,"full")
  call msg('r','[Chi/BSK] BSEChiOut kernel reference',trim(BS_K_Chi_out))
  call msg('r','[Chi/BSK] BSE momentum index',iq)
@@ -146,15 +160,23 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  err_w=0
  head=(0._DP,0._DP)
  !
- !$omp parallel default(shared) private(iw,chib,chi0,f,Pm,rc,ierr)
+ !$omp parallel default(shared) private(iw,chib,chi0,f,Pm,rc,ierr,chs,c0s,fs,Ps)
  allocate(chib(ng,ng),chi0(ng,ng),f(ng,ng),Pm(ng,ng))
+ allocate(chs(ns,ns),c0s(ns,ns),fs(ns,ns),Ps(ns,ns))
  !$omp do schedule(dynamic)
  do iw=1,nw
    call TDDFT_Chi_pair_response(zz(iw),H0,Chi_dyn_V(:,:,1),Chi_dyn_V(:,:,2),Chi_dyn_s,Chi_dyn_c,chib,ierr)
    if (ierr==0) then
      head(iw)=chib(1,1)
      call TDDFT_Chi_pair_bubble(zz(iw),E_ref,Chi_dyn_V(:,:,1),Chi_dyn_V(:,:,2),Chi_dyn_s,Chi_dyn_c,chi0)
-     call TDDFT_Chi_kernel_from_response(chi0,chib,d,.TRUE.,f,Pm,rc,ierr,exch_head=l_full_L)
+     ! kernel on the G set S (all G unless BSEGinplane), zero outside it
+     chs=chib(S(:ns),S(:ns))
+     c0s=chi0(S(:ns),S(:ns))
+     call TDDFT_Chi_kernel_from_response(c0s,chs,d(S(:ns)),.TRUE.,fs,Ps,rc,ierr,exch_head=l_full_L)
+     f=(0._DP,0._DP)
+     Pm=(0._DP,0._DP)
+     f(S(:ns),S(:ns))=fs
+     Pm(S(:ns),S(:ns))=Ps
    endif
    err_w(iw)=ierr
    if (ierr==0) then
@@ -165,7 +187,7 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
    endif
  enddo
  !$omp end do
- deallocate(chib,chi0,f,Pm)
+ deallocate(chib,chi0,f,Pm,chs,c0s,fs,Ps)
  !$omp end parallel
  !
  n_bad=count(err_w/=0)
@@ -227,6 +249,7 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  Chi_n_freqs=nw
  Chi_QP_applied=l_qp
  Chi_G_db=''
+ if (BS_G_inplane) Chi_G_db='BSEGinplane: exchange and fxc on the in-plane G (G_z=0) only'
  Chi_G_axis='REAL'
  Chi_G0_error=-1._SP
  Chi_optical_q0=0._SP
@@ -261,7 +284,7 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  call W_reset(W_io)
  call Chi_free()
  call Chi_dyn_free()
- deallocate(E_ref,d,zz,err_w,H0,head)
+ deallocate(E_ref,d,zz,err_w,H0,head,S)
  !
  call timing('ChiExport',OPR='stop')
  !

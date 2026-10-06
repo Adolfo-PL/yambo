@@ -314,6 +314,7 @@ subroutine INIT_load(defs,en,q,k,X,Xw,Dip)
  call it(defs,'BSEChiKoutW','[BSK] BSEChiDyn: write the Casida matrix at the ndb.Chi frequencies in this Re w window',&
 &        BS_K_Chi_dump_w,E_unit)
  call it(defs,'BSEChiKoutB','[BSK] BSEChiKoutW: only this valence | conduction band pair (0 = any)',BS_K_Chi_dump_b)
+ call it('f',defs,'BSEGinplane','[BSK] Exchange and fxc on the in-plane G (G_z=0) only: layers in the xy plane')
  call it(defs,'FxcMode', '[TDDFT] ("G-XXX" or "R-XXX" with XXX=def/full/cut_Gmax/cut_GmGp") ',FXC_mode,verb_level=V_resp)
  call it(defs,'BSEEhEny','[BSK] Electron-hole energy range',BS_eh_en,E_unit,verb_level=V_resp)
  call it(defs,'BSKCut',  '[BSK] Cutoff on the BSE Kernel, 0=full 1=none',BS_K_cutoff,verb_level=V_resp)

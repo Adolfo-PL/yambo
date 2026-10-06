@@ -362,8 +362,9 @@ the maximum), the lowest transition of the window and the binding energy
 transitions the gap is the QP gap on the k grid. For a "full" kernel the
 transitions are KS ones; take the gap from the exporting BSE.
 
-Restrictions: optical q, one MPI rank (OpenMP threads parallelize the
-frequencies), coupling with the diagonalization solver, length gauge, scalar
+Restrictions: one MPI rank (OpenMP threads parallelize the frequencies), at
+finite q anti-resonant blocks from the resonant ones (see below), coupling with
+the diagonalization solver, length gauge, scalar
 unpolarized states, no transition widths or Z factors, `BSENGexx = BSENGfxc`.
 The export stops if the reference bubble or the BSE response is
 ill-conditioned (`[Chi/BSK] minimum rcond` below `ChiRcondMin`); reduce the
@@ -498,10 +499,11 @@ The `fxc_omega.png` figure needs netCDF4 (the script reads `ndb.Chi` itself).
 `sbin/chi_tools/fxc_export.py` writes the kernel of an `ndb.Chi` as plain text and
 `.npz` for use in other codes: q, the G vectors with |q+G|, and fxc_GG'(q, w) for every
 q fragment present (`--static`: w = 0 only; `--sym`: also fxc |q+G||q+G'|/4pi, whose head
-is -alpha/4pi). A `BSEChiOut` export holds the optical q -> 0 only:
+is -alpha/4pi; `--inplane`: only the G with G_z = 0). A `BSEChiOut` export holds one
+fragment per BSE momentum (see "Finite momentum" below):
 
 ```sh
-python sbin/chi_tools/fxc_export.py kx_exc --out fxc_GGq --static --sym
+python sbin/chi_tools/fxc_export.py kx_exc --out fxc_GGq --static --sym [--inplane]
 ```
 
 Silicon, same setup as above (bands 1-8, 15 G, 1 eV scissor through
@@ -522,6 +524,66 @@ dependence of the exact kernel carries the binding. The spectra were compared
 on the 0.1 eV grid with eta = 0.1 eV. In this build, gfortran 13 at -O3
 miscompiled `K_correlation_collisions_std` (the SEX kernel crashed without
 the export and gave NaN with it); the file compiled at -O1 runs correctly.
+
+### Finite momentum: `BSEChiOut` with `BSEQptR`
+
+The export runs at every BSE momentum of `BSEQptR` and writes one `ndb.Chi` with
+one fragment per q. At finite q the transitions are v(k-q) -> c(k), with
+E = E_c(k) - E_v(k-q), and the vertices rho_cv(k, q+G) come from the
+wavefunctions, not the dipoles. The coupled BSE must take its anti-resonant
+blocks from the resonant ones by time reversal or space inversion; the export
+stops otherwise. The exchange follows `Lkind`. By default (`Lkind="bar"`) it is vbar
+(no G=0), so P^-1 = chib^-1 + vbar. With `Lkind="full"` (or `"default"` with a
+Coulomb cutoff at q > 1) it is the full v (G=0 included), so P^-1 = chib^-1 + v.
+The `r-` file says which (`[Chi/BSK] exchange with/without G=0`).
+
+The header (G vectors, optical q0) is written by the first q of the run. Start
+`BSEQptR` at 1 so the file keeps the q0 direction of the optical point. At every q
+the head of the exported response chib_00(z) is compared, at nine frequencies, with
+Yambo's own response of the same BSE matrix (the one behind `o-*.eps_q<iq>*`). The
+comparison fits one complex scale, then reports the residual:
+
+```text
+[Chi/BSK] head of the exported response vs the BSE response: residual, |scale/c|, arg(scale)
+```
+
+The residual should be at round-off and |scale/c| = 1; the run warns above 1e-4.
+Casida with the exported kernel at a finite q uses `BSKmod="CHI"` and
+`BSEQptR q | q`, and reads fragment q of the same `ndb.Chi`.
+`fxc_export.py` writes all fragments.
+
+### In-plane G only: `BSEGinplane`
+
+For a layer in the xy plane with a large vacuum, the first G of the basis after G=0
+are pure G_z, spaced by 2 pi/c. These nearly dependent plane waves make the
+kernel ill-conditioned (WS2, 9 G: rcond 2e-9). `BSEGinplane` keeps the exchange
+and the kernel on the in-plane G (G_z = 0):
+
+- `K_exchange_collisions` zeroes the exchange vertex O_x(G) for every G_z != 0
+  of `BSENGexx`.
+- `K_Chi_export` builds the kernel on the in-plane set S and leaves it zero
+  elsewhere.
+
+With the exchange on S only, the BSE response on S obeys
+chib_SS = chi0_SS + chi0_SS v_SS chib_SS. Hence the kernel computed on S is
+exact for Casida with the same masked exchange.
+
+This is a modelling choice: the local fields of the BSE itself (its exchange
+term) come from the in-plane G only. The z-only G no longer contribute. The
+screened W term (`BSENGBlk`) is unchanged. The Casida run must set
+`BSEGinplane` too; `K_kernel` checks it against the `CHI_G_DB` string of the
+`ndb.Chi`. CPU build only.
+
+The G vectors are ordered by |G|, so `BSENGexx = BSENGfxc` must reach the first
+in-plane star. For WS2 (c of about 38 bohr, |G_z| steps of 0.166 bohr^-1, first
+in-plane star at 1.21 bohr^-1), 14 pure G_z lie below the star. 21 RL then hold
+G=0 and the six in-plane G. The report prints the count:
+
+```text
+[Chi/BSK] BSEGinplane: kernel on the in-plane G of the basis   <ns>   <ng>
+```
+
+`fxc_export.py --inplane` lists only these G.
 
 ### MPI for the response
 
@@ -761,7 +823,10 @@ Lorentzian sums of `K_diago_response_functions`; error codes; and a threaded
 frequency loop against the serial one. For `BSEChiOut` it checks that the pair
 response of diag(E,-E) is the pair bubble and that Casida with the exported
 "exc" and "full" kernels reproduces the response of a random coupled BSE
-(QP energies, vbar and a random W part) at real and complex frequencies.
+(QP energies, vbar and a random W part) at real and complex frequencies. It
+also covers the full v (G=0 in the exchange, as at finite q with a Coulomb
+cutoff) and an exchange restricted to a G subset, with the kernel computed on
+the subset and embedded (`BSEGinplane`).
 
 These tests use mock material and database IO. They do not establish a
  complete Yambo build, NetCDF round-trip, real MPI material run, or a material

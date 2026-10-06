@@ -328,7 +328,8 @@ contains
     complex(DP) :: Krr(nt,nt),Krc(nt,nt),Kcr(nt,nt),Kcc(nt,nt)
     real(DP) :: sq(nt),dq(nt),dks(nt),rc(2),c_fac,worst
     complex(DP) :: d(ng)
-    integer :: t,i,iz,info,ipv(ng),iref
+    integer :: t,i,iz,info,ipv(ng),iref,ns,isub(ng)
+    complex(DP), allocatable :: cs(:,:),bs(:,:),fs(:,:),ps(:,:),ws(:,:)
     complex(DP) :: lw(4*ng),zs(3)
     call random_vertices(rho_r)
     call random_vertices(rho_c)
@@ -344,10 +345,12 @@ contains
     call random_matrix(Cw)
     Cw=0.1_DP*(Cw+transpose(Cw))
     zs=[cmplx(0._DP,0._DP,kind=DP),cmplx(1.3_DP,0.05_DP,kind=DP),cmplx(2.9_DP,0.1_DP,kind=DP)]
-    do iref=1,4
+    do iref=1,5
       ! iref 1: QP reference, 2: KS reference, 3: QP reference with a cut Coulomb whose
       ! v_cut(G) < 0 for some G (imaginary d = sqrt(4 pi)/bare_qpg, as in Yambo),
       ! 4: finite q with the G=0 exchange kept (Lkind="full"): v instead of vbar
+      ! 5: BSEGinplane: exchange masked on some G (3 and 5); kernel from the block of the
+      !    other G, embedded with zeros (the masked block closes the Dyson equation)
       d(1)=40._DP
       if (iref==4) d(1)=3._DP
       do i=2,ng
@@ -362,6 +365,15 @@ contains
         vb(i,i)=d(i)**2
       enddo
       if (iref==4) vb(1,1)=d(1)**2
+      ns=0
+      do i=1,ng
+        if (iref==5.and.(i==3.or.i==5)) then
+          vb(i,i)=zero
+          cycle
+        endif
+        ns=ns+1
+        isub(ns)=i
+      enddo
       call TDDFT_Chi_dynamic_kernel(vb,rho_r,rho_r,sq,c_fac,Krr,info)
       call TDDFT_Chi_dynamic_kernel(vb,rho_r,rho_c,sq,c_fac,Krc,info)
       call TDDFT_Chi_dynamic_kernel(vb,rho_c,rho_r,sq,c_fac,Kcr,info)
@@ -389,13 +401,36 @@ contains
         else
           call TDDFT_Chi_pair_bubble(zz,dks,rho_r,rho_c,sq,c_fac,chi0)
         endif
-        call TDDFT_Chi_kernel_from_response(chi0,chib,d,.TRUE.,f,Pm,rc,info,exch_head=(iref==4))
+        if (iref/=5) then
+          call TDDFT_Chi_kernel_from_response(chi0,chib,d,.TRUE.,f,Pm,rc,info,exch_head=(iref==4))
+        else
+          allocate(cs(ns,ns),bs(ns,ns),fs(ns,ns),ps(ns,ns),ws(ns,ns))
+          cs=chi0(isub(:ns),isub(:ns))
+          bs=chib(isub(:ns),isub(:ns))
+          call TDDFT_Chi_kernel_from_response(cs,bs,d(isub(:ns)),.TRUE.,fs,ps,rc,info)
+          f=zero
+          Pm=zero
+          f(isub(:ns),isub(:ns))=fs
+          Pm(isub(:ns),isub(:ns))=ps
+          ! P^-1 = chib^-1 + vbar on the kept block
+          ws=ps
+          call inv(ws)
+          ws=ws-vb(isub(:ns),isub(:ns))
+          call inv(ws)
+          worst=maxval(abs(ws-bs))/maxval(abs(bs))
+          if (worst>1.E-9_DP) then
+            print *,'FAIL: in-plane block: P^-1 /= chib^-1 + vbar',worst
+            failures=failures+1
+          endif
+          deallocate(cs,bs,fs,ps,ws)
+        endif
         if (info/=0) then
           print *,'FAIL: kernel_from_response error',info
           failures=failures+1
           cycle
         endif
-        ! P^-1 = chib^-1 + vbar
+        ! P^-1 = chib^-1 + vbar (iref 5: checked on the kept block above)
+        if (iref==5) goto 10
         work=Pm
         call zgetrf(ng,ng,work,ng,ipv,info)
         call zgetri(ng,work,ng,ipv,lw,size(lw),info)
@@ -419,6 +454,7 @@ contains
           print *,'FAIL: exported P does not satisfy P^-1 = chib^-1 + vbar',worst
           failures=failures+1
         endif
+10      continue
         ! Casida: reference energies + exchange, fxc from the export
         H0x=zero
         H0x(:nt,:nt)=Krr
@@ -439,6 +475,7 @@ contains
         if (iref==2) call check('export full: Casida(KS, v, fxc) = BSE response head',info,c_fac*resp,chib(1,1))
         if (iref==3) call check('export exc, cut Coulomb (v<0 at some G): Casida = BSE head',info,c_fac*resp,chib(1,1))
         if (iref==4) call check('export exc, finite q, G=0 exchange (Lfull): Casida = BSE head',info,c_fac*resp,chib(1,1))
+        if (iref==5) call check('export exc, BSEGinplane (masked G): Casida = BSE head',info,c_fac*resp,chib(1,1))
       enddo
     enddo
   end subroutine

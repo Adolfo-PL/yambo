@@ -10,10 +10,10 @@ subroutine K_exchange_collisions(iq,Xk,i_T_grp,NG,l_bs_exch_wf_in_loop)
  use pars,           ONLY:SP,cZERO
  use D_lattice,      ONLY:nsym,i_time_rev,sop_inv,sop_inv_d
  use BS,             ONLY:BS_T_grp,K_EXCH_collision,BS_n_g_exch,&
-&                         BSE_L_kind,l_BS_magnons,l_BSE_minimize_memory,BS_bands
+&                         BSE_L_kind,l_BS_magnons,l_BSE_minimize_memory,BS_bands,BS_G_inplane
  use interfaces,     ONLY:WF_load,WF_free
  use wave_func,      ONLY:WF
- use R_lattice,      ONLY:g_rot,g_rot_d,qindx_X,bz_samp
+ use R_lattice,      ONLY:g_rot,g_rot_d,qindx_X,bz_samp,g_vec
  use stderr,         ONLY:STRING_match
  use electrons,      ONLY:n_sp_pol
  use timing_m,       ONLY:timing
@@ -167,6 +167,14 @@ subroutine K_exchange_collisions(iq,Xk,i_T_grp,NG,l_bs_exch_wf_in_loop)
      call devxlib_memcpy_d2d( DEV_VAR(BS_T_grp(i_T_grp)%O_x)(:,i_T_el), &
 &                             DEV_VAR(K_EXCH_collision%rhotw), range1=(/i_g0,BS_n_g_exch/))
      !
+   endif
+   !
+   ! BSEGinplane (CPU only): no exchange through the out-of-plane G (G_z /= 0). Both the
+   ! resonant and the coupling exchange vanish on them (-G of an in-plane G is in-plane).
+   if (BS_G_inplane) then
+     do i_g1=1,BS_n_g_exch
+       if (abs(g_vec(i_g1,3))>1.E-5_SP) BS_T_grp(i_T_grp)%O_x(i_g1,i_T_el)=cZERO
+     enddo
    endif
    !
  enddo T_loop

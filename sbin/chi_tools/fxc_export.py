@@ -12,6 +12,9 @@ the bare Coulomb interaction; its head is -alpha/(4 pi), alpha = -fxc_00 q^2.
 Units: fxc as stored (Hartree atomic units); |q+G| in bohr^-1; frequencies in eV.
 G as stored in CHI_RL_vecs (Yambo's Cartesian components, units of 2 pi/alat per axis).
 The .npz holds the same arrays: G, qpg[iq], q[iq], freqs_eV[iq], fxc[iq] (nw, nG, nG).
+
+--inplane keeps only the G with G_z = 0: for a kernel exported with BSEGinplane the other
+rows and columns are zero by construction (exchange and fxc act on the in-plane G only).
 """
 import argparse
 import os
@@ -38,6 +41,7 @@ def main():
     ap.add_argument('--out', default='fxc_GGq')
     ap.add_argument('--static', action='store_true', help='w = 0 only')
     ap.add_argument('--sym', action='store_true', help='also fxc |q+G||q+G\'|/4pi')
+    ap.add_argument('--inplane', action='store_true', help='keep only the G with G_z = 0')
     a = ap.parse_args()
 
     with Dataset(os.path.join(a.dir, 'ndb.Chi')) as ds:
@@ -48,6 +52,15 @@ def main():
         conv = text(ds.variables['CHI_CONVENTION'])
         action = text(ds.variables['CHI_QP_ACTION'])
         q0 = np.asarray(ds.variables['CHI_OPTICAL_Q0'][:])
+    keep = np.arange(G.shape[0])
+    if a.inplane:
+        keep = np.where(np.abs(G[:, 2]) < 1e-5)[0]
+    gdb = ''
+    with Dataset(os.path.join(a.dir, 'ndb.Chi')) as ds:
+        if 'CHI_G_DB' in ds.variables:
+            gdb = text(ds.variables['CHI_G_DB'])
+    G = G[keep]
+    qpg_all = qpg_all[keep]
     ng = G.shape[0]
 
     data = {}
@@ -60,7 +73,7 @@ def main():
                 if f'FXC_Q_{iq}' not in ds.variables:
                     continue
                 w = cplx(ds.variables[f'CHI_FREQ_Q_{iq}']) * HA2EV
-                fx = np.transpose(cplx(ds.variables[f'FXC_Q_{iq}']), (0, 2, 1))
+                fx = np.transpose(cplx(ds.variables[f'FXC_Q_{iq}']), (0, 2, 1))[:, keep][:, :, keep]
                 data[iq] = (w, fx)
             break
     if not data:
@@ -69,6 +82,10 @@ def main():
     with open(a.out + '.dat', 'w') as o:
         o.write(f'# fxc_GG\'(q, w) from {os.path.abspath(a.dir)}/ndb.Chi\n')
         o.write(f'# mode: {mode}\n# {action}\n# convention: {conv}\n')
+        if gdb:
+            o.write(f'# G set: {gdb}\n')
+        if a.inplane:
+            o.write('# --inplane: only the G with G_z = 0 are listed\n')
         o.write(f'# units: fxc Hartree atomic units; |q+G| bohr^-1; w eV. G: CHI_RL_vecs as stored\n')
         o.write(f'# q fragments present: {sorted(data)} of {qpts.shape[0]} q points in the header\n')
         o.write(f'# nG = {ng}\n')

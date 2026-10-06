@@ -37,6 +37,10 @@ module BS
  ! transitions or for one valence/conduction band pair (0 = any band)
  real(SP) :: BS_K_Chi_dump_w(2)=(/-1._SP,-1._SP/)
  integer  :: BS_K_Chi_dump_b(2)=(/0,0/)
+ ! BSEGinplane: the exchange (and so the exported/used fxc) acts only on the in-plane
+ ! G vectors (G_z = 0) of the BSENGexx set: for a layer in the xy plane, it keeps the
+ ! in-plane local fields and drops the vacuum (G_z) components that make chi0 singular
+ logical  :: BS_G_inplane=.FALSE.
  logical :: BS_not_const_eh_f=.FALSE.
  logical :: BS_perturbative_SOC=.FALSE.
  logical :: BS_K_has_been_calculated_loaded=.FALSE.
