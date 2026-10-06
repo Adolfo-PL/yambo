@@ -362,8 +362,7 @@ the maximum), the lowest transition of the window and the binding energy
 transitions the gap is the QP gap on the k grid. For a "full" kernel the
 transitions are KS ones; take the gap from the exporting BSE.
 
-Restrictions: one MPI rank (OpenMP threads parallelize the frequencies), at
-finite q anti-resonant blocks from the resonant ones (see below), coupling with
+Restrictions: one MPI rank (OpenMP threads parallelize the frequencies), coupling with
 the diagonalization solver, length gauge, scalar
 unpolarized states, no transition widths or Z factors, `BSENGexx = BSENGfxc`.
 The export stops if the reference bubble or the BSE response is
@@ -530,9 +529,7 @@ the export and gave NaN with it); the file compiled at -O1 runs correctly.
 The export runs at every BSE momentum of `BSEQptR` and writes one `ndb.Chi` with
 one fragment per q. At finite q the transitions are v(k-q) -> c(k), with
 E = E_c(k) - E_v(k-q), and the vertices rho_cv(k, q+G) come from the
-wavefunctions, not the dipoles. The coupled BSE must take its anti-resonant
-blocks from the resonant ones by time reversal or space inversion; the export
-stops otherwise. The exchange follows `Lkind`. By default (`Lkind="bar"`) it is vbar
+wavefunctions, not the dipoles. The exchange follows `Lkind`. By default (`Lkind="bar"`) it is vbar
 (no G=0), so P^-1 = chib^-1 + vbar. With `Lkind="full"` (or `"default"` with a
 Coulomb cutoff at q > 1) it is the full v (G=0 included), so P^-1 = chib^-1 + v.
 The `r-` file says which (`[Chi/BSK] exchange with/without G=0`).
@@ -551,6 +548,70 @@ The residual should be at round-off and |scale/c| = 1; the run warns above 1e-4.
 Casida with the exported kernel at a finite q uses `BSKmod="CHI"` and
 `BSEQptR q | q`, and reads fragment q of the same `ndb.Chi`.
 `fxc_export.py` writes all fragments.
+
+#### Anti-resonant transitions at finite q
+
+Stock Yambo derives the anti-resonant blocks of a coupled BSE from the resonant
+ones when the system has time reversal or space inversion. This shortcut is exact
+only at q = 0. Its coupling block pairs rho_t(q+G) with rho_t'(q-G) and v(q+G). It is
+computed for t <= t' and mirrored into a symmetric matrix, which holds only when
+v(q+G) = v(q-G). The explicit construction (each anti-resonant transition with its
+own bands, energy, occupation and oscillator; `ImposeAsym` in stock Yambo) uses the
+general kernel for every block.
+
+An exchange-only BSE (`BSKmod="Hartree"`) must give the G-space RPA with local fields
+of `X_redux` (same bands, G set, scissor and broadening). Monolayer hBN, 6x6 k grid,
+bands 3-6, maximum relative deviation of eps:
+
+| G set | q | Derived (stock) | Explicit |
+| --- | --- | --- | --- |
+| 9 RL (z-only G) | (0, 1/6, 0) | 4e-4 | 3e-4 |
+| 17 RL (in-plane star) | (0, 1/6, 0) | 3.1e-2 | 4e-4 |
+| 29 RL | (0, 1/6, 0) | 7.2e-2 | 1.3e-4 |
+| 29 RL | optical | 6e-5 | 1.6e-2 |
+
+The independent-particle columns agree to 4e-7 in every case. In this fork
+`K_driver_init` therefore builds the anti-resonant transitions explicitly at
+finite q whenever the BSE has coupling (`[BSK] finite q with coupling: explicit
+anti-resonant transitions` in the `r-` file). At q = 0 the derived blocks are kept;
+the explicit path is off there (its optical-limit oscillators), and `BSEChiOut`
+refuses `ImposeAsym` at the optical q. The explicit BSE is about twice the kernel
+work of the derived one.
+
+The export and the dynamic Casida then run over all 2N rows of the BSE matrix
+(`TDDFT_Chi_full_*`). Every row A has its vertex V_A (mode "R" on its own
+transition), s_A = sqrt(f_A) (i sqrt|f_A| for the anti-resonant rows, as in
+`K_kernel`), energy E_A and oscillator d_A from `BSS_eh_f`, `BSS_eh_E` and
+`BSS_dipoles_opt`:
+
+```
+chib(G,G') = c sum_AB s_A V_A(G) [z - M]^-1_AB s_B conj(V_B(G'))
+chi0(G,G') = c sum_A s_A^2 V_A(G) conj(V_A(G'))/(z - E_A)
+Casida:     M(z) = H0 + Kf(z),  Kf_AB = c s_A s_B V_A^H fxc(z) V_B
+```
+
+With derived anti-resonant rows (q = 0), V = (V_r, V_c), s = (s, i s),
+E = (E, -E) and d = (d, conj d), and these are the earlier pair formulas. hBN with
+the stock (derived) blocks at q = (0, 1/6, 0): exported head vs BSE 2e-2, Casida
+vs BSE 2.6e-2. With explicit rows: head below 1e-15 at q = 2, 3, 4; Casida vs BSE 6e-5 to
+1e-4 with 17 G (rcond 3e-5) and 2e-5 to 5e-5 with one G, the level of the optical
+q = 1 (single-precision BSE matrix and `ndb.Chi`).
+
+After pulling these changes, rebuild with a fresh dependency list. Yambo writes
+`config/stamps_and_lists/global_modules_dep.list` at configure time. A source file
+added to the fork after that is missing from the list, and is not recompiled when
+a module it uses changes. gfortran resolves module variables by name, but nvfortran
+addresses them by offset, so such a stale object reads the wrong variable. This is
+the likely cause of a monolayer WS2 Casida run at finite q (nvfortran build) that
+stopped with `dynamic solver: one BSE matrix only`, which a gfortran build of the
+same source does not reproduce: the count would read the logical declared before
+it, which nvfortran stores as -1.
+
+```sh
+make clean what=dep   # drop the configure-time dependency list
+make clean            # all Yambo objects (external libraries are kept)
+make yambo
+```
 
 ### In-plane G only: `BSEGinplane`
 
@@ -826,7 +887,11 @@ response of diag(E,-E) is the pair bubble and that Casida with the exported
 (QP energies, vbar and a random W part) at real and complex frequencies. It
 also covers the full v (G=0 in the exchange, as at finite q with a Coulomb
 cutoff) and an exchange restricted to a G subset, with the kernel computed on
-the subset and embedded (`BSEGinplane`).
+the subset and embedded (`BSEGinplane`). The whole-space routines must equal the
+pair ones for derived anti-resonant rows, and, for explicit anti-resonant rows
+(their own vertices, energies, occupations f < 0 and oscillators, a random W
+part), Casida with the exported kernel must return the BSE response for every
+G, G'.
 
 These tests use mock material and database IO. They do not establish a
  complete Yambo build, NetCDF round-trip, real MPI material run, or a material

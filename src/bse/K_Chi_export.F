@@ -25,10 +25,13 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  ! followed by the BSE frequencies (BSEChiDyn with the same BSE grid).
  !
  ! Any BSE momentum q (BSEQptR): at finite q the transitions are v(k-q) -> c(k) and
- ! the vertices rho(q+G) come from the wavefunctions (no dipoles). The exchange drops
- ! G=0 (Lkind="bar", vbar) or keeps it (Lkind="full", the default at finite q with a
- ! Coulomb cutoff), and P^-1 = chib^-1 + vbar or chib^-1 + v accordingly. The header
- ! of ndb.Chi is written once per run; each q adds its own fragment.
+ ! the vertices rho(q+G) come from the wavefunctions (no dipoles). The anti-resonant
+ ! transitions are then explicit (K_driver_init), each with its own vertex, energy and
+ ! occupation, and the response runs over all rows of BS_mat (TDDFT_Chi_full_*); at
+ ! q=0 they are derived from the resonant ones, a special case of the same formulas.
+ ! The exchange drops G=0 (Lkind="bar", the default: vbar) or keeps it (Lkind="full",
+ ! or "default" with a Coulomb cutoff at q>1), and P^-1 = chib^-1 + vbar or chib^-1 + v
+ ! accordingly. The header of ndb.Chi is written once per run; each q adds its fragment.
  !
  use pars,           ONLY:SP,DP,pi,schlen,cZERO
  use units,          ONLY:HA2EV
@@ -45,11 +48,11 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  use Chi_m,          ONLY:Chi_ng,Chi_n_freqs,Chi_alloc,Chi_free,Chi_freqs,Chi_0,Chi_P,Chi_fxc,Chi_rcond,&
 &                         Chi_QP_applied,Chi_QP_action,Chi_convention,Chi_G_mode,Chi_G_axis,Chi_G_db,&
 &                         Chi_optical_q0,Chi_optical_q0_known,Chi_G0_error,Chi_rcond_floor,&
-&                         Chi_dyn_V,Chi_dyn_s,Chi_dyn_filled,Chi_dyn_c,Chi_dyn_free
+&                         Chi_dyn_V,Chi_dyn_filled,Chi_dyn_c,Chi_dyn_free
  use IO_int,         ONLY:io_control
  use IO_m,           ONLY:OP_WR_CL,OP_APP_CL,REP
- use TDDFT_Chi_dynamic_m, ONLY:TDDFT_Chi_pair_response,TDDFT_Chi_pair_bubble,TDDFT_Chi_kernel_from_response,&
-&                              TDDFT_Chi_dynamic_response
+ use TDDFT_Chi_dynamic_m, ONLY:TDDFT_Chi_full_response,TDDFT_Chi_full_bubble,TDDFT_Chi_kernel_from_response,&
+&                              TDDFT_Chi_full_dynamic_response
  use timing_m,       ONLY:timing
  !
  implicit none
@@ -70,7 +73,8 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  real(DP)                 :: herm,scale_max,rc(2)
  real(DP),    allocatable :: E_ref(:)
  complex(DP), allocatable :: d(:),H0(:,:),zz(:),chib(:,:),chi0(:,:),f(:,:),Pm(:,:)
- complex(DP), allocatable :: head(:),a(:),b(:),F0(:,:),chs(:,:),c0s(:,:),fs(:,:),Ps(:,:)
+ complex(DP), allocatable :: head(:),F0(:,:),chs(:,:),c0s(:,:),fs(:,:),Ps(:,:)
+ complex(DP), allocatable :: Vf(:,:),sf(:),df(:)
  integer,     allocatable :: S(:)
  integer                  :: ns
  complex(DP)              :: rr(9),lam
@@ -87,10 +91,13 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  !
  l_exc=trim(BS_K_Chi_out)=='exc'
  !
- if (.not.l_BS_ares_from_res) call error('[Chi/BSK] BSEChiOut: the anti-resonant blocks must be built from the resonant ones')
+ if (.not.l_BS_ares_from_res.and.iq==1) &
+&  call error('[Chi/BSK] BSEChiOut at the optical q: anti-resonant blocks from the resonant ones only (no ImposeAsym)')
  if (ncpu/=1) call error('[Chi/BSK] BSEChiOut is serial (MPI); use OpenMP threads')
  if (.not.BS_K_coupling) call error('[Chi/BSK] BSEChiOut needs BSEmod= "coupling"')
- if (BS_res_ares_n_mat/=1) call error('[Chi/BSK] BSEChiOut: one BSE matrix only')
+ if (BS_res_ares_n_mat/=1) call error('[Chi/BSK] BSEChiOut: one BSE matrix only (found '//&
+&  trim(intc(BS_res_ares_n_mat))//'. With BSEmod= "coupling" it is 1: an object file older than the modules '//&
+&  'reads another variable; rebuild after make clean what=dep and make clean)')
  if (trim(global_gauge)/='length') call error('[Chi/BSK] BSEChiOut: length gauge only')
  if (.not.allocated(Chi_dyn_V)) call error('[Chi/BSK] BSEChiOut: no Chi vertices (the kernel must be built in this run)')
  if (.not.all(Chi_dyn_filled)) call error('[Chi/BSK] BSEChiOut: some transitions have no Chi vertex')
@@ -107,13 +114,26 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  !
  ! Reference transition energies of the bubble the kernel is measured from
  !
- allocate(E_ref(n),d(ng))
+ ! Every row A of BS_mat: vertex, s_A = sqrt(f_A) (i sqrt|f_A| for the anti-resonant
+ ! rows, as in K_kernel), oscillator and reference energy
+ allocate(E_ref(nh),d(ng),Vf(ng,nh),sf(nh),df(nh))
+ Vf(:,:n)=Chi_dyn_V(:,:,1)
+ Vf(:,n+1:)=Chi_dyn_V(:,:,2)
+ do it=1,nh
+   sf(it)=sqrt(cmplx(BSS_eh_f(it),kind=DP))
+   df(it)=cmplx(BSS_dipoles_opt(1,it),kind=DP)
+ enddo
  l_qp=.FALSE.
  if (allocated(Ken%Eo)) l_qp=maxval(abs(Ken%Eo-Ken%E))>1.E-6_SP
- do it=1,n
+ do it=1,nh
    E_ref(it)=real(BSS_eh_E(it),DP)
    if (.not.l_exc.and.l_qp) then
-     ! c at k, v at k-q (K_Transition_check): ikv = ik at q=0
+     ! c at k, v at k-q (K_Transition_check): ikv = ik at q=0. Explicit anti-resonant
+     ! rows carry their swapped bands in the table; derived ones mirror row it-n.
+     if (l_BS_ares_from_res.and.it>n) then
+       E_ref(it)=-E_ref(it-n)
+       cycle
+     endif
      ik =Xk%sstar(BSS_eh_table(it,1),1)
      ikv=Xk%sstar(qindx_X(iq,BSS_eh_table(it,1),1),1)
      E_ref(it)=real(Ken%Eo(BSS_eh_table(it,3),ik ,BSS_eh_table(it,4))-&
@@ -140,6 +160,8 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  l_full_L=STRING_match(BSE_L_kind,"full")
  call msg('r','[Chi/BSK] BSEChiOut kernel reference',trim(BS_K_Chi_out))
  call msg('r','[Chi/BSK] BSE momentum index',iq)
+ if (l_BS_ares_from_res)      call msg('r','[Chi/BSK] anti-resonant rows derived from the resonant ones')
+ if (.not.l_BS_ares_from_res) call msg('r','[Chi/BSK] anti-resonant rows: explicit transitions')
  if (l_full_L)      call msg('r','[Chi/BSK] exchange with G=0 (Lkind full): P^-1 = chib^-1 + v')
  if (.not.l_full_L) call msg('r','[Chi/BSK] exchange without G=0 (Lkind bar): P^-1 = chib^-1 + vbar')
  call msg('r','[Chi/BSK] QP-corrected BSE transitions',l_qp)
@@ -165,10 +187,10 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  allocate(chs(ns,ns),c0s(ns,ns),fs(ns,ns),Ps(ns,ns))
  !$omp do schedule(dynamic)
  do iw=1,nw
-   call TDDFT_Chi_pair_response(zz(iw),H0,Chi_dyn_V(:,:,1),Chi_dyn_V(:,:,2),Chi_dyn_s,Chi_dyn_c,chib,ierr)
+   call TDDFT_Chi_full_response(zz(iw),H0,Vf,sf,Chi_dyn_c,chib,ierr)
    if (ierr==0) then
      head(iw)=chib(1,1)
-     call TDDFT_Chi_pair_bubble(zz(iw),E_ref,Chi_dyn_V(:,:,1),Chi_dyn_V(:,:,2),Chi_dyn_s,Chi_dyn_c,chi0)
+     call TDDFT_Chi_full_bubble(zz(iw),E_ref,Vf,sf,Chi_dyn_c,chi0)
      ! kernel on the G set S (all G unless BSEGinplane), zero outside it
      chs=chib(S(:ns),S(:ns))
      c0s=chi0(S(:ns),S(:ns))
@@ -201,21 +223,16 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  call msg('r','[Chi/BSK] minimum rcond (reference bubble, BSE response)',(/minval(Chi_rcond(1,:)),minval(Chi_rcond(2,:))/))
  !
  ! Head check, valid at any q: the G=0 element of chib (our vertices) must be Yambo's own
- ! coupled response, built from its oscillators BSS_dipoles_opt and its (i b, i a)
- ! anti-resonant convention: the fxc=0 limit of the Casida solver, scaled by c.
- allocate(a(n),b(n),F0(ng,ng))
+ ! coupled response, built from its oscillators BSS_dipoles_opt on every row of BS_mat:
+ ! the fxc=0 limit of the Casida solver, scaled by c.
+ allocate(F0(ng,ng))
  F0=(0._DP,0._DP)
- do it=1,n
-   a(it)=cmplx(BSS_dipoles_opt(1,it)*sqrt(cmplx(BSS_eh_f(it),kind=SP)),kind=DP)
-   b(it)=cmplx(conjg(BSS_dipoles_opt(1,it))*sqrt(cmplx(BSS_eh_f(it),kind=SP)),kind=DP)
- enddo
  do is=1,9
    iws(is)=max(2,min(nw,2+((nw-2)*(is-1))/8))
  enddo
  rr=(0._DP,0._DP)
  do is=1,9
-   call TDDFT_Chi_dynamic_response(zz(iws(is)),H0,F0,Chi_dyn_V(:,:,1),Chi_dyn_V(:,:,2),Chi_dyn_s,Chi_dyn_c,&
-&                                  a,b,.TRUE.,rr(is),ierr)
+   call TDDFT_Chi_full_dynamic_response(zz(iws(is)),H0,F0,Vf,sf,Chi_dyn_c,df,rr(is),ierr)
    if (ierr/=0) rr(is)=(0._DP,0._DP)
  enddo
  ! best complex scale lam (exactly c when the conventions agree), then the residual
@@ -226,7 +243,7 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  if (head_err>1.E-4_DP.or.abs(abs(lam)/Chi_dyn_c-1._DP)>1.E-4_DP) &
 &  call warning('[Chi/BSK] the exported G=0 response differs from the BSE one: '//&
 &    'vertex or anti-resonant convention mismatch at this q, the kernel is not the BSE one')
- deallocate(a,b,F0)
+ deallocate(F0)
  if (minval(Chi_rcond)<Chi_rcond_floor) &
 &  call error('[Chi/BSK] BSEChiOut: ill-conditioned response; reduce BSENGexx/BSENGfxc for this band window')
  !
@@ -284,7 +301,7 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  call W_reset(W_io)
  call Chi_free()
  call Chi_dyn_free()
- deallocate(E_ref,d,zz,err_w,H0,head,S)
+ deallocate(E_ref,d,Vf,sf,df,zz,err_w,H0,head,S)
  !
  call timing('ChiExport',OPR='stop')
  !

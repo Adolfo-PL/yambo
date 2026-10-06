@@ -7,7 +7,8 @@ program test_chi_dynamic
   !     Hermitian fxc that is real in real space.
   use pars, only: DP
   use TDDFT_Chi_dynamic_m, only: TDDFT_Chi_dynamic_kernel,TDDFT_Chi_dynamic_response,&
-&   TDDFT_Chi_pair_response,TDDFT_Chi_pair_bubble,TDDFT_Chi_kernel_from_response
+&   TDDFT_Chi_pair_response,TDDFT_Chi_pair_bubble,TDDFT_Chi_kernel_from_response,&
+&   TDDFT_Chi_full_response,TDDFT_Chi_full_bubble,TDDFT_Chi_full_dynamic_response
   implicit none
   integer, parameter :: m=3,ng=2*m+1,nt=5
   complex(DP), parameter :: ci=(0._DP,1._DP),zero=(0._DP,0._DP)
@@ -86,6 +87,8 @@ program test_chi_dynamic
   call threaded_check()
 
   call export_chain_checks()
+
+  call full_space_checks()
 
   if (failures>0) then
     print *,failures,' check(s) failed'
@@ -477,6 +480,111 @@ contains
         if (iref==4) call check('export exc, finite q, G=0 exchange (Lfull): Casida = BSE head',info,c_fac*resp,chib(1,1))
         if (iref==5) call check('export exc, BSEGinplane (masked G): Casida = BSE head',info,c_fac*resp,chib(1,1))
       enddo
+    enddo
+  end subroutine
+
+  subroutine full_space_checks()
+    ! Whole-transition-space routines (explicit anti-resonant transitions, finite q).
+    ! 1. With the anti-resonant rows derived from the resonant ones, v = (v_r, v_c),
+    !    s = (s, i s), E = (E, -E), d = (d, conj d), they are the pair routines.
+    ! 2. Explicit anti-resonant rows with their own vertices, energies, occupations
+    !    (f < 0) and oscillators, a BSE with exchange and an arbitrary W-like part:
+    !    Casida with the exported kernel returns the BSE response, G-resolved.
+    integer, parameter :: nh=2*nt
+    complex(DP) :: M(nh,nh),Hx(nh,nh),Kx(nh,nh),Wp(nh,nh),V(ng,nh),sf(nh),df(nh),zz,vb(ng,ng)
+    complex(DP) :: chib(ng,ng),chi_p(ng,ng),chi0(ng,ng),f(ng,ng),Pm(ng,ng),d(ng),r1,r2,worst_c
+    real(DP) :: E(nh),fo(nh),sq(nt),rc(2),c_fac,worst
+    integer :: t,i,iz,info
+    c_fac=0.37_DP
+    ! 1. pair (TR-derived) structure
+    call random_vertices(rho_r)
+    call random_vertices(rho_c)
+    do t=1,nt
+      sq(t)=sqrt(0.6_DP+0.2_DP*t)
+      E(t)=0.8_DP+0.35_DP*t
+      E(nt+t)=-E(t)
+      sf(t)=sq(t)
+      sf(nt+t)=ci*sq(t)
+    enddo
+    V(:,:nt)=rho_r
+    V(:,nt+1:)=rho_c
+    call random_matrix(M)
+    do t=1,nh
+      M(t,t)=M(t,t)+E(t)
+    enddo
+    zz=cmplx(1.3_DP,0.05_DP,kind=DP)
+    call TDDFT_Chi_full_response(zz,M,V,sf,c_fac,chib,info)
+    call TDDFT_Chi_pair_response(zz,M,rho_r,rho_c,sq,c_fac,chi_p,info)
+    call check('full response = pair response for derived anti-resonant rows',info,chib(2,4),chi_p(2,4))
+    call TDDFT_Chi_full_bubble(zz,E,V,sf,c_fac,chib)
+    call TDDFT_Chi_pair_bubble(zz,E(:nt),rho_r,rho_c,sq,c_fac,chi_p)
+    call check('full bubble = pair bubble for derived anti-resonant rows',0,chib(3,2),chi_p(3,2))
+    call random_matrix(f)
+    df(:nt)=conjg(rho_r(1,:))
+    df(nt+1:)=rho_r(1,:)
+    call TDDFT_Chi_full_dynamic_response(zz,M,f,V,sf,c_fac,df,r1,info)
+    call TDDFT_Chi_dynamic_response(zz,M,f,rho_r,rho_c,sq,c_fac,sq*df(:nt),sq*conjg(df(:nt)),.TRUE.,r2,info)
+    call check('full dynamic response = pair one for derived anti-resonant rows',info,r1,r2)
+    ! 2. explicit anti-resonant rows
+    call random_vertices(V)
+    do t=1,nt
+      fo(t)=0.6_DP+0.2_DP*t
+      fo(nt+t)=-(0.5_DP+0.3_DP*t)
+      E(t)=0.8_DP+0.35_DP*t
+      E(nt+t)=-(0.9_DP+0.3_DP*t)
+    enddo
+    do i=1,nh
+      sf(i)=sqrt(cmplx(fo(i),kind=DP))
+    enddo
+    if (abs(sf(nt+1)-ci*sqrt(-fo(nt+1)))>1.E-14_DP) then
+      print *,'FAIL: sqrt of a negative occupation is not i sqrt|f|'
+      failures=failures+1
+    endif
+    d(1)=40._DP
+    do i=2,ng
+      d(i)=1.5_DP/sqrt(real(i,DP))
+    enddo
+    vb=zero
+    do i=2,ng
+      vb(i,i)=d(i)**2
+    enddo
+    Kx=c_fac*matmul(conjg(transpose(V)),matmul(vb,V))
+    do i=1,nh
+      Kx(:,i)=Kx(:,i)*sf(i)
+      Kx(i,:)=Kx(i,:)*sf(i)
+    enddo
+    call random_matrix(Wp)
+    Wp=0.2_DP*Wp
+    Hx=Kx
+    do t=1,nh
+      Hx(t,t)=Hx(t,t)+E(t)
+    enddo
+    M=Hx+Wp
+    df=conjg(V(1,:))
+    do iz=1,3
+      zz=cmplx(0.4_DP+1.1_DP*iz,0.03_DP*iz,kind=DP)
+      call TDDFT_Chi_full_response(zz,M,V,sf,c_fac,chib,info)
+      call TDDFT_Chi_full_dynamic_response(zz,M,zero*f,V,sf,c_fac,df,r1,info)
+      call check('explicit rows: BSE head response = G=0 element of chib',info,c_fac*r1,chib(1,1))
+      call TDDFT_Chi_full_bubble(zz,E,V,sf,c_fac,chi0)
+      call TDDFT_Chi_kernel_from_response(chi0,chib,d,.TRUE.,f,Pm,rc,info)
+      if (info/=0) then
+        print *,'FAIL: kernel_from_response (explicit rows) error',info
+        failures=failures+1
+        cycle
+      endif
+      call TDDFT_Chi_full_dynamic_response(zz,Hx,f,V,sf,c_fac,df,r1,info)
+      call check('explicit rows: Casida(E, v, fxc) = BSE response head',info,c_fac*r1,chib(1,1))
+      ! G-resolved: the Casida matrix with fxc gives chib for every G, G'
+      Kx=c_fac*matmul(conjg(transpose(V)),matmul(f,V))
+      do i=1,nh
+        Kx(:,i)=Kx(:,i)*sf(i)
+        Kx(i,:)=Kx(i,:)*sf(i)
+      enddo
+      call TDDFT_Chi_full_response(zz,Hx+Kx,V,sf,c_fac,chi_p,info)
+      worst=maxval(abs(chi_p-chib))/maxval(abs(chib))
+      worst_c=cmplx(worst,0._DP,kind=DP)
+      call check('explicit rows: Casida G-resolved response = chib (max rel. dev.)',info,1._DP+worst_c,(1._DP,0._DP))
     enddo
   end subroutine
 

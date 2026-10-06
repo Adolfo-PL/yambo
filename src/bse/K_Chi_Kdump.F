@@ -34,7 +34,7 @@ subroutine K_Chi_Kdump(iq,Xk,nh,H0)
  use com,            ONLY:msg
  use stderr,         ONLY:intc
  use IO_int,         ONLY:get_name
- use BS,             ONLY:BS_K_coupling,BS_K_dim,BS_K_Chi_dump_w,BS_K_Chi_dump_b
+ use BS,             ONLY:BS_K_coupling,BS_K_dim,BS_K_Chi_dump_w,BS_K_Chi_dump_b,l_BS_ares_from_res
  use BS_solvers,     ONLY:BSS_eh_E,BSS_eh_table,BSS_eh_f,BSS_dipoles_opt
  use Chi_m,          ONLY:Chi_freqs,Chi_fxc,Chi_n_freqs,Chi_ng,Chi_dyn_V,Chi_dyn_s,Chi_dyn_c
  use TDDFT_Chi_dynamic_m, ONLY:TDDFT_Chi_dynamic_kernel
@@ -58,6 +58,9 @@ subroutine K_Chi_Kdump(iq,Xk,nh,H0)
  complex(DP), parameter   :: ci=(0._DP,1._DP)
  !
  if (BS_K_Chi_dump_w(2)<0._SP) return
+ !
+ if (BS_K_coupling.and..not.l_BS_ares_from_res) &
+&  call error('[Chi/BSK] BSEChiKoutW: the dump pairs each transition with its anti-resonant mirror; optical q only')
  !
  n=BS_K_dim(1)
  nb=1

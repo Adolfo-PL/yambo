@@ -13,6 +13,7 @@ subroutine K_driver_init(what,iq,Ken,Xk)
  use parser_m,     ONLY:parser
  use parallel_m,   ONLY:PARALLEL_default_mode
  use stderr,       ONLY:STRING_match
+ use com,          ONLY:msg
  use BS_solvers,   ONLY:BSS_mode,BSS_slepc_matrix_format,BSS_uses_DbGd,&
 &                       BSS_slepc_double_grp,run_Slepc,BSS_mode,       &
 &                       l_abs_prop_chi_bse,l_eels_can_be_computed,l_eels_from_inversion
@@ -167,10 +168,20 @@ subroutine K_driver_init(what,iq,Ken,Xk)
  !-----------------------------
  ! Developer options. Without the code works in default mode
  ! With the user can switch to experimental coding
+ l_BS_ares_from_res=.TRUE.
  call parser('ImposeAsym',l_flag)
  if (l_flag)        l_BS_ares_from_res=.FALSE.
  !
  if (iq/=1.and.i_time_rev==0.and.i_space_inv==0 )  l_BS_ares_from_res=.FALSE.
+ ! Coupling at finite q: the anti-resonant transitions are built explicitly. Derived from the
+ ! resonant ones, the coupling block (rho_t(q+G) rho_t'(q-G) v(q+G), mirrored as a symmetric
+ ! matrix) is exact only at q=0: against the G-space RPA with local fields (BSKmod= "Hartree",
+ ! monolayer hBN, 29 G) the explicit BSE agrees to 1E-4 at finite q, the derived one is off
+ ! by 3-7%. At q=0 the derived blocks are the exact ones (6E-5).
+ if (iq/=1.and.BS_K_coupling.and.l_BS_ares_from_res) then
+   l_BS_ares_from_res=.FALSE.
+   if (what=="loop-init") call msg('r','[BSK] finite q with coupling: explicit anti-resonant transitions')
+ endif
  if (l_BS_photolum)                                l_BS_ares_from_res=.FALSE.
  if (l_BS_magnons.and.n_sp_pol==2)                 l_BS_ares_from_res=.FALSE.
  ! The next line is to switch off sections of the code due to the calculation

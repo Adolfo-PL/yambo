@@ -41,6 +41,7 @@ module TDDFT_Chi_dynamic_m
  private
  public :: TDDFT_Chi_dynamic_kernel,TDDFT_Chi_dynamic_response
  public :: TDDFT_Chi_pair_response,TDDFT_Chi_pair_bubble,TDDFT_Chi_kernel_from_response
+ public :: TDDFT_Chi_full_response,TDDFT_Chi_full_bubble,TDDFT_Chi_full_dynamic_response
  complex(DP), parameter :: zero=(0._DP,0._DP),one=(1._DP,0._DP),ci=(0._DP,1._DP)
 contains
  !
@@ -212,13 +213,109 @@ contains
    deallocate(Y)
  end subroutine TDDFT_Chi_pair_bubble
  !
+ ! Coupling in the whole transition space. Every row A of the coupled BSE matrix (2N
+ ! resonant and anti-resonant transitions) has its own vertex v(:,A), occupation factor
+ ! f_A (negative for the anti-resonant ones), s_A = sqrt(f_A) (i sqrt|f_A| then, as the
+ ! sqrt_f of K_kernel), energy E_A and oscillator d_A: BSS_eh_f, BSS_eh_E and
+ ! BSS_dipoles_opt over BS_H_dim. Anti-resonant blocks derived from the resonant ones
+ ! (q=0) are the case v = (v_res, v_cpl), s = (s, i s), E = (E, -E), d = (d, conj d),
+ ! where these routines reduce to the pair ones above; explicit anti-resonant
+ ! transitions (finite q) need them.
+ !
+ recursive subroutine TDDFT_Chi_full_response(z,M,v,s,c,chi,ierr)
+   ! chi(G,G') = c sum_AB s_A v(G,A) [z - M]^-1_AB s_B conj(v(G',B))
+   complex(DP), intent(in)  :: z,M(:,:),v(:,:),s(:)
+   real(DP),    intent(in)  :: c
+   complex(DP), intent(out) :: chi(:,:)
+   integer,     intent(out) :: ierr
+   complex(DP), allocatable :: W(:,:),X(:,:),B(:,:)
+   integer,     allocatable :: ipiv(:)
+   integer :: nh,ng,ig,i,info
+   ! ierr: 20 sizes, 30 singular z-M, 40 LAPACK argument
+   chi=zero
+   nh=size(s); ng=size(v,1)
+   ierr=20
+   if (size(M,1)/=nh.or.size(M,2)/=nh.or.size(v,2)/=nh) return
+   if (size(chi,1)/=ng.or.size(chi,2)/=ng) return
+   allocate(W(nh,nh),X(nh,ng),B(ng,nh),ipiv(nh))
+   do ig=1,ng
+     X(:,ig)=s*conjg(v(ig,:))
+     B(ig,:)=s*v(ig,:)
+   enddo
+   W=-M
+   do i=1,nh
+     W(i,i)=W(i,i)+z
+   enddo
+   call zgesv(nh,ng,W,nh,ipiv,X,nh,info)
+   ierr=0
+   if (info>0) ierr=30
+   if (info<0) ierr=40
+   if (ierr==0) call zgemm('N','N',ng,ng,nh,cmplx(c,0._DP,kind=DP),B,ng,X,nh,zero,chi,ng)
+   deallocate(W,X,B,ipiv)
+ end subroutine TDDFT_Chi_full_response
+ !
+ recursive subroutine TDDFT_Chi_full_bubble(z,E,v,s,c,chi)
+   ! chi(G,G') = c sum_A s_A^2 v(G,A) conj(v(G',A))/(z-E_A)
+   complex(DP), intent(in)  :: z,v(:,:),s(:)
+   real(DP),    intent(in)  :: E(:),c
+   complex(DP), intent(out) :: chi(:,:)
+   complex(DP), allocatable :: Y(:,:)
+   integer :: nh,ng,i
+   nh=size(s); ng=size(v,1)
+   allocate(Y(ng,nh))
+   do i=1,nh
+     Y(:,i)=v(:,i)*s(i)**2/(z-E(i))
+   enddo
+   call zgemm('N','C',ng,ng,nh,cmplx(c,0._DP,kind=DP),Y,ng,v,ng,zero,chi,ng)
+   deallocate(Y)
+ end subroutine TDDFT_Chi_full_bubble
+ !
+ recursive subroutine TDDFT_Chi_full_dynamic_response(z,H0,fxc,v,s,c,d,resp,ierr)
+   ! resp = sum_AB s_A conj(d_A) [z - H0 - Kf(z)]^-1_AB s_B d_B,
+   ! Kf(A,B) = c s_A s_B sum_GG' conj(v(G,A)) fxc(G,G') v(G',B)
+   complex(DP), intent(in)  :: z,H0(:,:),fxc(:,:),v(:,:),s(:),d(:)
+   real(DP),    intent(in)  :: c
+   complex(DP), intent(out) :: resp
+   integer,     intent(out) :: ierr
+   complex(DP), allocatable :: M(:,:),fv(:,:),rhs(:)
+   integer,     allocatable :: ipiv(:)
+   integer :: nh,ng,i,info
+   ! ierr: 11 fxc not square, 12 vertex G size, 20 H0/vertex/d size, 30 singular, 40 LAPACK argument
+   resp=zero
+   nh=size(s); ng=size(fxc,1)
+   ierr=11
+   if (ng<1.or.size(fxc,2)/=ng) return
+   ierr=12
+   if (size(v,1)/=ng) return
+   ierr=20
+   if (size(v,2)/=nh.or.size(d)/=nh.or.size(H0,1)/=nh.or.size(H0,2)/=nh) return
+   allocate(M(nh,nh),fv(ng,nh),rhs(nh),ipiv(nh))
+   call zgemm('N','N',ng,nh,ng,one,fxc,ng,v,ng,zero,fv,ng)
+   call zgemm('C','N',nh,nh,ng,cmplx(c,0._DP,kind=DP),v,ng,fv,ng,zero,M,nh)
+   do i=1,nh
+     M(:,i)=-M(:,i)*s(i)
+     M(i,:)=M(i,:)*s(i)
+   enddo
+   M=M-H0
+   do i=1,nh
+     M(i,i)=M(i,i)+z
+   enddo
+   rhs=s*d
+   call zgesv(nh,1,M,nh,ipiv,rhs,nh,info)
+   ierr=0
+   if (info>0) ierr=30
+   if (info<0) ierr=40
+   if (ierr==0) resp=sum(s*conjg(d)*rhs)
+   deallocate(M,fv,rhs,ipiv)
+ end subroutine TDDFT_Chi_full_dynamic_response
+ !
  recursive subroutine TDDFT_Chi_kernel_from_response(chi0,chib,d,exch,fxc,P,rcond,ierr,exch_head)
    ! fxc = chi0^-1 - P^-1 with P^-1 = chib^-1 + vbar, vbar = diag(0, d_G^2) when the
    ! response chib contains the exchange (Lbar) of the BSE. Inversions are done on the
    ! Coulomb-symmetrized matrices x~ = D x D, D = diag(d), as in Chi_fxc:
    !   P~^-1 = chib~^-1 + J, J = diag(0,1,..,1),  fxc = D (chi0~^-1 - P~^-1) D.
-   ! exch_head (optional, default .FALSE.): the BSE exchange includes G=0 (Lkind=full,
-   ! the default at finite q with a Coulomb cutoff), so vbar = v and J = 1.
+   ! exch_head (optional, default .FALSE.): the BSE exchange includes G=0 (Lkind=full, or
+   ! "default" with a Coulomb cutoff at q>1), so vbar = v and J = 1.
    ! d = sqrt(4 pi)/bare_qpg is complex with a cut Coulomb (v_cut < 0 gives an imaginary
    ! d), exactly as the BSE exchange divides by bare_qpg**2.
    ! rcond = reciprocal condition numbers of chi0~ and chib~.

@@ -116,7 +116,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  !
  logical :: BS_blk_done(n_BS_blks),l_partial_kernel_loaded
  integer :: n_steps,m_steps,i_steps
- integer :: ID_Chi,io_Chi_err,chi_ierr,ig,jg,chi_grp_p,i_T_dyn
+ integer :: ID_Chi,io_Chi_err,chi_ierr,ig,jg,chi_grp_p,i_T_dyn,i_ra
  integer, external :: io_Chi
  logical :: l_KfnQPdb,l_chi_vtx,l_chi_vtx_only
  real(SP) :: chi_norm,chi_antiherm,chi_scale,chi_raw_norm,chi_raw_antiherm,chi_diff
@@ -352,7 +352,10 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
    !
    if (BS_K_is_Chi) then
      if (ncpu/=1) call error('[Chi/BSK] transition projection is currently serial only')
-     if ((BS_K_coupling.or.BS_K_anti_resonant).and..not.l_BS_ares_from_res) &
+     ! Explicit anti-resonant transitions (finite q, coupling): every block, mode "F", projects
+     ! fxc on the vertices of its own transitions. Not at the optical q (ImposeAsym), nor
+     ! without coupling (two BSE matrices).
+     if ((BS_K_coupling.or.BS_K_anti_resonant).and..not.l_BS_ares_from_res.and.(iq==1.or..not.BS_K_coupling)) &
 &      call error('[Chi/BSK] the anti-resonant blocks must be built from the resonant ones')
      chi_grp_p=0
      if (n_spinor/=1.or.n_sp_pol/=1.or.n_spin/=1.or.l_BS_magnons) &
@@ -392,7 +395,9 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
        ! fxc(w) stays out of the BSE matrix. The transition vertices are kept below and
        ! K_Chi_dynamic projects fxc at every BSE frequency (checked there against ndb.Chi).
        call Chi_dyn_free()
-       allocate(Chi_dyn_V(Chi_ng,BS_K_dim(1),2),Chi_dyn_s(BS_K_dim(1)),Chi_dyn_filled(BS_K_dim(1)))
+       if (.not.l_BS_ares_from_res.and.BS_K_dim(2)/=BS_K_dim(1)) &
+&        call error('[Chi/BSK] BSEChiDyn: as many anti-resonant as resonant transitions are needed')
+       allocate(Chi_dyn_V(Chi_ng,BS_K_dim(1),2),Chi_dyn_s(BS_K_dim(1)),Chi_dyn_filled(BS_K_dim(1),2))
        Chi_dyn_V=(0._DP,0._DP)
        Chi_dyn_s=0._DP
        Chi_dyn_filled=.FALSE.
@@ -436,7 +441,9 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
      if (.not.BS_res_K_exchange.or.BS_n_g_exch/=BS_n_g_fxc) &
 &      call error('[Chi/BSK] BSEChiOut: exchange on, with BSENGexx equal to BSENGfxc (one G basis for v and P)')
      call Chi_dyn_free()
-     allocate(Chi_dyn_V(BS_n_g_fxc,BS_K_dim(1),2),Chi_dyn_s(BS_K_dim(1)),Chi_dyn_filled(BS_K_dim(1)))
+     if (.not.l_BS_ares_from_res.and.BS_K_dim(2)/=BS_K_dim(1)) &
+&      call error('[Chi/BSK] BSEChiOut: as many anti-resonant as resonant transitions are needed')
+     allocate(Chi_dyn_V(BS_n_g_fxc,BS_K_dim(1),2),Chi_dyn_s(BS_K_dim(1)),Chi_dyn_filled(BS_K_dim(1),2))
      Chi_dyn_V=(0._DP,0._DP)
      Chi_dyn_s=0._DP
      Chi_dyn_filled=.FALSE.
@@ -650,21 +657,30 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
      allocate(chi_R_res(size(BS_T_grp(i_Tgrp_p)%O_tddft_R,1),size(BS_T_grp(i_Tgrp_p)%O_tddft_R,2)))
      call TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_Tgrp_p,NG,l_bs_tddft_wf_in_loop,tddft_wf,"R",.TRUE.)
      chi_R_res=BS_T_grp(i_Tgrp_p)%O_tddft_R(:,:,1,1)
-     ! The dynamic solver needs the de-excitation vertex also in TDA (anti-resonant block)
-     if (BS_K_coupling.or.BS_K_Chi_dynamic) then
+     ! The dynamic solver needs the de-excitation vertex also in TDA (anti-resonant block).
+     ! Explicit anti-resonant transitions (finite q) are groups of their own: their "R"
+     ! vertex, with the bands of their table, is the one of BS_mat row N+t.
+     if ((BS_K_coupling.or.BS_K_Chi_dynamic).and.l_BS_ares_from_res) then
        allocate(chi_R_cpl(size(chi_R_res,1),size(chi_R_res,2)))
        call TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_Tgrp_p,NG,l_bs_tddft_wf_in_loop,tddft_wf,"C",.TRUE.)
        chi_R_cpl=BS_T_grp(i_Tgrp_p)%O_tddft_R(:,:,1,1)
      endif
      if (BS_K_Chi_dynamic.or.l_chi_vtx_only) then
-       ! Column coordinate of this group in the resonant space (also for "C" blocks)
+       ! Column coordinate of this group in its (resonant or anti-resonant) space
+       i_ra=BS_T_grp(i_Tgrp_p)%i_res_ares
        do i_Tp=1,BS_T_grp(i_Tgrp_p)%size
          i_T_dyn=BS_blk(i_block)%coordinate(2)+i_Tp-1
          if (i_T_dyn>BS_K_dim(1)) call error('[Chi/BSK] BSEChiDyn: use BSEmod= "coupling" or "resonant"')
-         Chi_dyn_V(:,i_T_dyn,1)=cmplx(chi_R_res(:,i_Tp),kind=DP)
-         Chi_dyn_V(:,i_T_dyn,2)=cmplx(chi_R_cpl(:,i_Tp),kind=DP)
-         Chi_dyn_s(i_T_dyn)=sqrt(real(BS_T_grp(i_Tgrp_p)%f(i_Tp),DP))
-         Chi_dyn_filled(i_T_dyn)=.TRUE.
+         if (l_BS_ares_from_res) then
+           Chi_dyn_V(:,i_T_dyn,1)=cmplx(chi_R_res(:,i_Tp),kind=DP)
+           Chi_dyn_V(:,i_T_dyn,2)=cmplx(chi_R_cpl(:,i_Tp),kind=DP)
+           Chi_dyn_s(i_T_dyn)=sqrt(real(BS_T_grp(i_Tgrp_p)%f(i_Tp),DP))
+           Chi_dyn_filled(i_T_dyn,:)=.TRUE.
+         else
+           Chi_dyn_V(:,i_T_dyn,i_ra)=cmplx(chi_R_res(:,i_Tp),kind=DP)
+           if (i_ra==1) Chi_dyn_s(i_T_dyn)=sqrt(real(BS_T_grp(i_Tgrp_p)%f(i_Tp),DP))
+           Chi_dyn_filled(i_T_dyn,i_ra)=.TRUE.
+         endif
        enddo
      endif
      chi_grp_p=i_Tgrp_p

@@ -81,14 +81,18 @@ module Chi_m
  !
  ! Frequency-dependent Casida (BSKmod="CHI", BSEChiDyn). K_kernel leaves fxc out of the
  ! BSE matrix and keeps the transition vertices instead; K_Chi_dynamic projects fxc(w)
- ! at every BSE frequency. Index t is the resonant transition (BS_mat row/column).
+ ! at every BSE frequency. Index t is the resonant transition (BS_mat row/column t).
  !   Chi_dyn_V(:,t,1) excitation vertex    (O_tddft_R, mode "R")
- !   Chi_dyn_V(:,t,2) de-excitation vertex (O_tddft_R, mode "C")
+ !   Chi_dyn_V(:,t,2) vertex of BS_mat row/column N+t: with the anti-resonant blocks
+ !                    derived from the resonant ones (q=0) the de-excitation vertex of
+ !                    transition t (mode "C"); with explicit anti-resonant transitions
+ !                    (finite q) the vertex of anti-resonant transition t (mode "R")
  !   Chi_dyn_s(t)     sqrt of the transition occupation factor
+ !   Chi_dyn_filled(t,1:2) vertex collected for row t / N+t
  !   Chi_dyn_c        Co/(4 pi) of K_kernel
  complex(DP), allocatable :: Chi_dyn_V(:,:,:)
  real(DP),    allocatable :: Chi_dyn_s(:)
- logical,     allocatable :: Chi_dyn_filled(:)
+ logical,     allocatable :: Chi_dyn_filled(:,:)
  real(DP)                 :: Chi_dyn_c=0._DP
  !
  contains

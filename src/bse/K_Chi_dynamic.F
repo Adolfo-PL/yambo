@@ -26,7 +26,7 @@ subroutine K_Chi_dynamic(iq,Xk,W)
  use com,            ONLY:msg,isec
  use stderr,         ONLY:intc,real2ch
  use parallel_m,     ONLY:ncpu
- use BS,             ONLY:BS_K_coupling,BS_K_dim,BS_H_dim,BS_res_ares_n_mat,l_BS_abs,l_BS_kerr,&
+ use BS,             ONLY:BS_K_coupling,BS_K_dim,BS_H_dim,BS_res_ares_n_mat,l_BS_abs,l_BS_kerr,l_BS_ares_from_res,&
 &                         l_BS_magnons,l_BS_dichroism,l_BS_photolum
  use BS_solvers,     ONLY:BS_mat,BSS_dipoles_opt,BSS_eh_f,BSS_eh_W,BSS_eh_Z,Co_factor,para_term_w0,BSS_desc
  use X_m,            ONLY:Resp_ii,X_OUTPUT_driver,global_gauge
@@ -36,7 +36,8 @@ subroutine K_Chi_dynamic(iq,Xk,W)
  use Chi_m,          ONLY:Chi_0,Chi_freqs,Chi_fxc,Chi_n_freqs,Chi_ng,Chi_free,&
 &                         Chi_dyn_V,Chi_dyn_s,Chi_dyn_filled,Chi_dyn_c,Chi_dyn_free
  use descriptors,    ONLY:IO_desc_add
- use TDDFT_Chi_dynamic_m, ONLY:TDDFT_Chi_dynamic_response,TDDFT_Chi_pair_bubble
+ use TDDFT_Chi_dynamic_m, ONLY:TDDFT_Chi_dynamic_response,TDDFT_Chi_pair_bubble,&
+&                              TDDFT_Chi_full_dynamic_response,TDDFT_Chi_full_bubble
  use timing_m,       ONLY:timing
  !
  implicit none
@@ -54,8 +55,8 @@ subroutine K_Chi_dynamic(iq,Xk,W)
  complex(DP)              :: resp
  complex(DP), allocatable :: H0(:,:),F(:,:),a(:),b(:),resp_w(:)
  complex(SP)              :: sqrt_f
- real(DP)                 :: ares_err,bub_err,bub_ref,w_gg
- complex(DP), allocatable :: bub(:,:)
+ real(DP)                 :: bub_err,bub_ref,w_gg
+ complex(DP), allocatable :: bub(:,:),Vf(:,:),sf(:),df(:)
  integer                  :: ig,jg
  !
  call timing('ChiDyn Solver',OPR='start')
@@ -72,7 +73,9 @@ subroutine K_Chi_dynamic(iq,Xk,W)
  if (.not.allocated(Chi_dyn_V).or..not.allocated(Chi_fxc)) &
 &  call error('[Chi/BSK] no transition vertices or fxc(w): the dynamic kernel must be built in this run')
  if (.not.all(Chi_dyn_filled)) call error('[Chi/BSK] some transitions have no fxc vertex')
- if (BS_res_ares_n_mat/=1) call error('[Chi/BSK] dynamic solver: one BSE matrix only')
+ if (BS_res_ares_n_mat/=1) call error('[Chi/BSK] dynamic solver: one BSE matrix only (found '//&
+&  trim(intc(BS_res_ares_n_mat))//'. With BSEmod= "coupling" it is 1: an object file older than the modules '//&
+&  'reads another variable; rebuild after make clean what=dep and make clean)')
  if (trim(global_gauge)/='length') call error('[Chi/BSK] dynamic solver: length gauge only')
  if (allocated(BSS_eh_W).or.allocated(BSS_eh_Z)) &
 &  call error('[Chi/BSK] dynamic solver: transition widths/Z factors are not supported')
@@ -144,15 +147,17 @@ subroutine K_Chi_dynamic(iq,Xk,W)
    b(it)=cmplx(conjg(BSS_dipoles_opt(1,it))*sqrt_f,kind=DP)
  enddo
  if (BS_K_coupling) then
-   ! The solver builds the anti-resonant vectors as (i b, i a); Yambo's own must agree
-   ares_err=0._DP
-   do it=1,n
-     sqrt_f=sqrt(cmplx(BSS_eh_f(n+it),kind=SP))
-     ares_err=max(ares_err,abs(cmplx(BSS_dipoles_opt(1,n+it)*sqrt_f,kind=DP)-(0._DP,1._DP)*b(it)),&
-&                          abs(cmplx(conjg(BSS_dipoles_opt(1,n+it))*sqrt_f,kind=DP)-(0._DP,1._DP)*a(it)))
+   ! Coupling: every row A of BS_mat with its vertex, s_A = sqrt(f_A) (i sqrt|f_A| for
+   ! the anti-resonant rows, as in K_kernel) and oscillator d_A. Derived anti-resonant
+   ! rows (q=0) give the (i b, i a) vectors of K_diago; explicit ones (finite q) their own.
+   allocate(Vf(Chi_ng,nh),sf(nh),df(nh))
+   Vf(:,:n)=Chi_dyn_V(:,:,1)
+   Vf(:,n+1:)=Chi_dyn_V(:,:,2)
+   do it=1,nh
+     sf(it)=sqrt(cmplx(BSS_eh_f(it),kind=DP))
+     df(it)=cmplx(BSS_dipoles_opt(1,it),kind=DP)
    enddo
-   if (ares_err>1.E-4_DP*max(maxval(abs(a)),tiny(1._DP))) &
-&    call error('[Chi/BSK] anti-resonant dipoles differ from the (i b, i a) convention of the dynamic solver')
+   if (.not.l_BS_ares_from_res) call msg('r','[Chi/BSK] dynamic Casida: explicit anti-resonant transitions')
  endif
  !
  call msg('r','[Chi/BSK] dynamic Casida: transitions',n)
@@ -162,8 +167,7 @@ subroutine K_Chi_dynamic(iq,Xk,W)
  ! the Coulomb-symmetrized basis (head and wings O(1) like the body).
  if (BS_K_coupling.and.allocated(Chi_0)) then
    allocate(bub(Chi_ng,Chi_ng))
-   call TDDFT_Chi_pair_bubble(cmplx(Chi_freqs(1),kind=DP),real(BSS_eh_E(:n),DP),Chi_dyn_V(:,:,1),Chi_dyn_V(:,:,2),&
-&                             Chi_dyn_s,Chi_dyn_c,bub)
+   call TDDFT_Chi_full_bubble(cmplx(Chi_freqs(1),kind=DP),real(BSS_eh_E(:nh),DP),Vf,sf,Chi_dyn_c,bub)
    bub_err=0._DP
    bub_ref=0._DP
    do jg=1,Chi_ng
@@ -195,8 +199,12 @@ subroutine K_Chi_dynamic(iq,Xk,W)
  !$omp do schedule(dynamic)
  do iw=1,nw
    F=cmplx(Chi_fxc(:,:,iw+i0),kind=DP)
-   call TDDFT_Chi_dynamic_response(cmplx(W%p(iw),kind=DP),H0,F,Chi_dyn_V(:,:,1),Chi_dyn_V(:,:,2),&
-&                                  Chi_dyn_s,Chi_dyn_c,a,b,BS_K_coupling,resp,ierr)
+   if (BS_K_coupling) then
+     call TDDFT_Chi_full_dynamic_response(cmplx(W%p(iw),kind=DP),H0,F,Vf,sf,Chi_dyn_c,df,resp,ierr)
+   else
+     call TDDFT_Chi_dynamic_response(cmplx(W%p(iw),kind=DP),H0,F,Chi_dyn_V(:,:,1),Chi_dyn_V(:,:,2),&
+&                                    Chi_dyn_s,Chi_dyn_c,a,b,.FALSE.,resp,ierr)
+   endif
    resp_w(iw)=resp
    err_w(iw)=ierr
  enddo
@@ -224,6 +232,7 @@ subroutine K_Chi_dynamic(iq,Xk,W)
  call K_OUTPUT(iq,W,"open dump close ChiDyn","ALL")
  !
  deallocate(H0,a,b,resp_w,err_w)
+ if (allocated(Vf)) deallocate(Vf,sf,df)
  call Chi_dyn_free()
  call Chi_free()
  !
