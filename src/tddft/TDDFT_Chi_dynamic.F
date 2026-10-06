@@ -212,17 +212,20 @@ contains
    deallocate(Y)
  end subroutine TDDFT_Chi_pair_bubble
  !
- recursive subroutine TDDFT_Chi_kernel_from_response(chi0,chib,d,exch,fxc,P,rcond,ierr)
+ recursive subroutine TDDFT_Chi_kernel_from_response(chi0,chib,d,exch,fxc,P,rcond,ierr,exch_head)
    ! fxc = chi0^-1 - P^-1 with P^-1 = chib^-1 + vbar, vbar = diag(0, d_G^2) when the
    ! response chib contains the exchange (Lbar) of the BSE. Inversions are done on the
    ! Coulomb-symmetrized matrices x~ = D x D, D = diag(d), as in Chi_fxc:
    !   P~^-1 = chib~^-1 + J, J = diag(0,1,..,1),  fxc = D (chi0~^-1 - P~^-1) D.
+   ! exch_head (optional, default .FALSE.): the BSE exchange includes G=0 (Lkind=full,
+   ! the default at finite q with a Coulomb cutoff), so vbar = v and J = 1.
    ! d = sqrt(4 pi)/bare_qpg is complex with a cut Coulomb (v_cut < 0 gives an imaginary
    ! d), exactly as the BSE exchange divides by bare_qpg**2.
    ! rcond = reciprocal condition numbers of chi0~ and chib~.
    complex(DP), intent(in)  :: chi0(:,:),chib(:,:)
    complex(DP), intent(in)  :: d(:)
    logical,     intent(in)  :: exch
+   logical,     intent(in), optional :: exch_head
    complex(DP), intent(out) :: fxc(:,:),P(:,:)
    real(DP),    intent(out) :: rcond(2)
    integer,     intent(out) :: ierr
@@ -250,6 +253,9 @@ contains
      do i=2,ng
        B(i,i)=B(i,i)+one
      enddo
+     if (present(exch_head)) then
+       if (exch_head) B(1,1)=B(1,1)+one
+     endif
    endif
    do j=1,ng
      do i=1,ng

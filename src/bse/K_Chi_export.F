@@ -24,24 +24,32 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  ! chi0/Pqp as "chi0", P and fxc. Its first frequency is z = 0 exactly (static Casida),
  ! followed by the BSE frequencies (BSEChiDyn with the same BSE grid).
  !
+ ! Any BSE momentum q (BSEQptR): at finite q the transitions are v(k-q) -> c(k) and
+ ! the vertices rho(q+G) come from the wavefunctions (no dipoles). The exchange drops
+ ! G=0 (Lkind="bar", vbar) or keeps it (Lkind="full", the default at finite q with a
+ ! Coulomb cutoff), and P^-1 = chib^-1 + vbar or chib^-1 + v accordingly. The header
+ ! of ndb.Chi is written once per run; each q adds its own fragment.
+ !
  use pars,           ONLY:SP,DP,pi,schlen,cZERO
  use units,          ONLY:HA2EV
  use frequency,      ONLY:w_samp,W_reset,W_duplicate
  use electrons,      ONLY:levels
- use R_lattice,      ONLY:bz_samp,bare_qpg
+ use R_lattice,      ONLY:bz_samp,bare_qpg,qindx_X
  use com,            ONLY:msg,isec
- use stderr,         ONLY:intc,real2ch
+ use stderr,         ONLY:intc,real2ch,STRING_match
  use parallel_m,     ONLY:ncpu
  use X_m,            ONLY:X_t,X_reset,global_gauge
- use BS,             ONLY:BS_K_coupling,BS_K_dim,BS_H_dim,BS_res_ares_n_mat,BS_n_g_fxc,BS_bands,BS_K_Chi_out
- use BS_solvers,     ONLY:BS_mat,BSS_eh_E,BSS_eh_W,BSS_eh_Z,BSS_eh_table,BSS_q0
+ use BS,             ONLY:BS_K_coupling,BS_K_dim,BS_H_dim,BS_res_ares_n_mat,BS_n_g_fxc,BS_bands,BS_K_Chi_out,&
+&                         BSE_L_kind,l_BS_ares_from_res
+ use BS_solvers,     ONLY:BS_mat,BSS_eh_E,BSS_eh_W,BSS_eh_Z,BSS_eh_table,BSS_q0,BSS_dipoles_opt,BSS_eh_f
  use Chi_m,          ONLY:Chi_ng,Chi_n_freqs,Chi_alloc,Chi_free,Chi_freqs,Chi_0,Chi_P,Chi_fxc,Chi_rcond,&
 &                         Chi_QP_applied,Chi_QP_action,Chi_convention,Chi_G_mode,Chi_G_axis,Chi_G_db,&
 &                         Chi_optical_q0,Chi_optical_q0_known,Chi_G0_error,Chi_rcond_floor,&
 &                         Chi_dyn_V,Chi_dyn_s,Chi_dyn_filled,Chi_dyn_c,Chi_dyn_free
  use IO_int,         ONLY:io_control
  use IO_m,           ONLY:OP_WR_CL,OP_APP_CL,REP
- use TDDFT_Chi_dynamic_m, ONLY:TDDFT_Chi_pair_response,TDDFT_Chi_pair_bubble,TDDFT_Chi_kernel_from_response
+ use TDDFT_Chi_dynamic_m, ONLY:TDDFT_Chi_pair_response,TDDFT_Chi_pair_bubble,TDDFT_Chi_kernel_from_response,&
+&                              TDDFT_Chi_dynamic_response
  use timing_m,       ONLY:timing
  !
  implicit none
@@ -54,13 +62,18 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  ! Work Space
  !
  character(1)             :: sec
- logical                  :: l_exc,l_qp
- integer                  :: n,nh,ng,nw,iw,it,ig,jg,ik,ierr,n_bad,ID,io_err
+ logical                  :: l_exc,l_qp,l_full_L
+ logical, save            :: header_done=.FALSE.
+ integer                  :: n,nh,ng,nw,iw,it,ig,jg,ik,ikv,ierr,n_bad,ID,io_err
  integer,     external    :: io_Chi
  integer,     allocatable :: err_w(:)
  real(DP)                 :: herm,scale_max,rc(2)
  real(DP),    allocatable :: E_ref(:)
  complex(DP), allocatable :: d(:),H0(:,:),zz(:),chib(:,:),chi0(:,:),f(:,:),Pm(:,:)
+ complex(DP), allocatable :: head(:),a(:),b(:),F0(:,:)
+ complex(DP)              :: rr(9),lam
+ real(DP)                 :: head_err
+ integer                  :: is,iws(9)
  type(X_t)                :: X_io
  type(w_samp)             :: W_io
  !
@@ -72,7 +85,7 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  !
  l_exc=trim(BS_K_Chi_out)=='exc'
  !
- if (iq/=1) call error('[Chi/BSK] BSEChiOut: optical q only (BSEQptR 1)')
+ if (.not.l_BS_ares_from_res) call error('[Chi/BSK] BSEChiOut: the anti-resonant blocks must be built from the resonant ones')
  if (ncpu/=1) call error('[Chi/BSK] BSEChiOut is serial (MPI); use OpenMP threads')
  if (.not.BS_K_coupling) call error('[Chi/BSK] BSEChiOut needs BSEmod= "coupling"')
  if (BS_res_ares_n_mat/=1) call error('[Chi/BSK] BSEChiOut: one BSE matrix only')
@@ -98,9 +111,11 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  do it=1,n
    E_ref(it)=real(BSS_eh_E(it),DP)
    if (.not.l_exc.and.l_qp) then
-     ik=Xk%sstar(BSS_eh_table(it,1),1)
-     E_ref(it)=real(Ken%Eo(BSS_eh_table(it,3),ik,BSS_eh_table(it,4))-&
-&                   Ken%Eo(BSS_eh_table(it,2),ik,BSS_eh_table(it,5)),DP)
+     ! c at k, v at k-q (K_Transition_check): ikv = ik at q=0
+     ik =Xk%sstar(BSS_eh_table(it,1),1)
+     ikv=Xk%sstar(qindx_X(iq,BSS_eh_table(it,1),1),1)
+     E_ref(it)=real(Ken%Eo(BSS_eh_table(it,3),ik ,BSS_eh_table(it,4))-&
+&                   Ken%Eo(BSS_eh_table(it,2),ikv,BSS_eh_table(it,5)),DP)
    endif
  enddo
  do ig=1,ng
@@ -108,7 +123,11 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
    d(ig)=sqrt(4._DP*pi)/cmplx(bare_qpg(iq,ig),kind=DP)
  enddo
  !
+ l_full_L=STRING_match(BSE_L_kind,"full")
  call msg('r','[Chi/BSK] BSEChiOut kernel reference',trim(BS_K_Chi_out))
+ call msg('r','[Chi/BSK] BSE momentum index',iq)
+ if (l_full_L)      call msg('r','[Chi/BSK] exchange with G=0 (Lkind full): P^-1 = chib^-1 + v')
+ if (.not.l_full_L) call msg('r','[Chi/BSK] exchange without G=0 (Lkind bar): P^-1 = chib^-1 + vbar')
  call msg('r','[Chi/BSK] QP-corrected BSE transitions',l_qp)
  call msg('r','[Chi/BSK] lowest BSE transition energy (gap of the window) [eV]',real(minval(BSS_eh_E(1:n))*HA2EV,SP))
  if (l_exc.and..not.l_qp) call warning('[Chi/BSK] BSEChiOut= "exc" on KS transitions: the reference bubble is the KS one')
@@ -122,9 +141,10 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  !
  call Chi_alloc(ng,nw)
  Chi_freqs=cmplx(zz,kind=SP)
- allocate(H0(nh,nh))
+ allocate(H0(nh,nh),head(nw))
  H0=cmplx(BS_mat,kind=DP)
  err_w=0
+ head=(0._DP,0._DP)
  !
  !$omp parallel default(shared) private(iw,chib,chi0,f,Pm,rc,ierr)
  allocate(chib(ng,ng),chi0(ng,ng),f(ng,ng),Pm(ng,ng))
@@ -132,8 +152,9 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  do iw=1,nw
    call TDDFT_Chi_pair_response(zz(iw),H0,Chi_dyn_V(:,:,1),Chi_dyn_V(:,:,2),Chi_dyn_s,Chi_dyn_c,chib,ierr)
    if (ierr==0) then
+     head(iw)=chib(1,1)
      call TDDFT_Chi_pair_bubble(zz(iw),E_ref,Chi_dyn_V(:,:,1),Chi_dyn_V(:,:,2),Chi_dyn_s,Chi_dyn_c,chi0)
-     call TDDFT_Chi_kernel_from_response(chi0,chib,d,.TRUE.,f,Pm,rc,ierr)
+     call TDDFT_Chi_kernel_from_response(chi0,chib,d,.TRUE.,f,Pm,rc,ierr,exch_head=l_full_L)
    endif
    err_w(iw)=ierr
    if (ierr==0) then
@@ -156,6 +177,34 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
 &    trim(real2ch(real(real(zz(iw))*HA2EV,SP)))//' eV with code '//trim(intc(err_w(iw)))//' (31/32: reduce BSENGfxc)')
  endif
  call msg('r','[Chi/BSK] minimum rcond (reference bubble, BSE response)',(/minval(Chi_rcond(1,:)),minval(Chi_rcond(2,:))/))
+ !
+ ! Head check, valid at any q: the G=0 element of chib (our vertices) must be Yambo's own
+ ! coupled response, built from its oscillators BSS_dipoles_opt and its (i b, i a)
+ ! anti-resonant convention: the fxc=0 limit of the Casida solver, scaled by c.
+ allocate(a(n),b(n),F0(ng,ng))
+ F0=(0._DP,0._DP)
+ do it=1,n
+   a(it)=cmplx(BSS_dipoles_opt(1,it)*sqrt(cmplx(BSS_eh_f(it),kind=SP)),kind=DP)
+   b(it)=cmplx(conjg(BSS_dipoles_opt(1,it))*sqrt(cmplx(BSS_eh_f(it),kind=SP)),kind=DP)
+ enddo
+ do is=1,9
+   iws(is)=max(2,min(nw,2+((nw-2)*(is-1))/8))
+ enddo
+ rr=(0._DP,0._DP)
+ do is=1,9
+   call TDDFT_Chi_dynamic_response(zz(iws(is)),H0,F0,Chi_dyn_V(:,:,1),Chi_dyn_V(:,:,2),Chi_dyn_s,Chi_dyn_c,&
+&                                  a,b,.TRUE.,rr(is),ierr)
+   if (ierr/=0) rr(is)=(0._DP,0._DP)
+ enddo
+ ! best complex scale lam (exactly c when the conventions agree), then the residual
+ lam=sum(conjg(rr)*head(iws))/max(sum(abs(rr)**2),tiny(1._DP))
+ head_err=sqrt(sum(abs(head(iws)-lam*rr)**2)/max(sum(abs(head(iws))**2),tiny(1._DP)))
+ call msg('r','[Chi/BSK] head of the exported response vs the BSE response: residual, |scale/c|, arg(scale)',&
+&         (/real(head_err,SP),real(abs(lam)/Chi_dyn_c,SP),real(atan2(aimag(lam),real(lam)),SP)/))
+ if (head_err>1.E-4_DP.or.abs(abs(lam)/Chi_dyn_c-1._DP)>1.E-4_DP) &
+&  call warning('[Chi/BSK] the exported G=0 response differs from the BSE one: '//&
+&    'vertex or anti-resonant convention mismatch at this q, the kernel is not the BSE one')
+ deallocate(a,b,F0)
  if (minval(Chi_rcond)<Chi_rcond_floor) &
 &  call error('[Chi/BSK] BSEChiOut: ill-conditioned response; reduce BSENGexx/BSENGfxc for this band window')
  !
@@ -180,8 +229,9 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  Chi_G_db=''
  Chi_G_axis='REAL'
  Chi_G0_error=-1._SP
- Chi_optical_q0=BSS_q0
- Chi_optical_q0_known=.TRUE.
+ Chi_optical_q0=0._SP
+ Chi_optical_q0_known=iq==1
+ if (iq==1) Chi_optical_q0=BSS_q0
  if (l_exc) then
    Chi_G_mode='BSE-EXC'
    Chi_QP_action='P from the coupled BSE; chi0 = bubble of its (QP) transition energies'
@@ -195,9 +245,14 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  X_io%ng=ng
  call W_reset(W_io)
  call W_duplicate(W,W_io)
- call io_control(ACTION=OP_WR_CL,COM=REP,SEC=(/1/),ID=ID)
- io_err=io_Chi(X_io,W_io,ID)
- if (io_err<0) call error('[Chi/BSK] cannot write the ndb.Chi header')
+ ! One header per run (it holds |q+G| of every q); each q appends its fragment. Run q=1
+ ! first in a multi-q job (BSEQptR 1 | n) to keep the optical q0 of the header.
+ if (.not.header_done) then
+   call io_control(ACTION=OP_WR_CL,COM=REP,SEC=(/1/),ID=ID)
+   io_err=io_Chi(X_io,W_io,ID)
+   if (io_err<0) call error('[Chi/BSK] cannot write the ndb.Chi header')
+   header_done=.TRUE.
+ endif
  call io_control(ACTION=OP_APP_CL,COM=REP,SEC=(/2*iq,2*iq+1/),ID=ID)
  io_err=io_Chi(X_io,W_io,ID)
  if (io_err<0) call error('[Chi/BSK] cannot write the ndb.Chi q fragment')
@@ -206,7 +261,7 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  call W_reset(W_io)
  call Chi_free()
  call Chi_dyn_free()
- deallocate(E_ref,d,zz,err_w,H0)
+ deallocate(E_ref,d,zz,err_w,H0,head)
  !
  call timing('ChiExport',OPR='stop')
  !

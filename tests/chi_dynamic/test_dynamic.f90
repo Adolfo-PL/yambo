@@ -344,10 +344,12 @@ contains
     call random_matrix(Cw)
     Cw=0.1_DP*(Cw+transpose(Cw))
     zs=[cmplx(0._DP,0._DP,kind=DP),cmplx(1.3_DP,0.05_DP,kind=DP),cmplx(2.9_DP,0.1_DP,kind=DP)]
-    do iref=1,3
+    do iref=1,4
       ! iref 1: QP reference, 2: KS reference, 3: QP reference with a cut Coulomb whose
-      ! v_cut(G) < 0 for some G (imaginary d = sqrt(4 pi)/bare_qpg, as in Yambo)
+      ! v_cut(G) < 0 for some G (imaginary d = sqrt(4 pi)/bare_qpg, as in Yambo),
+      ! 4: finite q with the G=0 exchange kept (Lkind="full"): v instead of vbar
       d(1)=40._DP
+      if (iref==4) d(1)=3._DP
       do i=2,ng
         d(i)=1.5_DP/sqrt(real(i,DP))
       enddo
@@ -359,6 +361,7 @@ contains
       do i=2,ng
         vb(i,i)=d(i)**2
       enddo
+      if (iref==4) vb(1,1)=d(1)**2
       call TDDFT_Chi_dynamic_kernel(vb,rho_r,rho_r,sq,c_fac,Krr,info)
       call TDDFT_Chi_dynamic_kernel(vb,rho_r,rho_c,sq,c_fac,Krc,info)
       call TDDFT_Chi_dynamic_kernel(vb,rho_c,rho_r,sq,c_fac,Kcr,info)
@@ -386,7 +389,7 @@ contains
         else
           call TDDFT_Chi_pair_bubble(zz,dks,rho_r,rho_c,sq,c_fac,chi0)
         endif
-        call TDDFT_Chi_kernel_from_response(chi0,chib,d,.TRUE.,f,Pm,rc,info)
+        call TDDFT_Chi_kernel_from_response(chi0,chib,d,.TRUE.,f,Pm,rc,info,exch_head=(iref==4))
         if (info/=0) then
           print *,'FAIL: kernel_from_response error',info
           failures=failures+1
@@ -435,6 +438,7 @@ contains
         if (iref==1) call check('export exc: Casida(QP, v, fxc) = BSE response head',info,c_fac*resp,chib(1,1))
         if (iref==2) call check('export full: Casida(KS, v, fxc) = BSE response head',info,c_fac*resp,chib(1,1))
         if (iref==3) call check('export exc, cut Coulomb (v<0 at some G): Casida = BSE head',info,c_fac*resp,chib(1,1))
+        if (iref==4) call check('export exc, finite q, G=0 exchange (Lfull): Casida = BSE head',info,c_fac*resp,chib(1,1))
       enddo
     enddo
   end subroutine
