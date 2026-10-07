@@ -112,10 +112,8 @@ def main():
     if not a.wfiles:
         ap.error('give the transitions file and the w-files, or --table')
 
-    _, tr = kc.read_table(a.transitions)
+    tr, E, Ea, res, Aa, Ba = kc.read_rows(a.transitions)
     n = len(tr)
-    E = tr[:, 9]
-    res = tr[:, 11] + 1j * tr[:, 12]
     pairs = {(int(v), int(c)) for v, c in tr[:, 7:9]}
     print(f'{n} transitions, {len(pairs)} band pair(s), lowest transition {E.min():.4f} eV')
     if len(pairs) == 1:
@@ -125,14 +123,14 @@ def main():
     rows = []
     print('     w [eV]   Re lam_bright  Im lam_bright   Re lam_lowest   lam_bright - w')
     for f in files:
-        z, M, coupled = kc.read_matrix(f, n, E, a.tda, False)
+        z, M, coupled = kc.read_matrix(f, n, E, a.tda, False, E_ares=Ea)
         if a.delete:
             os.remove(f)
         if abs(z.imag) > 1e-6:
             print(f'  !!! {f}: z has damping {z.imag:.3g} eV; the crossing needs undamped real w')
         if coupled:
-            A = np.concatenate([res, 1j * np.conj(res)])
-            B = np.concatenate([np.conj(res), 1j * res])
+            A = np.concatenate([res, Aa])
+            B = np.concatenate([np.conj(res), Ba])
         else:
             A, B = res, np.conj(res)
         lam, R = np.linalg.eig(M)

@@ -14,6 +14,9 @@ The matrix at the frequency z of each w-file is
           [           X_cr + F_cr , -diag(E) + X_cc + F_cc ]]
 
 and the response Resp(w) = -Co B^T [w - M]^-1 A with A = (a, i b), B = (b, i a), b = conj(a).
+At finite q (explicit anti-resonant transitions) o-<job>.Ktt_q<iq>_antiresonant lists rows N+t
+with their own energies E_ares and A, B; it is read when present, and the lower-right block is
+diag(E_ares) + X_cc + F_cc.
 The script reports its eigenvalues with Re > 0 (lowest first), their oscillator strength
 |(B^T R_l)(L_l^T A)| relative to the strongest, the lowest bright one (> 1% by default) and the
 binding energy against the lowest transition of the file, and optionally writes eps2 up to the
@@ -34,6 +37,7 @@ Usage
          [--tda] [--no-fxc] [--nlow 8] [--bright 0.01] [--spectrum eps.dat --eta 0.05]
 """
 import argparse
+import os
 import sys
 
 import numpy as np
@@ -59,7 +63,21 @@ def read_table(path):
     return header, data.reshape(-1, ncol)
 
 
-def read_matrix(path, n, E, tda, no_fxc, chunk_lines=500000):
+def read_rows(path):
+    """Transitions file (and its _antiresonant companion at finite q): table, E, E_ares, a, A_ares, B_ares."""
+    _, tr = read_table(path)
+    E = tr[:, 9]
+    res = tr[:, 11] + 1j * tr[:, 12]
+    ares = path.replace('_transitions', '_antiresonant')
+    if ares != path and os.path.exists(ares):
+        _, ta = read_table(ares)
+        if len(ta) != len(tr):
+            sys.exit(f'{ares}: {len(ta)} rows, {path}: {len(tr)}')
+        return tr, E, ta[:, 9], res, ta[:, 11] + 1j * ta[:, 12], ta[:, 13] + 1j * ta[:, 14]
+    return tr, E, -E, res, 1j * np.conj(res), 1j * res
+
+
+def read_matrix(path, n, E, tda, no_fxc, chunk_lines=500000, E_ares=None):
     """Stream a w-file into M(z) chunk by chunk (the text is never held in memory whole).
 
     TDA files (6 columns) or --tda give the rr block only. Returns z, M, coupled."""
@@ -97,7 +115,7 @@ def read_matrix(path, n, E, tda, no_fxc, chunk_lines=500000):
     M[:n, :n] = np.diag(E) + blocks[0]
     M[:n, n:] = blocks[1]
     M[n:, :n] = blocks[2]
-    M[n:, n:] = -np.diag(E) + blocks[3]
+    M[n:, n:] = np.diag(-E if E_ares is None else E_ares) + blocks[3]
     return z, M, True
 
 
@@ -127,10 +145,8 @@ def main():
     ap.add_argument('--wmax', type=float, default=4.0, help='upper energy of --spectrum [eV]')
     a = ap.parse_args()
 
-    _, tr = read_table(a.transitions)
+    tr, E, Ea, res, Aa, Ba = read_rows(a.transitions)
     n = len(tr)
-    E = tr[:, 9]
-    res = tr[:, 11] + 1j * tr[:, 12]              # a_t
     pairs = sorted({(int(v), int(c)) for v, c in tr[:, 7:9]})
     gap = E.min()
     print(f'{n} transitions, band pairs {pairs[:6]}{" ..." if len(pairs) > 6 else ""}; '
@@ -139,10 +155,10 @@ def main():
         print('  !!! one band pair only: a sub-matrix of the Casida problem, not the BSE exciton')
 
     for wf in a.wfiles:
-        z, M, coupled = read_matrix(wf, n, E, a.tda, a.no_fxc)
+        z, M, coupled = read_matrix(wf, n, E, a.tda, a.no_fxc, E_ares=Ea)
         if coupled:
-            A = np.concatenate([res, 1j * np.conj(res)])
-            B = np.concatenate([np.conj(res), 1j * res])
+            A = np.concatenate([res, Aa])
+            B = np.concatenate([np.conj(res), Ba])
         else:
             A, B = res, np.conj(res)
         dim = M.shape[0]

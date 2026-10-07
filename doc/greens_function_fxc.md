@@ -430,6 +430,18 @@ its binding energy; `--tda`, `--no-fxc` and `--spectrum` are optional:
 python sbin/chi_tools/ktt_casida.py o-<job>.Ktt_q1_transitions o-<job>.Ktt_q1_w<iw>
 ```
 
+At finite q (explicit anti-resonant transitions, see "Finite momentum") the files are
+`o-<job>.Ktt_q<iq>_*` and row N+t of M is anti-resonant transition t, with its own k,
+energy and oscillator, listed in `o-<job>.Ktt_q<iq>_antiresonant` (electron in v at k,
+hole in c at k-q; E_t < 0, f_t < 0, A_t and B_t). The lower-right block is then
+diag(E_ares) + X_cc + F_cc, every F block is c s_x s_y V_x^H fxc(z) V_y with
+s = sqrt(f) (i sqrt|f| for f < 0), and A = s d, B = s conj(d) row by row. In the
+resonant file at finite q, t is v at k-q -> c at k (k of the conduction state).
+`ktt_casida.py` and `sc_scan.py` read the anti-resonant file when it is there. hBN,
+q = (0, 1/6, 0), 144 + 144 rows, six frequencies: B^T [z-M]^-1 A rebuilt from the files
+is a constant multiple of the Casida eps of the same run to 2e-7 (6e-7 at q = 1).
+`BSEChiKoutW= 0.0 | 0.0 eV` writes F at z = 0, the static kernel.
+
 The kernel is exact only on the whole transition space. A single band pair
 loses the binding: silicon at z = 3.4 + 0.1i eV gives 3.452 eV with all
 transitions (BSE exciton 3.428 eV) but 3.589 eV with the 4->5 pair alone.
