@@ -15,6 +15,11 @@ The .npz holds the same arrays: G, qpg[iq], q[iq], freqs_eV[iq], fxc[iq] (nw, nG
 
 --inplane keeps only the G with G_z = 0: for a kernel exported with BSEGinplane the other
 rows and columns are zero by construction (exchange and fxc act on the in-plane G only).
+
+--at TABLE writes, for each q of TABLE (lines "iq  w_eV"), the kernel at that one real
+frequency, interpolated linearly between the two neighbouring real frequencies of the file.
+With w = the self-consistent exciton energy of that q (xq_summary.py writes this table), the
+static Casida with this kernel has the exciton as an eigenvalue.
 """
 import argparse
 import os
@@ -35,6 +40,32 @@ def cplx(v):
     return x[..., 0] + 1j * x[..., 1]
 
 
+def at_frequency(data, table):
+    """Kernel of each q of table (iq, w) at the real frequency w: linear between the two
+    neighbouring frequencies on the real axis (Im w < 1e-6 eV)."""
+    out, note = {}, {}
+    for iq, w0 in table:
+        iq = int(iq)
+        if iq not in data:
+            print(f'iq={iq}: not in the file, skipped')
+            continue
+        w, fx = data[iq]
+        real = np.where(np.abs(w.imag) < 1e-6)[0]
+        real = real[np.argsort(w[real].real)]
+        x = w[real].real
+        if len(real) < 2 or not x[0] <= w0 <= x[-1]:
+            raise SystemExit(f'iq={iq}: w = {w0} eV outside the real frequencies of the file '
+                             f'({x[0] if len(x) else None} .. {x[-1] if len(x) else None} eV)')
+        j = min(np.searchsorted(x, w0, side='right') - 1, len(x) - 2)
+        t = (w0 - x[j]) / (x[j + 1] - x[j])
+        f = (1 - t) * fx[real[j]] + t * fx[real[j + 1]]
+        out[iq] = (np.array([complex(w0, 0.0)]), f[None])
+        note[iq] = f'linear between {x[j]:.6f} and {x[j + 1]:.6f} eV (weight {t:.4f} on the upper)'
+    if not out:
+        raise SystemExit('no q of the table in the file')
+    return out, note
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[1])
     ap.add_argument('dir')
@@ -42,6 +73,7 @@ def main():
     ap.add_argument('--static', action='store_true', help='w = 0 only')
     ap.add_argument('--sym', action='store_true', help='also fxc |q+G||q+G\'|/4pi')
     ap.add_argument('--inplane', action='store_true', help='keep only the G with G_z = 0')
+    ap.add_argument('--at', help='table "iq w_eV": the kernel at one real frequency per q')
     a = ap.parse_args()
 
     with Dataset(os.path.join(a.dir, 'ndb.Chi')) as ds:
@@ -78,6 +110,10 @@ def main():
             break
     if not data:
         raise SystemExit('no FXC_Q_* in ' + a.dir)
+    at_note = {}
+    if a.at:
+        data, at_note = at_frequency(data, np.loadtxt(a.at, ndmin=2))
+        a.static = True
 
     with open(a.out + '.dat', 'w') as o:
         o.write(f'# fxc_GG\'(q, w) from {os.path.abspath(a.dir)}/ndb.Chi\n')
@@ -98,7 +134,10 @@ def main():
                 o.write(f'  {i + 1:4d} {G[i, 0]:12.6f} {G[i, 1]:12.6f} {G[i, 2]:12.6f} {qpg[i]:14.6e}\n')
             iws = [0] if a.static else range(len(w))
             for iw in iws:
-                o.write(f'# --- iw = {iw + 1}   w = {w[iw].real:.6f} {w[iw].imag:+.6f}i eV\n')
+                if iq in at_note:
+                    o.write(f'# --- w = {w[iw].real:.6f} eV: {at_note[iq]}\n')
+                else:
+                    o.write(f'# --- iw = {iw + 1}   w = {w[iw].real:.6f} {w[iw].imag:+.6f}i eV\n')
                 o.write('#   iG  iG\'      Re fxc            Im fxc' +
                         ('          Re fxc*|q+G||q+G\'|/4pi  Im' if a.sym else '') + '\n')
                 for i in range(ng):
@@ -115,7 +154,8 @@ def main():
              fxc=np.array([data[iq][1][:1] if a.static else data[iq][1] for iq in data]))
     for iq, (w, fx) in data.items():
         qpg = np.abs(qpg_all[:, iq - 1])
-        print(f'iq={iq}: nG={ng}, {len(w)} frequencies; alpha(w=0) = {-fx[0, 0, 0].real * qpg[0] ** 2:.5f}')
+        wl = f'{w[0].real:.4f} eV' if a.at else '0'
+        print(f'iq={iq}: nG={ng}, {len(w)} frequencies; alpha(w={wl}) = {-fx[0, 0, 0].real * qpg[0] ** 2:.5f}')
     print(f'wrote {a.out}.dat and {a.out}.npz')
 
 

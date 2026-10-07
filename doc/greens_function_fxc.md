@@ -658,6 +658,43 @@ G=0 and the six in-plane G. The report prints the count:
 
 `fxc_export.py --inplane` lists only these G.
 
+### Exciton energies at every q: `xq_summary.py`
+
+The self-consistent condition lambda(w) = w of `sc_scan.py` holds at every q: the Casida
+matrix with fxc(q, w) has the BSE exciton of momentum q as an eigenvalue at w = E_x(q).
+A kernel exported on undamped real frequencies (`BDmRange 0 | 0`) below the lowest gap
+of every q gives, per q:
+
+1. the BSE excitons (lowest, lowest bright) and the gap of the window, from the report of
+   the exporting run;
+2. Casida at z = 0 (`BSEChiKoutW 0 | 0`, `ktt_casida.py`): the static kernel fxc(q, 0);
+3. Casida on the frequencies within a few 10 meV of the BSE excitons (`sc_scan.py`): the
+   crossing of the lowest bright eigenvalue, and of the lowest one, with w.
+
+`sbin/chi_tools/xq_summary.py` collects them (`sc_q<iq>.dat`, `static_q<iq>.log`, the `r-`
+report, |q| from a `fxc_export.py` npz). It writes a table (gap, BSE, self-consistent and static
+Casida energies, binding energies gap - E), a plot, and the table "iq w*" of the
+self-consistent energies. `fxc_export.py --at` takes that table and writes fxc_GG'(q, w*),
+interpolated linearly between the two neighbouring real frequencies. F is linear in fxc, so
+static Casida with this kernel has the exciton as an eigenvalue up to the interpolation error.
+
+```sh
+python sbin/chi_tools/xq_summary.py --bse 'r-<bse job>_*' --npz <static npz> --out xq_dispersion
+python sbin/chi_tools/fxc_export.py <kernel dir> --at xq_dispersion_omega.dat --sym --inplane --out fxc_GGq_scw
+```
+
+hBN (bands 3-6, 17 G in-plane, q = 1 and q = (0, 1/6, 0), grid 3.55-4.45 eV in 0.01 eV
+steps, scan +-0.04 eV around the BSE exciton):
+
+| q | gap | BSE | Casida fxc(q, w), self-consistent | Casida fxc(q, 0) |
+| --- | --- | --- | --- | --- |
+| 1 | 5.6967 eV | 3.737126 eV | 3.737129 eV | 5.0354 eV |
+| 2 | 6.5599 eV | 4.293060 eV | 4.293079 eV | 5.7308 eV |
+
+Static Casida with fxc(q2, 4.293079 eV) from `--at`: lowest bright eigenvalue 4.293057 eV.
+The static kernel fxc(q, 0) binds the exciton by 0.66-0.83 eV, against 1.96-2.27 eV: the
+binding comes from the frequency dependence of the kernel, at finite q as at q = 0.
+
 ### MPI for the response
 
 G0, COHSEX and DYSON support k-point distribution on CPUs. For N ranks,
