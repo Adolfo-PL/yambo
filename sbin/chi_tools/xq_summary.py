@@ -131,8 +131,9 @@ def main():
     except ImportError:
         print('matplotlib missing: no plot')
         return
-    x = rows[:, 1] if np.all(np.isfinite(rows[:, 1])) else rows[:, 0]
-    xl = '|q| (bohr$^{-1}$)' if x is rows[:, 1] else 'q index'
+    have_q = bool(np.all(np.isfinite(rows[:, 1])))
+    x = rows[:, 1] if have_q else rows[:, 0]
+    xl = '|q| (bohr$^{-1}$)' if have_q else 'q index'
     o = np.argsort(x)
     fig, ax = plt.subplots(1, 2, figsize=(9, 3.6))
     ax[0].plot(x[o], rows[o, 2], 'k^', ms=4, label='gap (lowest transition)')
