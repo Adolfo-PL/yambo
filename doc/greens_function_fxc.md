@@ -1041,8 +1041,23 @@ large; how NQ behaves on converged meshes is not tested here.
 
 #### Literature checks
 
-Read from the PDFs of the three papers (equation numbers are the papers').
+Read from the PDFs of the four papers (equation numbers are the papers').
 
+- **Del Sole, Adragna, Olevano, Reining, PRB 67, 045207 (2003).** Eqs. 2-4 define an
+  effective kernel for a chosen approximate bubble, P = chi0_appr + chi0_appr f_eff P, so
+  f_eff = chi0_appr^-1 - P^-1 (Eq. 4; "analogous to a well-known equation" for the exact
+  fxc, their ref. 13, Streitenberger 1984). From a DFT-LDA bubble they get f^FLDA (self-energy
+  and e-h effects), from a quasiparticle bubble f^FQP (e-h only). These are the definitions
+  of "full" and "exc" here. They compute only the head, G = G' = 0 at q -> 0, from the
+  macroscopic inverse dielectric functions of a BSE and of the RPA (Eq. 5), neglecting 1
+  against eps in the optical range (Eq. 6), because the full matrix "would need much more
+  information from the Bethe-Salpeter equation than the sole macroscopic spectra". For Si
+  and diamond, q^2 f^FQP is complex and changes by a factor of 3 across the absorption
+  range; used alone in their Eq. 9 (a frequency-dependent contact-exciton form) it gives the
+  BSE absorption of Si. The export here differs in practice: the whole matrix on the G basis,
+  from the G-resolved BSE response at each complex frequency, without the eps >> 1
+  approximation, used in Casida. Its one-plane-wave case (kernel alpha(z)/q^2) resembles
+  their Eq. 9; whether the two coincide was not checked.
 - **Sottile, Olevano, Reining, PRL 91, 056402 (2003).** Eq. 3:
   T2 = (2/N_k^2) sum_tt' Phi*(t;G) F^BSE_tt' Phi(t';G') / ((e_c - e_v - w)(e_c' - e_v' - w)),
   with F^BSE_tt' = - int Phi(vk,v'k';r) W(r',r) Phi*(ck,c'k';r') and the sum over all t, t',
