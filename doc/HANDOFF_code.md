@@ -3,7 +3,7 @@
 This file passes the technical work on this Yambo fork to a new Claude Code session.
 The other session keeps the cluster runs, convergence, results and explanations.
 This session works on the theory, the Fortran, the tests and new features.
-Read this file first, then `doc/greens_function_fxc.md`, which is the full reference at 1407 lines.
+Read this file first, then `doc/greens_function_fxc.md`, which is the full reference at 1416 lines.
 
 ## 1. Goal and working rules
 
@@ -222,4 +222,4 @@ Monolayer WS2:
 3. **ChiGMode limits.** The DYSON optical limit, off-diagonal Σ, and MPI beyond k-only are unsupported (doc, "Current scope").
 4. **Possible upstream patch.** The `cutoff_driver.F` barrier fix is generic and could go to Yambo upstream. Only do this if the user asks.
 5. **Optional.** Clean MPA + RIM-W support would need RIM-W added to the MPA W path, not just to the runlevel list. That is a deeper change to `QP_mpa` and the RIM-W tables.
-6. **Literature checks for the paper (done, from the PDFs; doc, "Literature checks").** `exc`/`full` are Eq. 4 of Del Sole et al. (PRB 67, 045207): f^FQP/f^FLDA, which they computed for the head only (q→0, G=G′=0) from macroscopic ε; the fork computes the whole G matrix. `nq` is also Adragna–Del Sole–Marini (PRB 68, 165108) Eqs. 9 and 11, which include anti-resonant and coupling terms. Gulevich et al. (PRB 107, 165118): poles of the exact kernel between excitons (open check on WS2). Ramirez-Torres et al. (trions): static model F and a screened w; see the doc for the interface notes. `nq` is Sottile et al. Eq. 3 (extended to coupling rows and partial occupations). `mdr` is a variant of MDR (per-transition W_tt instead of one Δ_q per q). Shi, Turkowski, Rahman (PRB 107, 155431) use the static Reining et al. (PRL 88, 066404) form with Φ⁻¹, which equals `nq` only when N_G = N_t; comparing with that group needs their basis and a static kernel.
+6. **Literature checks for the paper (done, from the PDFs; doc, "Literature checks").** `exc`/`full` are Eq. 4 of Del Sole et al. (PRB 67, 045207): f^FQP/f^FLDA, which they computed for the head only (q→0, G=G′=0) from macroscopic ε; the fork computes the whole G matrix. `nq` is also Adragna–Del Sole–Marini (PRB 68, 165108) Eqs. 9 and 11, which include anti-resonant and coupling terms. Gulevich et al. (PRB 107, 165118): poles of the exact kernel between excitons; found on the WS2 test at 1.78 eV (between A and B) and 2.23 eV. Ramirez-Torres et al. (trions): static model F and a screened w; see the doc for the interface notes. `nq` is Sottile et al. Eq. 3 (extended to coupling rows and partial occupations). `mdr` is a variant of MDR (per-transition W_tt instead of one Δ_q per q). Shi, Turkowski, Rahman (PRB 107, 155431) use the static Reining et al. (PRL 88, 066404) form with Φ⁻¹, which equals `nq` only when N_G = N_t; comparing with that group needs their basis and a static kernel.

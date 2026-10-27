@@ -1109,8 +1109,17 @@ Read from the PDFs of the papers (equation numbers are the papers').
   alpha(w) = 1/beta_s - 1/beta (Eq. 4): the response has zeros between optically active
   excitons, so the exact kernel has poles there. Their WS2 kernel (poles 2.074 and 2.466 eV,
   WS2 on SiO2, Table I) is fitted to experimental spectra, not taken from a BSE, and local
-  fields are neglected for the in-plane response. Open check: the "exc" kernel here should
-  show such a pole between the A and B excitons.
+  fields are neglected for the in-plane response. Checked on the WS2 SOC test ("exc" export,
+  eta = 0.05 eV, 5 meV grid; A at 1.6355 eV, B at 2.0235 eV): the head of the irreducible
+  response, beta = P_00/q^2, changes sign at 1.733 eV between A and B, and the head of the
+  exported kernel, alpha = q^2 f_00, has a damped pole there: -Im alpha peaks at 1.78 eV
+  (-2.96, width about 2 eta) and Re alpha swings from -3.72 (1.72 eV) to -0.99 (1.82 eV).
+  A second one sits at 2.23 eV, between B and the next bright peak (Re beta changes sign at
+  2.102 eV). The chi0 head has no zero below the gap (Re between -0.48 and -0.19), so the
+  poles come from P. The head-only form 1/beta_s - 1/beta puts them at 1.755 and 2.125 eV:
+  the local fields of the 7 in-plane G shift them. Sign and shape match Gulevich et al.'s
+  F_n/(w^2 - wbar_n^2) with F_n > 0; their WS2 numbers are for another system (experimental
+  spectra, WS2 on SiO2) and are not comparable one to one.
 - **Sottile, Karlsson, Reining, Aryasetiawan, PRB 68, 205112 (2003).** A contact BSE
   interaction W = A delta(r - r') (static, resonant part) is reproduced in TDDFT both by a
   short-range kernel, f = -A/2 delta(r - r') (Eq. 13), and by a long-range head-only kernel,
