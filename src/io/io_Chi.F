@@ -26,7 +26,7 @@ integer function io_Chi(X,Xw,ID)
 &                        Chi_G_mu,Chi_G_kbt,Chi_G0_error,Chi_rcond
  use Chi_m,         ONLY:Chi_G_axis,Chi_optical_q0,Chi_optical_q0_known
  use Chi_m,         ONLY:Chi_occupations,Chi_occ_bands,Chi_occ_nk,Chi_occ_nsp,Chi_occ_nbf,Chi_occ_nbm,&
-&                        Chi_occ_Tel,Chi_occ_alloc,Chi_occ_free
+&                        Chi_occ_Tel,Chi_occ_alloc,Chi_occ_free,Chi_occ_E,Chi_n_trans
  use IO_int,        ONLY:io_connect,io_disconnect,io_elemental,io_header,io_fragment,&
 &                        def_variable_bulk,io_variable_bulk,def_variable_elemental,io_variable_elemental
  use IO_m,          ONLY:io_sec,io_com,io_status,write_is_on,read_is_on,NONE,frag_RESPONSE,&
@@ -45,6 +45,7 @@ integer function io_Chi(X,Xw,ID)
  !
  integer                 :: i1,iq,io_com_save,io_err,ID_frag,ng_qpg,tmp_ib(2)
  character(schlen)       :: ch,axis
+ real(SP)                :: n_trans_disk
  real(SP),   allocatable :: RL_vecs_disk(:,:)
  complex(SP),allocatable :: qpg_disk(:,:)
  !
@@ -190,6 +191,15 @@ integer function io_Chi(X,Xw,ID)
      if (read_is_on(ID)) call Chi_occ_alloc()
      call def_variable_bulk(ID,'CHI_OCCUPATIONS',4,(/Chi_occ_bands(2)-Chi_occ_bands(1)+1,Chi_occ_nk,Chi_occ_nsp/),SP)
      call  io_variable_bulk(ID,4,R3=Chi_occupations)
+     ! Band energies of the reference bubble; older exports have none and are not checked
+     if ((write_is_on(ID).and.allocated(Chi_occ_E)).or.&
+&        (read_is_on(ID).and.variable_exist(ID,'CHI_LEVELS_E'))) then
+       if (read_is_on(ID)) then
+         YAMBO_ALLOC(Chi_occ_E,(Chi_occ_bands(2)-Chi_occ_bands(1)+1,Chi_occ_nk,Chi_occ_nsp))
+       endif
+       call def_variable_bulk(ID,'CHI_LEVELS_E',5,(/Chi_occ_bands(2)-Chi_occ_bands(1)+1,Chi_occ_nk,Chi_occ_nsp/),SP)
+       call  io_variable_bulk(ID,5,R3=Chi_occ_E)
+     endif
    endif
    !
    if (.not.any((/io_sec(ID,:)==2/))) then
@@ -261,6 +271,14 @@ integer function io_Chi(X,Xw,ID)
    if (write_is_on(ID_frag).or.variable_exist(ID_frag,trim(ch))) then
      call def_variable_bulk(ID_frag,trim(ch),6,(/1/),SP)
      call io_variable_bulk(ID_frag,6,R0=Chi_G0_error)
+   endif
+   ch="CHI_NTRANS_Q_"//trim(intc(iq))
+   if (read_is_on(ID)) Chi_n_trans=-1
+   if ((write_is_on(ID_frag).and.Chi_n_trans>0).or.(read_is_on(ID_frag).and.variable_exist(ID_frag,trim(ch)))) then
+     n_trans_disk=real(Chi_n_trans,SP)
+     call def_variable_bulk(ID_frag,trim(ch),7,(/1/),SP)
+     call io_variable_bulk(ID_frag,7,R0=n_trans_disk)
+     Chi_n_trans=nint(n_trans_disk)
    endif
    !
  endif

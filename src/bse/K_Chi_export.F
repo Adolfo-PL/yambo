@@ -59,7 +59,7 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
 &                         Chi_optical_q0,Chi_optical_q0_known,Chi_G0_error,Chi_rcond_floor,&
 &                         Chi_dyn_V,Chi_dyn_filled,Chi_dyn_c,Chi_dyn_free
  use Chi_m,          ONLY:Chi_occupations,Chi_occ_bands,Chi_occ_nk,Chi_occ_nsp,Chi_occ_nbf,Chi_occ_nbm,&
-&                         Chi_occ_Tel,Chi_occ_alloc,Chi_occ_free
+&                         Chi_occ_Tel,Chi_occ_alloc,Chi_occ_free,Chi_occ_E,Chi_n_trans
  use IO_int,         ONLY:io_control
  use IO_m,           ONLY:OP_WR_CL,OP_APP_CL,REP
  use TDDFT_Chi_dynamic_m, ONLY:TDDFT_Chi_full_response,TDDFT_Chi_full_bubble,TDDFT_Chi_kernel_from_response,&
@@ -77,7 +77,7 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  ! Work Space
  !
  character(1)             :: sec
- logical                  :: l_exc,l_qp,l_full_L,l_mdr,l_nq
+ logical                  :: l_exc,l_qp,l_full_L,l_mdr,l_nq,l_chi_ok
  character(3)             :: lab
  logical, save            :: header_done=.FALSE.
  integer                  :: n,nh,ng,nw,iw,it,ig,jg,ik,ikv,ierr,n_bad,ID,io_err
@@ -95,7 +95,7 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  integer                  :: ns
  complex(DP)              :: rr(9),lam
  real(DP)                 :: head_err
- integer                  :: is,iws(9)
+ integer                  :: is,iws(9),ipass,iw_range(2)
  type(X_t)                :: X_io
  type(w_samp)             :: W_io
  !
@@ -224,53 +224,85 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  endif
  err_w=0
  head=(0._DP,0._DP)
+ Chi_rcond=0._SP
  !
- !$omp parallel default(shared) private(iw,chib,chi0,f,Pm,rc,ierr,chs,c0s,fs,Ps)
- allocate(chib(ng,ng),chi0(ng,ng),f(ng,ng),Pm(ng,ng))
- allocate(chs(ns,ns),c0s(ns,ns),fs(ns,ns),Ps(ns,ns))
- !$omp do schedule(dynamic)
- do iw=1,nw
-   call TDDFT_Chi_full_response(zz(iw),H0,Vf,sf,Chi_dyn_c,chib,ierr)
-   if (ierr==0) then
-     head(iw)=chib(1,1)
-     call TDDFT_Chi_full_bubble(zz(iw),E_ref,Vf,sf,Chi_dyn_c,chi0)
-     ! kernel on the G set S (all G unless BSEGinplane), zero outside it
-     chs=chib(S(:ns),S(:ns))
-     c0s=chi0(S(:ns),S(:ns))
-     if (l_mdr.or.l_nq) then
-       ! NQ: with Ed = E the shifted bubble is chi0 (checked below), dP1 is T2, and chi0 is
-       ! passed in both slots of TDDFT_Chi_kernel_mdr: fxc = chi0^-1 T2 chi0^-1
-       call TDDFT_Chi_first_order_kernel(trim(BS_K_Chi_out),zz(iw),Ed,Hw,Vf,sf,Chi_dyn_c,S(:ns),c0s,&
-&                                        d(S(:ns)),fs,Ps,rc,ierr)
-     else
-       call TDDFT_Chi_kernel_from_response(c0s,chs,d(S(:ns)),.TRUE.,fs,Ps,rc,ierr,exch_head=l_full_L)
+ ! z=0 alone first: a failure or an rcond below the floor there skips the frequency loop
+ do ipass=1,2
+   iw_range=(/1,1/)
+   if (ipass==2) iw_range=(/2,nw/)
+   !$omp parallel default(shared) private(iw,chib,chi0,f,Pm,rc,ierr,chs,c0s,fs,Ps)
+   allocate(chib(ng,ng),chi0(ng,ng),f(ng,ng),Pm(ng,ng))
+   allocate(chs(ns,ns),c0s(ns,ns),fs(ns,ns),Ps(ns,ns))
+   !$omp do schedule(dynamic)
+   do iw=iw_range(1),iw_range(2)
+     call TDDFT_Chi_full_response(zz(iw),H0,Vf,sf,Chi_dyn_c,chib,ierr)
+     if (ierr==0) then
+       head(iw)=chib(1,1)
+       call TDDFT_Chi_full_bubble(zz(iw),E_ref,Vf,sf,Chi_dyn_c,chi0)
+       ! kernel on the G set S (all G unless BSEGinplane), zero outside it
+       chs=chib(S(:ns),S(:ns))
+       c0s=chi0(S(:ns),S(:ns))
+       if (l_mdr.or.l_nq) then
+         ! NQ: with Ed = E the shifted bubble is chi0 (checked below), dP1 is T2, and chi0 is
+         ! passed in both slots of TDDFT_Chi_kernel_mdr: fxc = chi0^-1 T2 chi0^-1
+         call TDDFT_Chi_first_order_kernel(trim(BS_K_Chi_out),zz(iw),Ed,Hw,Vf,sf,Chi_dyn_c,S(:ns),c0s,&
+&                                          d(S(:ns)),fs,Ps,rc,ierr)
+       else
+         call TDDFT_Chi_kernel_from_response(c0s,chs,d(S(:ns)),.TRUE.,fs,Ps,rc,ierr,exch_head=l_full_L)
+       endif
+       f=(0._DP,0._DP)
+       Pm=(0._DP,0._DP)
+       f(S(:ns),S(:ns))=fs
+       Pm(S(:ns),S(:ns))=Ps
      endif
-     f=(0._DP,0._DP)
-     Pm=(0._DP,0._DP)
-     f(S(:ns),S(:ns))=fs
-     Pm(S(:ns),S(:ns))=Ps
-   endif
-   err_w(iw)=ierr
-   if (ierr==0) then
-     Chi_0(:,:,iw)=cmplx(chi0,kind=SP)
-     Chi_P(:,:,iw)=cmplx(Pm,kind=SP)
-     Chi_fxc(:,:,iw)=cmplx(f,kind=SP)
-     Chi_rcond(:,iw)=real(rc,SP)
+     err_w(iw)=ierr
+     if (ierr==0) then
+       Chi_0(:,:,iw)=cmplx(chi0,kind=SP)
+       Chi_P(:,:,iw)=cmplx(Pm,kind=SP)
+       Chi_fxc(:,:,iw)=cmplx(f,kind=SP)
+       Chi_rcond(:,iw)=real(rc,SP)
+     endif
+   enddo
+   !$omp end do
+   deallocate(chib,chi0,f,Pm,chs,c0s,fs,Ps)
+   !$omp end parallel
+   if (ipass==1) then
+     if (err_w(1)/=0) exit
+     if (minval(Chi_rcond(:,1))<Chi_rcond_floor) exit
    endif
  enddo
- !$omp end do
- deallocate(chib,chi0,f,Pm,chs,c0s,fs,Ps)
- !$omp end parallel
  !
+ ! A failed kernel is not written; the BSE solver of this run still gives its spectrum
  n_bad=count(err_w/=0)
- if (n_bad>0) then
+ l_chi_ok=n_bad==0
+ if (.not.l_chi_ok) then
    do iw=1,nw
      if (err_w(iw)/=0) exit
    enddo
-   call error('[Chi/BSK] BSEChiOut failed at '//trim(intc(n_bad))//' frequencies; first at '//&
-&    trim(real2ch(real(real(zz(iw))*HA2EV,SP)))//' eV with code '//trim(intc(err_w(iw)))//' (31/32: reduce BSENGfxc)')
+   call warning('[Chi/BSK] BSEChiOut failed at '//trim(intc(n_bad))//' frequencies; first at '//&
+&    trim(real2ch(real(real(zz(iw))*HA2EV,SP)))//' eV with code '//trim(intc(err_w(iw)))//&
+&    ' (31/32: reduce BSENGfxc). No ndb.Chi is written; the BSE solver continues')
+ else if (minval(Chi_rcond(:,1))<Chi_rcond_floor) then
+   l_chi_ok=.FALSE.
+   call msg('r','[Chi/BSK] rcond at z=0 (reference bubble, BSE response)',Chi_rcond(:,1))
+   call warning('[Chi/BSK] BSEChiOut: ill-conditioned response at z=0 (rcond below ChiRcondMin), frequency loop '//&
+&    'skipped; reduce BSENGexx/BSENGfxc for this band window. No ndb.Chi is written; the BSE solver continues')
+ else
+   call msg('r','[Chi/BSK] minimum rcond (reference bubble, BSE response)',(/minval(Chi_rcond(1,:)),minval(Chi_rcond(2,:))/))
+   if (minval(Chi_rcond)<Chi_rcond_floor) then
+     l_chi_ok=.FALSE.
+     call warning('[Chi/BSK] BSEChiOut: ill-conditioned response (rcond below ChiRcondMin); reduce BSENGexx/BSENGfxc '//&
+&      'for this band window. No ndb.Chi is written; the BSE solver continues')
+   endif
  endif
- call msg('r','[Chi/BSK] minimum rcond (reference bubble, BSE response)',(/minval(Chi_rcond(1,:)),minval(Chi_rcond(2,:))/))
+ if (.not.l_chi_ok) then
+   if (l_mdr.or.l_nq) deallocate(Hw,Ed,Wd,Kd)
+   call Chi_free()
+   call Chi_dyn_free()
+   deallocate(E_ref,d,Vf,sf,df,zz,err_w,H0,head,S)
+   call timing('ChiExport',OPR='stop')
+   return
+ endif
  !
  ! Head check, valid at any q: the G=0 element of chib (our vertices) must be Yambo's own
  ! coupled response, built from its oscillators BSS_dipoles_opt on every row of BS_mat:
@@ -340,8 +372,6 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
 &    ': the exchange removed from the BSE matrix is not its exchange')
    deallocate(chib,chi0,chs,c0s,fs,Ps,p0s,Hw,Ed,Wd,Kd)
  endif
- if (minval(Chi_rcond)<Chi_rcond_floor) &
-&  call error('[Chi/BSK] BSEChiOut: ill-conditioned response; reduce BSENGexx/BSENGfxc for this band window')
  !
  ! The static kernel must be Hermitian (on the scale |q+G| fxc |q+G'| where all blocks are O(1))
  !
@@ -382,6 +412,7 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
    Chi_QP_action='P from the coupled BSE; chi0 = KS bubble'
  endif
  Chi_convention='Bare vertices; P^-1 = chib^-1 + vbar from the BSE; fxc=chi0^-1-P^-1, unsymmetrized [Ha]; w1 = 0'
+ if (l_full_L) Chi_convention='Bare vertices; P^-1 = chib^-1 + v (Lkind full) from the BSE; fxc=chi0^-1-P^-1 [Ha]; w1 = 0'
  call X_reset(X_io)
  X_io%ib=BS_bands
  X_io%ng=ng
@@ -397,16 +428,22 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
    Chi_occ_nbf=minval(Ken%nbf(:n_sp_pol))
    Chi_occ_nbm=maxval(Ken%nbm(:n_sp_pol))
    Chi_occ_Tel=Tel
-   call Chi_occ_alloc()
+   call Chi_occ_alloc(with_E=.TRUE.)
    Chi_occupations=Ken%f(BS_bands(1):BS_bands(2),:,:)
+   ! and the band energies of E_ref: KS for "full" with QP corrections, else those of this BSE
+   Chi_occ_E=Ken%E(BS_bands(1):BS_bands(2),:,:)
+   if (.not.l_exc.and.l_qp) Chi_occ_E=Ken%Eo(BS_bands(1):BS_bands(2),:,:)
    call io_control(ACTION=OP_WR_CL,COM=REP,SEC=(/1/),ID=ID)
    io_err=io_Chi(X_io,W_io,ID)
    if (io_err<0) call error('[Chi/BSK] cannot write the ndb.Chi header')
    call Chi_occ_free(.TRUE.)
    header_done=.TRUE.
  endif
+ ! the number of resonant transitions, checked by the Casida run (window, bands, k)
+ Chi_n_trans=n
  call io_control(ACTION=OP_APP_CL,COM=REP,SEC=(/2*iq,2*iq+1/),ID=ID)
  io_err=io_Chi(X_io,W_io,ID)
+ Chi_n_trans=-1
  if (io_err<0) call error('[Chi/BSK] cannot write the ndb.Chi q fragment')
  call msg('r','[Chi/BSK] ndb.Chi written: G vectors, frequencies (z=0 first)',(/ng,nw/))
  !

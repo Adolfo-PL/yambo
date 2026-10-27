@@ -10,7 +10,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  ! K = <2V-W> for n_spin=1; K=<V-W> for n_spin>1
  !
  use pars,          ONLY:SP,DP,schlen,pi,cZERO,cI
- use units,         ONLY:HA2KEL
+ use units,         ONLY:HA2KEL,HA2EV
  use LOGO,          ONLY:pickup_a_random
  use drivers,       ONLY:l_bs_fxc,l_tddft,l_rim_w
  use frequency,     ONLY:w_samp
@@ -54,10 +54,10 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  use MAGNONS,       ONLY:BSS_MAGN_free
  use PHOTOLUM,      ONLY:BSS_PL_free
  use parser_m,      ONLY:parser
- use Chi_m,         ONLY:Chi_ng,Chi_n_freqs,Chi_freqs,Chi_fxc,Chi_free
+ use Chi_m,         ONLY:Chi_ng,Chi_n_freqs,Chi_freqs,Chi_fxc,Chi_free,Chi_QP_applied,Chi_n_trans
  use Chi_m,         ONLY:Chi_optical_q0,Chi_optical_q0_known,Chi_G_mode,Chi_G_db
  use Chi_m,         ONLY:Chi_occupations,Chi_occ_bands,Chi_occ_nk,Chi_occ_nsp,Chi_occ_nbf,Chi_occ_nbm,&
-&                        Chi_occ_Tel,Chi_occ_free
+&                        Chi_occ_Tel,Chi_occ_free,Chi_occ_E
  use Chi_m,         ONLY:Chi_dyn_V,Chi_dyn_s,Chi_dyn_filled,Chi_dyn_c,Chi_dyn_free
  use BS_solvers,    ONLY:BSS_q0
  use TDDFT_Chi_Fourier_m, ONLY:TDDFT_Chi_pair_G
@@ -122,7 +122,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  integer :: ID_Chi,io_Chi_err,chi_ierr,ig,jg,chi_grp_p,i_T_dyn,i_ra
  integer, external :: io_Chi
  logical :: l_KfnQPdb,l_chi_vtx,l_chi_vtx_only
- real(SP) :: chi_norm,chi_antiherm,chi_scale,chi_raw_norm,chi_raw_antiherm,chi_diff,chi_occ_diff
+ real(SP) :: chi_norm,chi_antiherm,chi_scale,chi_raw_norm,chi_raw_antiherm,chi_diff,chi_occ_diff,chi_E_diff
  complex(DP) :: chi_pair
  complex(DP), allocatable :: Chi_static(:,:)
  complex(SP), allocatable :: chi_R_res(:,:),chi_R_cpl(:,:)
@@ -378,6 +378,10 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
 &        call error('[Chi/BSK] optical q0 direction or normalization differs from ndb.Chi')
      endif
      if (Chi_ng/=BS_n_g_fxc) call error('[Chi/BSK] BSENGfxc must equal the ndb.Chi G-basis size')
+     ! A kernel exported from a BSE is measured with the exchange of that BSE (P^-1 = chib^-1 + vbar
+     ! on its G basis): the same exchange G here, or the Casida response is not the BSE one
+     if (index(Chi_G_mode,'BSE-')==1.and.(.not.BS_res_K_exchange.or.BS_n_g_exch/=Chi_ng)) &
+&      call error('[Chi/BSK] BSENGexx must equal the ndb.Chi G-basis size, with the exchange on (the exporting BSE)')
      ! A kernel exported with BSEGinplane is exact only with the exchange on the same G
      if ((index(Chi_G_db,'BSEGinplane')>0).neqv.BS_G_inplane) &
 &      call error('[Chi/BSK] BSEGinplane must match the ndb.Chi export (exchange and fxc on the same G)')
@@ -386,8 +390,14 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
      l_KfnQPdb=.FALSE.
      if (allocated(Ken%Eo)) l_KfnQPdb=maxval(abs(Ken%Eo-Ken%E))>1.E-6_SP
      if (trim(Chi_G_mode)=='BSE-EXC') then
-       if (.not.l_KfnQPdb) call error('[Chi/BSK] this ndb.Chi (BSEChiOut= "exc") needs the QP corrections of its BSE (KfnQPdb)')
-       call msg('r','[Chi/BSK] excitonic kernel on QP transitions (ndb.Chi from BSEChiOut= "exc")')
+       ! measured from the bubble of the exporting BSE: QP transitions if it had them, KS if not
+       ! (Chi_QP_applied as stored); the band energies themselves are compared below
+       if (Chi_QP_applied.and..not.l_KfnQPdb) &
+&        call error('[Chi/BSK] this ndb.Chi ("exc", "mdr" or "nq") needs the QP corrections of its BSE (KfnQPdb, KfnQP_E)')
+       if (.not.Chi_QP_applied.and.l_KfnQPdb) &
+&        call error('[Chi/BSK] this ndb.Chi ("exc", "mdr" or "nq") was exported on KS transitions: no QP corrections here')
+       if (Chi_QP_applied) call msg('r','[Chi/BSK] excitonic kernel on QP transitions (BSEChiOut= "exc", "mdr" or "nq")')
+       if (.not.Chi_QP_applied) call msg('r','[Chi/BSK] excitonic kernel on KS transitions (exported without QP corrections)')
      else if (l_KfnQPdb) then
        call error('[Chi/BSK] use KS transitions; QP corrections would double count the QP shift')
      endif
@@ -406,6 +416,16 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
 &        call error('[Chi/BSK] occupations differ from those of the exporting BSE. Use its ElecTemp: a job '//&
 &                   'reading the databases of another job takes their temperature; a negative ElecTemp in both '//&
 &                   'runs keeps it fixed')
+       ! and the band energies of the bubble the kernel is measured from (QP corrections,
+       ! scissor, interpolation): a mismatch shifts the excitons with no other message
+       if (allocated(Chi_occ_E)) then
+         chi_E_diff=maxval(abs(Chi_occ_E-Ken%E(BS_bands(1):BS_bands(2),:,:)))
+         call msg('r','[Chi/BSK] band energies vs the bubble of the exporting BSE: max |dE| [eV]',chi_E_diff*HA2EV)
+         if (chi_E_diff>1.E-5_SP) call error('[Chi/BSK] band energies differ from those of the exporting BSE: use its '//&
+&          'KfnQPdb/KfnQP_E ("exc", "mdr", "nq") or no QP corrections ("full")')
+       else
+         call warning('[Chi/BSK] ndb.Chi from an export without stored band energies: they are not checked')
+       endif
        call Chi_occ_free(.TRUE.)
      else if (index(Chi_G_mode,'BSE-')==1) then
        call warning('[Chi/BSK] ndb.Chi from an export without stored occupations: they are not checked')
@@ -414,6 +434,11 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
      io_Chi_err=io_Chi(X,Chi_w,ID_Chi)
      if (io_Chi_err/=0) call error('[Chi/BSK] cannot read ndb.Chi q fragment (IO code '//trim(intc(io_Chi_err))//')')
      if (Chi_n_freqs<1) call error('[Chi/BSK] ndb.Chi contains no frequency samples')
+     ! The transitions of the exporting BSE (window, bands, k) at this q: their number. Static
+     ! Casida has no other check of the window (BSEChiDyn also compares the bubbles)
+     if (Chi_n_trans>0.and.Chi_n_trans/=BS_K_dim(1)) call error('[Chi/BSK] '//trim(intc(BS_K_dim(1)))//&
+&      ' transitions here, '//trim(intc(Chi_n_trans))//' in the exporting BSE: use its transition window '//&
+&      '(BSEEhEny, BSehWind) and bands')
      if (BS_K_Chi_dynamic) then
        ! fxc(w) stays out of the BSE matrix. The transition vertices are kept below and
        ! K_Chi_dynamic projects fxc at every BSE frequency (checked there against ndb.Chi).

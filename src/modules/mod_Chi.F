@@ -98,9 +98,13 @@ module Chi_m
  ! Occupations of the BSE levels behind a BSEChiOut export: Ken%f on the BSE bands, every
  ! IBZ k and spin, the full / partly filled bands and the temperature. The exact kernel
  ! holds only with these occupations, so the Casida run (BSKmod="CHI") checks them.
- real(SP), allocatable    :: Chi_occupations(:,:,:)
+ ! Chi_occ_E: the band energies of the bubble the kernel is measured from, on the same
+ ! bands, k and spins (QP for "exc"/"mdr"/"nq", KS for "full"), checked in the same way.
+ real(SP), allocatable    :: Chi_occupations(:,:,:),Chi_occ_E(:,:,:)
  integer                  :: Chi_occ_bands(2)=0,Chi_occ_nk=0,Chi_occ_nsp=0,Chi_occ_nbf=0,Chi_occ_nbm=0
  real(SP)                 :: Chi_occ_Tel=0._SP
+ ! Resonant transitions of the exporting BSE at this q (window, bands, k): -1 if not stored
+ integer                  :: Chi_n_trans=-1
  !
  contains
    !
@@ -121,14 +125,20 @@ module Chi_m
      YAMBO_FREE(Chi_fxc)
      YAMBO_FREE(Chi_rcond)
    end subroutine Chi_free
-   subroutine Chi_occ_alloc()
+   subroutine Chi_occ_alloc(with_E)
+     logical, intent(in), optional :: with_E
      call Chi_occ_free(.FALSE.)
      YAMBO_ALLOC(Chi_occupations,(Chi_occ_bands(2)-Chi_occ_bands(1)+1,Chi_occ_nk,Chi_occ_nsp))
+     if (.not.present(with_E)) return
+     if (with_E) then
+       YAMBO_ALLOC(Chi_occ_E,(Chi_occ_bands(2)-Chi_occ_bands(1)+1,Chi_occ_nk,Chi_occ_nsp))
+     endif
    end subroutine Chi_occ_alloc
    !
    subroutine Chi_occ_free(reset)
      logical, intent(in) :: reset
      YAMBO_FREE(Chi_occupations)
+     YAMBO_FREE(Chi_occ_E)
      if (.not.reset) return
      Chi_occ_bands=0
      Chi_occ_nk=0

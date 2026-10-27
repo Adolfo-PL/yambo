@@ -6,7 +6,9 @@ transition-space matrix. The number of G components resolved from `BSENGfxc`
 must equal the stored `CHI_PARS_1` G-basis size. The stored G vectors and
 q-point database must match the current run.
 Use Kohn–Sham transition energies: `KfnQPdb` is rejected because the current
-`fxc = chi0^-1 - P_G^-1` already represents the quasiparticle bubble shift.
+`fxc = chi0^-1 - P_G^-1` already represents the quasiparticle bubble shift. (A kernel
+exported from a BSE with `BSEChiOut= "exc"`, `"mdr"` or `"nq"` is the exception: it needs
+the QP corrections of its BSE; see `doc/greens_function_fxc.md`.)
 
 For a transition Fourier column `d_t(G)` built from Yambo's native density
 vertex (including ultrasoft augmentation when present), the added matrix element is

@@ -3,7 +3,7 @@
 This file passes the technical work on this Yambo fork to a new Claude Code session.
 The other session keeps the cluster runs, convergence, results and explanations.
 This session works on the theory, the Fortran, the tests and new features.
-Read this file first, then `doc/greens_function_fxc.md`, which is the full reference at 1300 lines.
+Read this file first, then `doc/greens_function_fxc.md`, which is the full reference at 1347 lines.
 
 ## 1. Goal and working rules
 
@@ -55,7 +55,7 @@ The fork offers several choices of P (`ChiGMode`, `BSEChiOut`):
 - H̃ = D + √F K √F, where D holds the transition energies and K is the BSE kernel.
 - √F is diagonal with s_t = √(f_v − f_c).
 - ρ_t(G) are the oscillator matrix elements, with explicit anti-resonant rows at finite q.
-- The exchange part v̄ is left out of K, so P is the proper response. Check: Casida with the exported f_xc returns the BSE spectrum for every G, G′ (`tests/chi_dynamic`, and WS2 SOC in the doc).
+- The exchange part v̄ is left out of K, so P is the proper response. Check: Casida with the exported f_xc returns the BSE spectrum for every G, G′ (`tests/chi_dynamic`, and WS2 SOC in the doc). This is an identity by construction: it tests consistency (export, file, Casida inputs), not the physics of the BSE.
 - Only H̃ is needed, not its eigenvectors. Building H̃ is most of a BSE run's cost, so this route does not save time against a BSE.
 
 **Casida with f_xc(ω).**
@@ -76,7 +76,7 @@ The fork offers several choices of P (`ChiGMode`, `BSEChiOut`):
 
 | Kernel | Result |
 |---|---|
-| exact f_xc(ω) | matches the BSE exactly |
+| exact f_xc(ω) | matches the BSE exactly (by construction) |
 | exact static | 7 % of Eb |
 | MDR(ω) | 93 % of Eb; peak height 8.14 against 8.00 |
 | LRC, α fitted | α = 3.262; 11× too bright |
@@ -194,6 +194,17 @@ Monolayer WS2:
 1. **Doping (needed next).** The BSE route already accepts partial occupations; the G routes do not. Validated on a doped 6×6 WS2 SOC test (doc, "Partly filled bands"): Casida with the exported fxc(ω) reproduces the BSE at q1 and q2 when both runs use the same occupations.
    - Decisions (user): keep the standard temperature (300 K, set by `p2y` because QE uses smearing); Drude term on hold; doped-aware `[BSE]` report done (`K_diago_driver.F`, `binding_report`, interband lines).
    - Occupation check (user approved, done): the export stores its BSE occupations in `ndb.Chi` (`CHI_OCCUPATIONS`, `io_Chi.F`), and `K_kernel.F` stops a Casida run whose occupations differ (job chains can differ by 0.1 K, see the doc). Yambo exits with status 0 after `[ERROR]`: scripts must check outputs.
+   - Guards from the second in-project review (user approved, done). Casida stops on:
+     - band energies that differ from the export's (`CHI_LEVELS_E`; QP database, scissor, interpolation);
+     - `BSENGexx` ≠ the `ndb.Chi` basis for BSE-exported kernels;
+     - QP corrections that do not match the export (an "exc"/"mdr"/"nq" kernel exported on KS energies now runs on KS);
+     - another number of transitions at the q (`CHI_NTRANS_Q_iq`: transition window, bands);
+     - with `BSEChiDyn`, a bubble mismatch for BSE-exported kernels.
+     The export:
+     - stops at init for "full" with QP corrections and partly filled bands (`K_driver_init.F`);
+     - on a failed or ill-conditioned kernel warns, writes no `ndb.Chi`, and lets the diagonalization finish (z=0 is checked before the frequency loop).
+     Tests and numbers: doc, "Kernel from the BSE and exciton binding energies: `BSEChiOut`".
+   - Yambo's C driver aborts (exit 134, after the run has written everything) when the `-F` path is longer than about 90 characters (`src/driver/input_file.c`, 100-char buffer). The job scripts use short relative names.
    - Not tested: the "exc" kernel with QP energies (QP corrections recompute the BSE occupations, `QP_apply.F:175-176`), low temperature, q beyond 2.
    - Upstream BSE, ground state: `src/bse/K_Transition_check.F`.
      - f_t = (f_v − f_c)/spin_occ (line 64).

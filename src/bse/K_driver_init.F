@@ -72,6 +72,13 @@ subroutine K_driver_init(what,iq,Ken,Xk)
    if (have_gpu) call error('[Chi/BSK] BSEChiOut: CPU build only')
    if (index(BSS_mode,'h')/=0.or.index(BSS_mode,'i')/=0.or.index(BSS_mode,'s')/=0.or.index(BSS_mode,'t')/=0) &
 &    call error('[Chi/BSK] BSEChiOut works with BSSmod= "d" only')
+   ! "full" measures fxc from the KS bubble, but QP corrections move the occupations of partly
+   ! filled bands (QP_apply): its bubble would mix KS energies with QP occupations, which no
+   ! KS Casida run has. Stop before the kernel is built.
+   if (trim(BS_K_Chi_out)=='full'.and.allocated(Ken%Eo)) then
+     if (maxval(abs(Ken%Eo-Ken%E))>1.E-6_SP.and.any(Ken%nbf(:n_sp_pol)/=Ken%nbm(:n_sp_pol))) &
+&      call error('[Chi/BSK] BSEChiOut= "full" with QP corrections and partly filled bands: use "exc"')
+   endif
  endif
  !
  ! default mode

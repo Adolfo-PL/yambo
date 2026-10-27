@@ -330,7 +330,12 @@ and writes `ndb.Chi` (chi0 column = Pref or chi0, P, fxc) into the BSE job
 directory. By the Woodbury identity, Casida with the same reference energies,
 the same vbar and this fxc(z) reproduces the BSE response exactly, its exciton
 poles included. The binding energy of the frequency-dependent Casida is
-therefore the BSE binding energy. The first frequency of the file is z = 0
+therefore the BSE binding energy. This agreement holds by construction: it shows
+that the export, the file and the Casida run are consistent, not that the BSE is
+right. An error in W, in the QP energies or in the occupations is reproduced just
+as exactly, and the kernel is exact only together with the chi0 it was built
+against (a code using its own chi0 does not recover P). The Casida run therefore
+checks the ingredients the identity needs (below). The first frequency of the file is z = 0
 exactly (static Casida); the remaining ones are the BSE grid (`BSEChiDyn`).
 
 ```text
@@ -344,14 +349,51 @@ BSENGBlk= <W block>
 KfnQPdb= "E < <gw job>/ndb.QP"   # QP transition energies
 ```
 
-Casida then uses a copy of the exported `ndb.Chi` (without the BSE kernel
-database, which would be taken as a restart) with `BSKmod="CHI"`, coupling,
-the same bands, `BSENGexx` and `BSENGfxc`, and:
+Casida then uses a copy of the exported `ndb.Chi` in a new job directory (a CHI job
+that finds a complete BSE kernel database of its own stops: `kernel restart cannot
+rebuild the Chi vertices`, `K_kernel.F`) with `BSKmod="CHI"`, coupling, the same bands,
+`BSENGexx` and `BSENGfxc`, and:
 
-- "exc": the same `KfnQPdb` (the kernel is measured from the QP bubble; the
-  run stops if the QP corrections are missing);
-- "full": KS energies (the kernel carries the QP shift too; the run stops if QP
-  corrections are applied).
+- "exc", "mdr", "nq": the QP corrections of the exporting BSE (the kernel is measured
+  from its bubble), or none if it had none;
+- "full": KS energies (the kernel carries the QP shift too).
+
+The Casida run stops before the projection and the solver when one of these differs
+from the export: the G basis (`BSENGfxc`, and `BSENGexx` with the exchange on, since P
+was built with the exchange of the exporting BSE), `BSEGinplane`, the optical q0, the
+occupations, the presence of QP corrections, and the band energies of the reference
+bubble (stored by the export on the BSE bands, every IBZ k and spin):
+
+```text
+[Chi/BSK] band energies vs the bubble of the exporting BSE: max |dE| [eV]
+```
+
+It stops above 1e-5 Ha (0.27 meV). The transition window (`BSEEhEny`, `BSehWind`) is
+checked through the number of resonant transitions at each q, stored by the export
+(`CHI_NTRANS_Q_iq`), and with `BSEChiDyn` also through the bubble check below. An
+`ndb.Chi` exported before these checks has neither: the run warns (energies) and goes on. The export itself stops at the start for "full"
+with QP corrections and partly filled bands: QP corrections move the occupations of
+those bands, so its KS bubble would carry QP occupations that no KS Casida run has.
+
+Tests of these checks (WS2 SOC test below, export "exc" with `KfnQP_E` 0.8 eV; doped test
+of "Partly filled bands" for the last row; every Casida input differs from the matching one
+in one line only):
+
+| Casida run | Result |
+| --- | --- |
+| matching inputs, static and `BSEChiDyn` | runs; max dE 0; spectra identical to the runs before the checks |
+| `KfnQP_E` 0.9 eV, static and `BSEChiDyn` | stops in the kernel step (max dE 0.05 eV) |
+| `BSENGexx` 9 against a 21-G `ndb.Chi` | stops |
+| `BSEEhEny` 0-3 eV (8 of 576 transitions), static and `BSEChiDyn` | stops ("8 transitions here, 576 in the exporting BSE"); without the count check the static run went through 76% off and the dynamic one stopped at the bubble check (0.72) |
+| `ndb.Chi` from before the checks | warns, runs, identical spectrum |
+| "exc" exported without QP corrections, Casida without | runs; matches its BSE (Im eps 7e-5, Re eps 1e-4) |
+| the same `ndb.Chi`, Casida with `KfnQP_E` | stops |
+| "full" with `KfnQP_E` (undoped): export, then KS Casida | runs; stores the KS energies; matches its BSE (1e-4 / 2e-4) |
+| `ChiRcondMin` 0.1 (rcond at z=0 is 1e-3) | warns, frequency loop skipped (export step 1 s instead of 77 s), no `ndb.Chi`, BSE spectrum identical |
+| doped: "full" with `KfnQP_E` | stops at the start of the BSE driver |
+
+The export written with these checks has the same chi0, P, fxc and rcond, bit for bit, as
+the one before them.
 
 Add `BSEChiDyn` and the BSE grid for the dynamic solver; without it, the static
 diagonalization uses fxc(0).
@@ -443,9 +485,12 @@ Restrictions: one MPI rank (OpenMP threads parallelize the frequencies), couplin
 the diagonalization solver, length gauge, scalar or spinor states (see "Spinor
 states" below; no collinear spin polarization, magnons or perturbative SOC), no
 transition widths or Z factors, `BSENGexx = BSENGfxc`.
-The export stops if the reference bubble or the BSE response is
-ill-conditioned (`[Chi/BSK] minimum rcond` below `ChiRcondMin`); reduce the
-G basis then. Monolayer WS2 (bands 11-16, 9 G, no Coulomb cutoff) passes with
+If the reference bubble or the BSE response is ill-conditioned
+(`[Chi/BSK] minimum rcond` below `ChiRcondMin`), or the kernel fails at some frequency,
+the export warns and writes no `ndb.Chi`, and the BSE solver of the run goes on and
+writes its spectrum; reduce the G basis then. z = 0 is computed first, so a basis that
+is already ill-conditioned there skips the frequency loop (on the WS2 test below the
+loop costs more than the diagonalization). Monolayer WS2 (bands 11-16, 9 G, no Coulomb cutoff) passes with
 rcond 2e-9: the eight pure-G_z plane waves are nearly dependent, the eigenvalues of
 D chi0 D span 1e-8 to 2.4, and the body of fxc reaches 3e6 in units of v. The head
 and the optical response are exact (the exported P gives the BSE eps to 3e-7, the
@@ -454,17 +499,19 @@ cleaner. `plot_summary.py --chi` prints this diagnostic. The same run with one p
 wave (`BSENGexx = BSENGfxc = 1`) gives the same BSE (2.2342 eV, binding 0.309 eV), the
 same spectra (5e-7) and the same head alpha(w) (4e-6), with rcond = 1. Its 13->14 fxc
 block is then exactly rank one, F_tt' = -c alpha(z) d_t conj(d_t') with d_t the optical
-dipoles: for in-plane optics the exact kernel is a frequency-dependent LRC kernel. Each frequency costs one LU solve of size 2N. The Coulomb factor
+dipoles. This is the form of a frequency-dependent LRC kernel, but it follows from the
+one-plane-wave basis: with one G every kernel is a scalar alpha(z)/q^2. Each frequency costs one LU solve of size 2N. The Coulomb factor
 is D = sqrt(4 pi)/bare_qpg as a complex number, the form the BSE exchange
 (1/bare_qpg**2) uses, so the identity also holds with a Coulomb cutoff where
 v_cut(q+G) < 0 for some G.
 
 `BSEChiDyn` also compares the bubble of the BSE transitions with the `ndb.Chi`
 chi0 at its first frequency (`[Chi/BSK] BSE bubble vs ndb.Chi chi0`, in the
-Coulomb-symmetrized basis) and warns above 1e-3: the kernel is then an
-approximation, not the exact one (bands, energies or k grid differ). Silicon:
-3e-8 with an exported kernel, 4e-6 with a native `ndb.Chi` of the same bands,
-0.15 (warning) for bands 3-6 against a bands 1-8 `ndb.Chi`.
+Coulomb-symmetrized basis). Above 1e-3 it stops for a kernel exported from a BSE
+(defined only against its own chi0) and warns for the other `ndb.Chi` kernels, which
+are then an approximation (bands, energies or k grid differ). Silicon: 3e-8 with an
+exported kernel, 4e-6 with a native `ndb.Chi` of the same bands, 0.15 (warning) for
+bands 3-6 against a bands 1-8 `ndb.Chi`.
 
 ### The Casida matrix as text: `BSEChiKoutW`, `BSEChiKoutB`
 

@@ -180,6 +180,10 @@ subroutine K_Chi_dynamic(iq,Xk,W)
    deallocate(bub)
    bub_err=bub_err/max(bub_ref,tiny(1._DP))
    call msg('r','[Chi/BSK] BSE bubble vs ndb.Chi chi0 (relative, first frequency)',real(bub_err,SP))
+   ! A kernel exported from a BSE is defined only against its own chi0: stop. Other ndb.Chi
+   ! kernels (G routes) are approximations on these transitions anyway: warn.
+   if (bub_err>1.E-3_DP.and.index(Chi_G_mode,'BSE-')==1) call error('[Chi/BSK] the BSE transitions do not '//&
+&    'rebuild the ndb.Chi chi0 of the exporting BSE (transition window, bands, energies or k grid differ)')
    if (bub_err>1.E-3_DP) call warning('[Chi/BSK] the BSE transitions do not rebuild the ndb.Chi chi0 (bands, '//&
 &    'energies or k grid differ): fxc(w) is then an approximation, not the exact kernel')
  endif
