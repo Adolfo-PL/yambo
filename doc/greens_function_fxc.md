@@ -1111,6 +1111,18 @@ Read from the PDFs of the papers (equation numbers are the papers').
   WS2 on SiO2, Table I) is fitted to experimental spectra, not taken from a BSE, and local
   fields are neglected for the in-plane response. Open check: the "exc" kernel here should
   show such a pole between the A and B excitons.
+- **Sottile, Karlsson, Reining, Aryasetiawan, PRB 68, 205112 (2003).** A contact BSE
+  interaction W = A delta(r - r') (static, resonant part) is reproduced in TDDFT both by a
+  short-range kernel, f = -A/2 delta(r - r') (Eq. 13), and by a long-range head-only kernel,
+  f = -g 4 pi/q^2 (Eqs. 9-10, the contact-exciton result of Rowe and Aspnes): "extremely
+  different kernels can lead to very similar spectra". A static kernel can create peaks in
+  the quasiparticle gap (Ar, LiF). Their models "are not meant to be necessarily close to" the
+  exact kernel. Bearing on this fork (reasoning): the exact kernel is unique for a given chi0
+  and G basis, but other bases give other kernels with the same spectrum (here the 1-G and
+  21-G kernels of the WS2 test agree in the spectrum to 5e-7), so its matrix elements are not
+  observables and a consumer must use the basis and chi0 it was built for; and the static
+  value of the exact kernel (about 15% of the binding on the WS2 test) is not the best static
+  kernel.
 - **Ramirez-Torres, Turkowski, Rahman, arXiv 1402.4041 (2014; PRB 90, 085419).** Trion as an
   electron bound to an exciton of fixed momentum (Eq. 25), with e-h scattering elements F of a
   static f_xc and an e-e Coulomb repulsion w screened by a chosen eps. Eight static model
