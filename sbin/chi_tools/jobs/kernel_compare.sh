@@ -20,8 +20,8 @@
 #  exact kernel: static and self-consistent energies of q1 from xq_dispersion.dat
 #  MDR kernel (Marini-Del Sole-Rubio, BSEChiOut= "mdr", needs the yambo build with it):
 #                exported on the same grid, then Casida static and with fxc(w)
-#  NQ kernel (BSEChiOut= "nq", all of W to first order; attributed to Sottile-Olevano-Reining,
-#                not yet checked against the paper): the same three runs, after the G-space
+#  NQ kernel (BSEChiOut= "nq", all of W to first order; Sottile-Olevano-Reining, PRL 91,
+#                056402, Eq. 3): the same three runs, after the G-space
 #                runs (NQ=0 skips them)
 #
 #  LRC is run with the alpha of the exact kernel at w = 0 and at the exciton (read from

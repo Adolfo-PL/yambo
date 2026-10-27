@@ -325,10 +325,12 @@ contains
  !
  !   fxc = chi0^-1 - P^-1,  P^-1 = p0^-1 - p0^-1 dP1 p0^-1
  !
- ! Exact when K_off = 0. Same vertices, s and c as TDDFT_Chi_full_response.
+ ! Exact when K_off = 0. Same vertices, s and c as TDDFT_Chi_full_response. The paper moves
+ ! one shift per q, Delta_q = W_KK, into P0; here Ed holds each transition's own W_tt, and
+ ! the chi0^-1 - p0^-1 term carries the shift (doc/greens_function_fxc.md, Literature checks).
  !
- ! Nanoquanta-type kernel (BSEChiOut= "nq", defined in doc/greens_function_fxc.md; attributed
- ! to Sottile, Olevano, Reining, PRL 91, 056402 (2003), not checked against the paper): the same
+ ! Nanoquanta-type kernel (BSEChiOut= "nq"; Sottile, Olevano, Reining, PRL 91, 056402 (2003),
+ ! Eq. 3, derived there for the resonant part; see doc/greens_function_fxc.md): the same
  ! routines with the diagonal of W not moved into the energies, Ed = E and Koff = M_W - diag(E)
  ! (the whole W part). Then g = diag(1/(z-E)), p0 is the reference bubble chi0, and
  !

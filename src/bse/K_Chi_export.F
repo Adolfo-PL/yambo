@@ -19,12 +19,13 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  !   "exc" : fxc = Pqp^-1 - P^-1,  Pqp = bubble of the BSE transition energies
  !   "full": fxc = chi0^-1 - P^-1, chi0 = bubble of the KS transition energies
  !   "mdr" : as "exc", with P from the exchange-free BSE matrix to first order in its
- !           off-diagonal part (Marini-Del Sole-Rubio, TDDFT_Chi_mdr_response): an
+ !           off-diagonal part (Marini-Del Sole-Rubio, TDDFT_Chi_mdr_response; their
+ !           diagonal is one shift per q, here each transition's own W_tt): an
  !           approximate BSE-derived kernel, not the one that reproduces this BSE
  !   "nq"  : as "exc", fxc = Pqp^-1 T2 Pqp^-1 with the whole W part of the exchange-free
  !           matrix, diagonal included, to first order: the "mdr" route with Ed = E, whose
- !           shifted bubble is then Pqp itself. Defined in doc/greens_function_fxc.md and
- !           attributed to Sottile-Olevano-Reining (not checked against the paper)
+ !           shifted bubble is then Pqp itself. Sottile-Olevano-Reining, PRL 91, 056402,
+ !           Eq. 3 (resonant part there; doc/greens_function_fxc.md, Literature checks)
  !
  ! makes the Casida response with the same reference energies and vbar equal to chib,
  ! and so reproduces this BSE, exciton included (tests/chi_dynamic). ndb.Chi stores

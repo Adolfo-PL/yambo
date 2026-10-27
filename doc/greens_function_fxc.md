@@ -900,14 +900,18 @@ nothing statically, like the exact kernel: the first-order coupling, resummed in
 space, carries most of the e-h attraction of this BSE.
 
 The diagonal moved into the energies is per transition, Ed_t = E_t + W_tt, with W_tt the W
-part of the exchange-free matrix (occupation factors included). Whether this is the
-treatment of W_KK in the MDR paper or a variant of it has not been checked against the paper
-in this repository (see "Open checks" below).
+part of the exchange-free matrix (occupation factors included). This is a variant of the
+published kernel (checked against the paper, see "Literature checks" below): MDR moves one
+shift per q, Delta_q = W_KK(q), into the independent-QP response, P0(q, w + Delta_q), and keep
+the off-diagonal W at first order (their Eq. 6). "mdr" uses each transition's own W_tt
+instead, and carries the shift in the kernel (the chi0^-1 - p0^-1 term) so that the Casida
+run keeps the unshifted QP bubble.
 
 ### The Nanoquanta kernel: `BSEChiOut= "nq"`
 
-A first-order BSE-derived kernel, attributed to Sottile, Olevano and Reining (PRL 91,
-056402 (2003)), with all of W, its diagonal included, at first order and no P inverted:
+The first-order BSE-derived kernel of Sottile, Olevano and Reining (PRL 91, 056402 (2003),
+Eq. 3 and the definition of fxc^e-h after it; checked against the paper, see "Literature
+checks" below), with all of W, its diagonal included, at first order and no P inverted:
 
 ```
 fxc_NQ(z) = chi0^-1(z) T2(z) chi0^-1(z)
@@ -917,8 +921,10 @@ T2(G,G';z) = c sum_tt' s_t v_t(G) W_tt' s_t' conj(v_t'(G')) / ((E_t - z)(E_t' - 
 chi0 is the bubble of the BSE transition energies E_t (QP energies with `KfnQPdb`, as for
 "exc"), W_tt' the W part of the exchange-free BSE matrix M_W = M - X (the attraction as it
 enters the BSE matrix, sign and occupation factors s_t s_t' included), v_t the Chi vertices
-and c = Co/(4 pi). The definition was given for this mode as Eq. 3 of the paper; it has not
-been checked against the paper here.
+and c = Co/(4 pi). The paper writes T2 with KS energies in Eq. 3 and then replaces them, and
+chi0, by the GW ones (fxc^e-h = chi0_GW^-1 T2 chi0_GW^-1), which is the form above. Its
+derivation is for the resonant part only (static W, q -> 0, insulators); the coupling rows
+and the occupation factors s_t here are this fork's extension.
 
 It is the MDR route with the diagonal of W left at first order: `Ed = E` and
 `Koff = M_W - diag(E)`. Both modes go through two routines of `TDDFT_Chi_dynamic.F`, which
@@ -986,12 +992,55 @@ W_tt/(E_t - E_X), about W_tt/E_b, here close to 1; with all transitions at one e
 many transitions as G vectors, NQ is exact (reasoning, not a test in the tree). The 6x6 mesh and weak screening make W_tt
 large; how NQ behaves on converged meshes is not tested here.
 
-Open checks before naming these modes in a paper (the papers could not be opened from this
-environment): how the MDR paper treats the diagonal W_KK (a per-transition shift as in "mdr",
-a single shift per q, or something else), and the form of the "nanoquanta kernel" in Shi,
-Turkowski, Le and Rahman (arXiv:2302.08375; the PRB 107, 155431 reference is unconfirmed here):
-static or frequency dependent, G-space or density-matrix (k-space) representation, treatment
-of the diagonal.
+#### Literature checks
+
+Read from the PDFs of the three papers (equation numbers are the papers').
+
+- **Sottile, Olevano, Reining, PRL 91, 056402 (2003).** Eq. 3:
+  T2 = (2/N_k^2) sum_tt' Phi*(t;G) F^BSE_tt' Phi(t';G') / ((e_c - e_v - w)(e_c' - e_v' - w)),
+  with F^BSE_tt' = - int Phi(vk,v'k';r) W(r',r) Phi*(ck,c'k';r') and the sum over all t, t',
+  so the diagonal t = t' is at first order. In practice they use GW energies and chi0_GW and
+  drop the self-energy term T1, giving fxc^e-h(w) = chi0_GW^-1 T2 chi0_GW^-1. Resonant part
+  only, static W, LDA wavefunctions, q -> 0. They state that T2 equals Eq. 11 of Reining et
+  al., PRL 88, 066404 (2002), without requiring the Phi matrix to be invertible or fxc to be
+  static. "nq" is this kernel (conjugation and normalization conventions are Yambo's, since
+  W_tt' is read from the BSE matrix), extended to the coupling rows and to partial
+  occupations. The PRL does not use the name "Nanoquanta"; that name is later usage.
+- **Marini, Del Sole, Rubio, PRL 91, 256402 (2003).** Eq. 5 gives fxc order by order; the
+  first order, [P0]^-1 dP^(1) [P0]^-1, is the Sottile form. The paper reports that applied
+  directly it gives spurious oscillations and negative absorption when the diagonal
+  Delta_q = W_KK(q) is large (about -0.3 eV in diamond, -0.9 eV in LiF and SiO2), because
+  Delta_q enters fxc through a series in Delta_q that is meaningful only for small Delta_q
+  (their footnote 20). Their remedy is to put the diagonal into the independent-QP response,
+  P0(q, w + Delta_q), and keep only the off-diagonal W at first order (Eq. 6). Delta_q is one
+  number per q there; the residues R and Q of Eq. 6 split non-degenerate from degenerate
+  transitions. "mdr" differs in two ways: a per-transition diagonal W_tt, and the shift
+  carried in the kernel so the Casida run uses the unshifted QP bubble. With every W_tt equal
+  to one Delta, "mdr" is the MDR kernel rewritten for the unshifted bubble (reasoning: the
+  P^-1 = p0^-1 - p0^-1 dP1 p0^-1 of both is the same; not a test in the tree). On the WS2
+  test above the W diagonal spans -0.788 to -0.740 eV, so the two choices are close there
+  (reasoning, not run).
+  Their remark also bears on the NQ result above: with W_tt about -0.76 eV, the WS2 test is in
+  the regime where MDR found the first-order diagonal to fail. The symptom there was
+  oscillations; here it is 55% of the binding. The cause they give is the same one argued
+  above.
+- **Shi, Turkowski, Rahman, PRB 107, 155431 (2023)** (1L WSe2, dark excitons; Turkowski and
+  Rahman at UCF). The "nanoquanta kernel" is their Eq. 21, citing Reining et al. PRL 88:
+  fxc_GG'(q) = sum 1/(f_v1k1 - f_c2k2) Phi^-1(v1k1,c2k2;G) F(v1c2;v3c4) Phi*^-1(v3k3,c4k4;G'),
+  F = - int Phi W Phi* (W from an RPA epsilon^-1, Eq. 22). It is static (no frequency
+  argument), is written with the inverse of the pair matrix Phi, and keeps the W diagonal
+  inside F. It is used at finite q for intervalley excitons, inside a Tamm-Dancoff Casida
+  equation in transition space (Eq. 14), with three bands (V1, C1, C2), SOC and a 12x12 k grid.
+  How Phi^-1 is formed when the number of transitions differs from the number of G was not
+  found in the text.
+  Relation to "nq" (reasoning, not tested): when Phi is square and invertible (N_t = N_G),
+  chi0^-1 T2 chi0^-1 loses its frequency dependence and becomes Phi^-1 F Phi*^-1 with the
+  occupation factors inverted, which is the form of Eq. 21 (how their occupation factor is
+  split between the two pairs was not checked). For N_G < N_t, as in the runs here (7 in-plane
+  G), Eq. 21 as written does not apply and "nq" is the frequency-dependent Sottile form. A
+  comparison with that group's results therefore needs their basis and a static kernel; the
+  static fxc(0) of every mode here gives about 15% of the binding on the WS2 test, so the two
+  setups should not be expected to agree without that matching.
 
 ### MPI for the response
 

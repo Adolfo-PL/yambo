@@ -3,7 +3,7 @@
 This file passes the technical work on this Yambo fork to a new Claude Code session.
 The other session keeps the cluster runs, convergence, results and explanations.
 This session works on the theory, the Fortran, the tests and new features.
-Read this file first, then `doc/greens_function_fxc.md`, which is the full reference at 1251 lines.
+Read this file first, then `doc/greens_function_fxc.md`, which is the full reference at 1300 lines.
 
 ## 1. Goal and working rules
 
@@ -48,8 +48,8 @@ The fork offers several choices of P (`ChiGMode`, `BSEChiOut`):
 | QP | GW energies as unit-weight poles | `Chi_G_bubble.F` |
 | DYSON | convolution of the retarded GW spectral functions (needs PPA) | `Chi_G_bubble.F`, `QP_Green_Function.F` |
 | BSE `exc` / `full` | proper BSE response with the exchange term removed, QP or KS reference | `K_Chi_export.F` |
-| BSE `mdr` | Marini–Del Sole–Rubio kernel | `TDDFT_Chi_dynamic.F` |
-| BSE `nq` | χ0⁻¹ T₂ χ0⁻¹: all of W, diagonal included, at first order (the `mdr` route with Ed = E). Attributed to Sottile et al. (Nanoquanta); not yet checked against the paper | `TDDFT_Chi_dynamic.F` (`TDDFT_Chi_exchange_free_split`, `TDDFT_Chi_first_order_kernel`), `K_Chi_export.F` |
+| BSE `mdr` | Marini–Del Sole–Rubio kernel, a variant: per-transition W diagonal in the energies (the paper uses one shift Δ_q per q) | `TDDFT_Chi_dynamic.F` |
+| BSE `nq` | χ0⁻¹ T₂ χ0⁻¹: all of W, diagonal included, at first order (the `mdr` route with Ed = E). Sottile, Olevano, Reining, PRL 91, 056402, Eq. 3 (checked; resonant-only there) | `TDDFT_Chi_dynamic.F` (`TDDFT_Chi_exchange_free_split`, `TDDFT_Chi_first_order_kernel`), `K_Chi_export.F` |
 
 **BSE as P.** P(ω) = ρ [ω − H̃]⁻¹ ρ* (Adler–Wiser form with BSE energies).
 - H̃ = D + √F K √F, where D holds the transition energies and K is the BSE kernel.
@@ -64,7 +64,7 @@ The fork offers several choices of P (`ChiGMode`, `BSEChiOut`):
 - The kernel has poles between the exciton energies. In the 12×12 non-SOC run, α(ω) changes sign between 2.31 and 2.32 eV (the doc's 6×6 SOC test has its pole near 2.29 eV).
 - `sbin/chi_tools/sc_scan.py` tells a genuine crossing of λ(ω) = ω from a jump caused by a pole.
 
-**MDR.** P_MDR = χ0 + χ0 (W-ladder) χ0 at first order, with the kernel f_xc = χ0⁻¹ P_MDR χ0⁻¹ (Marini, Del Sole and Rubio, PRL 91, 256402, 2003).
+**MDR.** First order in W, f_xc = P0⁻¹ δP⁽¹⁾ P0⁻¹, with the W diagonal Δ_q = W_KK moved into P0(ω + Δ_q) because the first-order diagonal fails when Δ_q is large (Marini, Del Sole and Rubio, PRL 91, 256402, 2003, Eqs. 5-6). The fork's `mdr` uses each transition's W_tt instead of one Δ_q (doc, "Literature checks").
 - Implemented as `TDDFT_Chi_mdr_response` and `TDDFT_Chi_kernel_mdr`.
 - Selected with `BSEChiOut= "mdr"`. It replaces Yambo's disabled `BSfxc`.
 
@@ -211,4 +211,4 @@ Monolayer WS2:
 3. **ChiGMode limits.** The DYSON optical limit, off-diagonal Σ, and MPI beyond k-only are unsupported (doc, "Current scope").
 4. **Possible upstream patch.** The `cutoff_driver.F` barrier fix is generic and could go to Yambo upstream. Only do this if the user asks.
 5. **Optional.** Clean MPA + RIM-W support would need RIM-W added to the MPA W path, not just to the runlevel list. That is a deeper change to `QP_mpa` and the RIM-W tables.
-6. **Literature checks for the paper (pending, the papers could not be opened from the container).** (a) How MDR (PRL 91, 256402; arXiv cond-mat/0310495) treats the diagonal W_KK: does `mdr` (per-transition Ed = E + W_tt) match it? (b) The "nanoquanta kernel" of Shi, Turkowski, Le, Rahman (arXiv:2302.08375; PRB 107, 155431 unconfirmed): static or dynamic, basis, diagonal. (c) Eq. 3 of Sottile et al. (PRL 91, 056402) against the `nq` definition (doc, "The Nanoquanta kernel").
+6. **Literature checks for the paper (done, from the PDFs; doc, "Literature checks").** `nq` is Sottile et al. Eq. 3 (extended to coupling rows and partial occupations). `mdr` is a variant of MDR (per-transition W_tt instead of one Δ_q per q). Shi, Turkowski, Rahman (PRB 107, 155431) use the static Reining et al. (PRL 88, 066404) form with Φ⁻¹, which equals `nq` only when N_G = N_t; comparing with that group needs their basis and a static kernel.
