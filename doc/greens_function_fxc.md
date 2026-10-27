@@ -1041,7 +1041,7 @@ large; how NQ behaves on converged meshes is not tested here.
 
 #### Literature checks
 
-Read from the PDFs of the four papers (equation numbers are the papers').
+Read from the PDFs of the papers (equation numbers are the papers').
 
 - **Del Sole, Adragna, Olevano, Reining, PRB 67, 045207 (2003).** Eqs. 2-4 define an
   effective kernel for a chosen approximate bubble, P = chi0_appr + chi0_appr f_eff P, so
@@ -1086,6 +1086,39 @@ Read from the PDFs of the four papers (equation numbers are the papers').
   the regime where MDR found the first-order diagonal to fail. The symptom there was
   oscillations; here it is 55% of the binding. The cause they give is the same one argued
   above.
+- **Adragna, Del Sole, Marini, PRB 68, 165108 (2003).** Eq. 7 restates the exact kernel,
+  f^FQP = chi0^-1 - P^-1. What they compute is its first order in W, Eq. 9,
+  f ~ chi0^-1 P^(1) chi0^-1, with P^(1) written out in Eq. 11: the whole of W (diagonal
+  included) at first order, with anti-resonant terms (denominators w + E) and the coupling
+  elements of W. They state that Sottile et al. reach "the same result as ours [Eqs. (8), (9)
+  and (11)]". "nq" is therefore this kernel too, and the coupling rows of "nq" have a
+  precedent here. Full G,G' matrices (89x89, Si and GaAs); only the head is shown (it
+  agrees with Del Sole et al. up to 4.5 eV). They note that Eq. 6 (the exact form) "is
+  equivalent to the BSE approach, while Eq. (9) contains an additional expansion".
+- **Marini, Del Sole, PRL 91, 176402 (2003).** Not a TDDFT kernel: the BSE with a
+  frequency-dependent W for Cu, Ag and Si. Dynamical excitonic effects partly cancel the
+  quasiparticle renormalization factors Z; the static-W BSE without Z factors comes close to
+  the full calculation for Si but not for the noble metals. Bearing on this fork (reasoning):
+  the BSEs the kernels come from use a static W and no Z factors (the export refuses them),
+  which in n-doped WS2, with low-energy carrier screening, is an approximation to state.
+- **Botti et al., PRB 69, 155112 (2004)** (Del Sole a co-author). Static -alpha/q^2 kernel,
+  alpha = 4.615/eps_inf - 0.213 for bulk semiconductors; good for continuum excitons, not
+  "for the whole spectral range including the valence plasmons and bound excitons". The fit
+  is for bulk; not carried over to 2D here.
+- **Gulevich, Zhumagulov, Kozin, Tokatly, PRB 107, 165118 (2023).** Head of the exact kernel,
+  alpha(w) = 1/beta_s - 1/beta (Eq. 4): the response has zeros between optically active
+  excitons, so the exact kernel has poles there. Their WS2 kernel (poles 2.074 and 2.466 eV,
+  WS2 on SiO2, Table I) is fitted to experimental spectra, not taken from a BSE, and local
+  fields are neglected for the in-plane response. Open check: the "exc" kernel here should
+  show such a pole between the A and B excitons.
+- **Ramirez-Torres, Turkowski, Rahman, arXiv 1402.4041 (2014; PRB 90, 085419).** Trion as an
+  electron bound to an exciton of fixed momentum (Eq. 25), with e-h scattering elements F of a
+  static f_xc and an e-e Coulomb repulsion w screened by a chosen eps. Eight static model
+  kernels (contact, ALDA, GGA-type, long-range, Slater), none BSE-derived; the trion binding
+  is "very sensitive" to the screening parameter. The extra electron is placed "at the Fermi
+  level"; the ground state is not doped. Bearing on the trion interface (reasoning, to confirm
+  with the advisor): F moves the electron between momenta around a fixed hole, so it needs the
+  kernel at finite momentum transfer, which the finite-q export provides.
 - **Shi, Turkowski, Rahman, PRB 107, 155431 (2023)** (1L WSe2, dark excitons; Turkowski and
   Rahman at UCF). The "nanoquanta kernel" is their Eq. 21, citing Reining et al. PRL 88:
   fxc_GG'(q) = sum 1/(f_v1k1 - f_c2k2) Phi^-1(v1k1,c2k2;G) F(v1c2;v3c4) Phi*^-1(v3k3,c4k4;G'),
