@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+#
+# License-Identifier: GPL
+#
+# Copyright (C) 2026 Adolfo Partida
+#
+# Authors: Adolfo Partida, with AI assistance (Claude Code)
+#
 # Static kernel f_xc(q, w=0) next to the kernel at the exciton frequency f_xc(q, w=E_X(q)).
 #
 # usage: python3 fxc_q_compare.py fxc_xq_static.npz fxc_GGq_scw.npz fxc_q_compare.png

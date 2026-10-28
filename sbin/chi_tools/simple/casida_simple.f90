@@ -1,3 +1,10 @@
+!
+! License-Identifier: GPL
+!
+! Copyright (C) 2026 Adolfo Partida
+!
+! Authors: Adolfo Partida, with AI assistance (Claude Code)
+!
       program casida_simple
 
 !     Exciton energies from the Casida matrix written by fkq_simple.sh (or fkq_dump.sh).

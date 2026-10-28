@@ -1,3 +1,5 @@
+<!-- License-Identifier: GPL. Copyright (C) 2026 Adolfo Partida. Authors: Adolfo Partida, with AI assistance (Claude Code). -->
+
 # `ndb.Chi` to transition-space kernel
 
 `BSKmod="CHI"` reads the zero-frequency, unsymmetrized `FXC_Q_iq` from an

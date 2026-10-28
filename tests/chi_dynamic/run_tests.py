@@ -1,3 +1,10 @@
+#
+# License-Identifier: GPL
+#
+# Copyright (C) 2026 Adolfo Partida
+#
+# Authors: Adolfo Partida, with AI assistance (Claude Code)
+#
 """Build and run the frequency-dependent Casida numerics against LAPACK references."""
 
 import argparse

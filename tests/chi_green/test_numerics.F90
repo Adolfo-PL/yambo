@@ -1,3 +1,10 @@
+!
+! License-Identifier: GPL
+!
+! Copyright (C) 2026 Adolfo Partida
+!
+! Authors: Adolfo Partida, with AI assistance (Claude Code)
+!
 program test_chi_green
  use pars, only:DP
  use Chi_Green_m

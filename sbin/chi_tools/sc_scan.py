@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+#
+# License-Identifier: GPL
+#
+# Copyright (C) 2026 Adolfo Partida
+#
+# Authors: Adolfo Partida, with AI assistance (Claude Code)
+#
 """
 sc_scan.py -- self-consistent exciton energy from a scan of Casida matrices M(w).
 

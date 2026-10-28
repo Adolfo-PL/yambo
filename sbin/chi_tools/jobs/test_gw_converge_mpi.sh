@@ -1,4 +1,11 @@
 #!/bin/bash
+#
+# License-Identifier: GPL
+#
+# Copyright (C) 2026 Adolfo Partida
+#
+# Authors: Adolfo Partida, with AI assistance (Claude Code)
+#
 # End-to-end MPI test of gw_converge.sh on a 12x12 non-SOC WS2 SAVE with the cluster's dimensions
 # (VB 13, 19 IBZ k, gap at k 19), oversubscribed on this machine.
 S=${S:?set S to the folder holding ybuild_mpi, gwmpi and jobs}

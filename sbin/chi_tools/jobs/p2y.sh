@@ -1,4 +1,11 @@
 #!/bin/bash
+#
+# License-Identifier: GPL
+#
+# Copyright (C) 2026 Adolfo Partida
+#
+# Authors: Adolfo Partida, with AI assistance (Claude Code)
+#
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4

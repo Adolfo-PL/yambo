@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+#
+# License-Identifier: GPL
+#
+# Copyright (C) 2026 Adolfo Partida
+#
+# Authors: Adolfo Partida, with AI assistance (Claude Code)
+#
 """
 plot_exact_kernel.py -- the figures of an exact_kernel.sh run, from its data files only (no Yambo).
 Edit the STYLE block or the plot functions and rerun; nothing is recomputed.

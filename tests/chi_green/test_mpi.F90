@@ -1,3 +1,10 @@
+!
+! License-Identifier: GPL
+!
+! Copyright (C) 2026 Adolfo Partida
+!
+! Authors: Adolfo Partida, with AI assistance (Claude Code)
+!
 ! Real MPI collectives around the production bubble; synthetic host/IO only.
 program test_mpi
  use mpi

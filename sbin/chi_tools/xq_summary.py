@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+#
+# License-Identifier: GPL
+#
+# Copyright (C) 2026 Adolfo Partida
+#
+# Authors: Adolfo Partida, with AI assistance (Claude Code)
+#
 """
 xq_summary.py -- exciton energies and binding energies at every q: BSE, Casida with the
 exported kernel solved self-consistently, and Casida with the static kernel fxc(q, w=0).

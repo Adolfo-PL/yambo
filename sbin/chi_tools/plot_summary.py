@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+#
+# License-Identifier: GPL
+#
+# Copyright (C) 2026 Adolfo Partida
+#
+# Authors: Adolfo Partida, with AI assistance (Claude Code)
+#
 """
 plot_summary.py -- figures for the Sigma -> G -> chi -> fxc -> Casida chain.
 

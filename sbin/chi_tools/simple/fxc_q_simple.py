@@ -1,3 +1,10 @@
+#
+# License-Identifier: GPL
+#
+# Copyright (C) 2026 Adolfo Partida
+#
+# Authors: Adolfo Partida, with AI assistance (Claude Code)
+#
 import sys, numpy as np, matplotlib
 matplotlib.use('Agg'); import matplotlib.pyplot as plt
 d=np.load(sys.argv[1]); out=sys.argv[2]

@@ -1,3 +1,10 @@
+!
+! License-Identifier: GPL
+!
+! Copyright (C) 2026 Adolfo Partida
+!
+! Authors: Adolfo Partida, with AI assistance (Claude Code)
+!
 program test_chi_dynamic
   ! Checks TDDFT_Chi_dynamic_m against two independent references:
   !  1. the pair-space Dyson equation solved in G space, chi=[chi0^-1-fxc]^-1,

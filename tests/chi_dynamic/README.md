@@ -1,3 +1,5 @@
+<!-- License-Identifier: GPL. Copyright (C) 2026 Adolfo Partida. Authors: Adolfo Partida, with AI assistance (Claude Code). -->
+
 # Frequency-dependent Casida numerics
 
 `BSKmod="CHI"` with `BSEChiDyn` solves the Casida response once per BSE

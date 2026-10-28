@@ -1,3 +1,10 @@
+!
+! License-Identifier: GPL
+!
+! Copyright (C) 2026 Adolfo Partida
+!
+! Authors: Adolfo Partida, with AI assistance (Claude Code)
+!
 ! Small host-model fixtures. Production bubble, inversion and frequency
 ! switching are compiled unchanged; only the material/IO infrastructure is mocked.
 module pars

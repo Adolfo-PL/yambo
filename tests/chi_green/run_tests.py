@@ -1,3 +1,10 @@
+#
+# License-Identifier: GPL
+#
+# Copyright (C) 2026 Adolfo Partida
+#
+# Authors: Adolfo Partida, with AI assistance (Claude Code)
+#
 """Compile the production numerical module without a Yambo/NetCDF installation.
 
 Usage: python tests/chi_green/run_tests.py --fc gfortran

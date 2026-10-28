@@ -1,3 +1,10 @@
+!
+! License-Identifier: GPL
+!
+! Copyright (C) 2026 Adolfo Partida
+!
+! Authors: Adolfo Partida, with AI assistance (Claude Code)
+!
 program test_chi_fourier
   use pars, only: DP
   use TDDFT_Chi_Fourier_m, only: TDDFT_Chi_pair_G,TDDFT_Chi_project_G,TDDFT_Chi_project_R

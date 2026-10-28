@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+#
+# License-Identifier: GPL
+#
+# Copyright (C) 2026 Adolfo Partida
+#
+# Authors: Adolfo Partida, with AI assistance (Claude Code)
+#
 """
 fxc_export.py -- write the kernel fxc_GG'(q, w) of an ndb.Chi as plain text (and .npz).
 

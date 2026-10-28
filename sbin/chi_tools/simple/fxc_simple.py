@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+#
+# License-Identifier: GPL
+#
+# Copyright (C) 2026 Adolfo Partida
+#
+# Authors: Adolfo Partida, with AI assistance (Claude Code)
+#
 # The kernel f_xc(G,G',q,w) of an ndb.Chi as plain text: one file per q, at one frequency.
 #
 #   f_xc = chi0^-1 - P^-1    (computed by Yambo in the BSE run, stored in ndb.Chi)

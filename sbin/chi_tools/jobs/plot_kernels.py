@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+#
+# License-Identifier: GPL
+#
+# Copyright (C) 2026 Adolfo Partida
+#
+# Authors: Adolfo Partida, with AI assistance (Claude Code)
+#
 """Figures for the kernel comparison (kernel_compare.sh). Run in the folder where it ran:
 
     python3 plot_kernels.py [--dirs . sh_dump] [--emin 1.6 --emax 3.2]
