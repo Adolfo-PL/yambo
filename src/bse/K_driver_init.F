@@ -70,6 +70,9 @@ subroutine K_driver_init(what,iq,Ken,Xk)
    if (BS_K_is_Chi) call error('[Chi/BSK] BSEChiOut exports a kernel from a BSE: use BSKmod= "SEX" (or Hartree), not "CHI"')
    if (.not.BS_K_coupling) call error('[Chi/BSK] BSEChiOut needs BSEmod= "coupling": only the coupled response is a physical P')
    if (have_gpu) call error('[Chi/BSK] BSEChiOut: CPU build only')
+   ! P^-1 = chib^-1 + v(bar) needs the exchange in the BSE: Lkind= tilde removes it (below)
+   if (STRING_match(BSE_L_kind,"tilde").or..not.BS_res_K_exchange) &
+&    call error('[Chi/BSK] BSEChiOut needs the exchange in the BSE: use Lkind= bar or full, not tilde')
    if (index(BSS_mode,'h')/=0.or.index(BSS_mode,'i')/=0.or.index(BSS_mode,'s')/=0.or.index(BSS_mode,'t')/=0) &
 &    call error('[Chi/BSK] BSEChiOut works with BSSmod= "d" only')
    ! "full" measures fxc from the KS bubble, but QP corrections move the occupations of partly
@@ -82,7 +85,19 @@ subroutine K_driver_init(what,iq,Ken,Xk)
  endif
  !
  ! default mode
- if(STRING_match(BSE_L_kind,"default")) BSE_L_kind="default-bar"
+ if (iq==1) then
+   ! Default is Lbar for optical absorption. Consequences:
+   ! 1. No LT splitting in 3D (use 'Lkind= full' for that)
+   ! 2. BSE Hamiltonian fully symmetric (no nonanalytic term)
+   if(STRING_match(BSE_L_kind,"default")) BSE_L_kind="default-bar"
+ endif
+ !
+ if (iq/=1) then
+   ! Default is Lfull as Lbar is NOT defined and gives WRONG results
+   ! BSE Hamiltonian is fully symmetric with Lfull
+   if(STRING_match(BSE_L_kind,"default")) BSE_L_kind="default-full"
+   if(STRING_match(BSE_L_kind,"bar")) call warning("Lbar not defined at q/=0")
+ endif
  !
  if (l_col_cut.and.what=="init") then
    ! We are here in 0D, 1D or 2D
@@ -206,8 +221,10 @@ subroutine K_driver_init(what,iq,Ken,Xk)
  !
  ! BSE_L_kind check
  !==============
- if (.not.STRING_match(BSE_L_kind,"bar").and..not.STRING_match(BSE_L_kind,"full")) &
- & call error('set Lkind = DEFAULT or BAR or FULL')
+ if    (.not.STRING_match(BSE_L_kind,"bar") &
+ & .and..not.STRING_match(BSE_L_kind,"full") &
+ & .and..not.STRING_match(BSE_L_kind,"tilde")) &
+ & call error('set Lkind = DEFAULT or BAR or FULL or TILDE')
  !
  BS_K_is_ALDA=l_alda_fxc
  if (l_alda_fxc) then

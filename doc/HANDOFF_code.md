@@ -3,7 +3,7 @@
 This file passes the technical work on this Yambo fork to a new Claude Code session.
 The other session keeps the cluster runs, convergence, results and explanations.
 This session works on the theory, the Fortran, the tests and new features.
-Read this file first, then `doc/greens_function_fxc.md`, which is the full reference at 1474 lines.
+Read this file first, then `doc/greens_function_fxc.md`, which is the full reference at 1491 lines.
 
 ## 1. Goal and working rules
 
@@ -14,6 +14,7 @@ Read this file first, then `doc/greens_function_fxc.md`, which is the full refer
 
 **Repository.**
 - Fork: `Adolfo-PL/yambo`. Upstream base: `19c1241` (Yambo 5.3.0 r23959). First fork commit: `ac50f1f`.
+- Ported from upstream 5.4 (read-only clone of `yambo-code/yambo`, branch `5.4`): the `fill_indexes` intent fix (81d6a687d, below) and the Lkind change (ecd4a9667: `"default"` is full at q > 1, `Lbar not defined at q/=0` warning; 1fceec807/d71faa3d3: `Lkind="tilde"` passes the check). The rest of 5.4 (metal W-av, ChASE, ydiago, MPA, the R-space ALDA OpenMP fix 7197a5e49) is not ported; a full move to 5.4 is planned later.
 - Branch: `claude/nbd-file-generation-path-yidcr2`. Develop and push only there.
 - Push with `git push -u origin claude/nbd-file-generation-path-yidcr2`. On network errors, retry 4 times with 2, 4, 8 and 16 s waits.
 - Do not open a pull request unless the user asks.
@@ -164,9 +165,10 @@ make yambo
 - For fast iteration, copy edited `.F` files into a configured build tree and run `make yambo`.
 - A fresh container has no build and no test SAVE databases. The earlier ones lived in the old session's scratchpad: a 12×12 WS2 with 80 bands, a 6×6 SOC WS2, and silicon. Rebuild them with Quantum ESPRESSO + p2y if a material test is needed, or ask the user for a small SAVE.
 
-**gfortran 13 miscompile.** gfortran 13 at `-O3` miscompiles `src/bse/K_correlation_collisions_std.F`. A plain SEX BSE crashes, and with the export it gives NaN (doc, end of the BSEChiOut section).
-- Earlier sessions recompiled that one file at `-O1` and relinked, using a sandbox-only script that was not kept. No source change was made.
-- Before any local material BSE, reproduce that workaround and check that a plain SEX BSE gives no NaN.
+**gfortran 13 miscompile.** gfortran 13 at `-O3` miscompiled `src/bse/K_correlation_collisions_std.F`. A plain SEX BSE crashed, and with the export it gave NaN (doc, end of the BSEChiOut section).
+- Likely cause, now fixed: its internal `fill_indexes` declared `j_k`, `j_p` `intent(out)` but reads `j_p`, and from GCC 13 gfortran marks such arguments undefined before each call (`{CLOBBER}` in the tree dump). The upstream 5.4 fix (81d6a687d, `intent(in)`) is ported in this file and in `K_correlation_collisions_dir.F`.
+- Not yet confirmed where the crash happened: build the fork at plain `-O3` on the cluster (no `-O1` step) and check that a plain SEX BSE gives no NaN. If it does, the `-O1` workaround can be dropped; until then keep it as the fallback.
+- Earlier sessions recompiled that one file at `-O1` and relinked, using a sandbox-only script. No source change was made then.
 - It does not affect the unit tests. The user's cluster SEX BSE runs gave sane binding energies, but which compiler built the fork there has not been checked.
 - With gfortran 13.3.0 (this container) the `-O3` and `-O1` builds gave identical SEX BSE spectra on WS2 (SOC and scalar, one thread): the miscompile was not reproduced.
 - A rebuild after a change to a module that file uses (e.g. `mod_BS.F`) recompiles it at `-O3` and silently undoes the workaround: redo it, and check the object by checksum, not by comparing it with the archive.
@@ -201,8 +203,10 @@ Monolayer WS2:
      - QP corrections that do not match the export (an "exc"/"mdr"/"nq" kernel exported on KS energies now runs on KS);
      - another number of transitions at the q (`CHI_NTRANS_Q_iq`: transition window, bands);
      - with `BSEChiDyn`, a bubble mismatch for BSE-exported kernels.
+     - an `Lkind` (full or bar) other than the export's (read from the `ndb.Chi` convention string).
      The export:
      - stops at init for "full" with QP corrections and partly filled bands (`K_driver_init.F`);
+     - stops at init with `Lkind="tilde"` or without exchange (`K_driver_init.F`);
      - on a failed or ill-conditioned kernel warns, writes no `ndb.Chi`, and lets the diagonalization finish (z=0 is checked before the frequency loop).
      Tests and numbers: doc, "Kernel from the BSE and exciton binding energies: `BSEChiOut`".
    - Yambo's C driver aborts (exit 134, after the run has written everything) when the `-F` path is longer than about 90 characters (`src/driver/input_file.c`, 100-char buffer). The job scripts use short relative names.

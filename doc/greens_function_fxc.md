@@ -360,7 +360,7 @@ rebuild the Chi vertices`, `K_kernel.F`) with `BSKmod="CHI"`, coupling, the same
 
 The Casida run stops before the projection and the solver when one of these differs
 from the export: the G basis (`BSENGfxc`, and `BSENGexx` with the exchange on, since P
-was built with the exchange of the exporting BSE), `BSEGinplane`, the optical q0, the
+was built with the exchange of the exporting BSE), `Lkind` (full or bar), `BSEGinplane`, the optical q0, the
 occupations, the presence of QP corrections, and the band energies of the reference
 bubble (stored by the export on the BSE bands, every IBZ k and spin):
 
@@ -393,6 +393,8 @@ in one line only):
 | "full" with `KfnQP_E` (undoped): export, then KS Casida | runs; stores the KS energies; matches its BSE (1e-4 / 2e-4) |
 | `ChiRcondMin` 0.1 (rcond at z=0 is 1e-3) | warns, frequency loop skipped (export step 1 s instead of 77 s), no `ndb.Chi`, BSE spectrum identical |
 | doped: "full" with `KfnQP_E` | stops at the start of the BSE driver |
+| `Lkind="full"` against a bar export | stops in the kernel step |
+| export with `Lkind="tilde"` | stops at the start of the BSE driver |
 
 The export written with these checks has the same chi0, P, fxc and rcond, bit for bit, as
 the one before them.
@@ -682,16 +684,31 @@ dependence of the exact kernel carries the binding. The spectra were compared
 on the 0.1 eV grid with eta = 0.1 eV. In this build, gfortran 13 at -O3
 miscompiled `K_correlation_collisions_std` (the SEX kernel crashed without
 the export and gave NaN with it); the file compiled at -O1 runs correctly.
+The likely cause is a declaration bug fixed upstream in 5.4 (81d6a687d) and ported
+here: its internal `fill_indexes` declared `j_k` and `j_p` `intent(out)` but reads
+`j_p`. From GCC 13 gfortran marks an `intent(out)` actual argument undefined
+before each call; the compiler's tree dump of the old file shows `i_k = {CLOBBER}`
+and `i_p = {CLOBBER}` before every call, and with the fix they are gone. gfortran 13.3
+did not reproduce the crash here, so the cure is confirmed only by a plain -O3 build on
+the cluster. With the fix at -O3, the WS2 export (chi0, P, fxc, rcond) and the Casida
+spectra are bit for bit those of the -O1 build.
 
 ### Finite momentum: `BSEChiOut` with `BSEQptR`
 
 The export runs at every BSE momentum of `BSEQptR` and writes one `ndb.Chi` with
 one fragment per q. At finite q the transitions are v(k-q) -> c(k), with
 E = E_c(k) - E_v(k-q), and the vertices rho_cv(k, q+G) come from the
-wavefunctions, not the dipoles. The exchange follows `Lkind`. By default (`Lkind="bar"`) it is vbar
-(no G=0), so P^-1 = chib^-1 + vbar. With `Lkind="full"` (or `"default"` with a
-Coulomb cutoff at q > 1) it is the full v (G=0 included), so P^-1 = chib^-1 + v.
-The `r-` file says which (`[Chi/BSK] exchange with/without G=0`).
+wavefunctions, not the dipoles. The exchange follows `Lkind`. Without an `Lkind`
+line it is `"bar"` at every q (`SET_defaults.F`): vbar (no G=0), so P^-1 = chib^-1 + vbar.
+With `Lkind="full"`, or `Lkind="default"` at q > 1, it is the full v (G=0 included),
+so P^-1 = chib^-1 + v. The `r-` file says which (`[Chi/BSK] exchange with/without G=0`).
+Upstream 5.4 (ecd4a9667, ported here) holds that Lbar is not defined at q /= 0 and
+warns (`Lbar not defined at q/=0`) whenever it is used there, including by default:
+set `Lkind="full"` (or `"default"`) for finite-q runs. On the WS2 SOC test without a
+cutoff, q2 with full and with bar differ by 1.1e-3 in Im eps (peak 8.46). The export
+stops at the start with `Lkind="tilde"` (no exchange, so P^-1 = chib^-1 + v(bar) does
+not hold), and Casida stops when its `Lkind` differs from the export's (read from the
+`ndb.Chi` convention string).
 
 The header (G vectors, optical q0) is written by the first q of the run. Start
 `BSEQptR` at 1 so the file keeps the q0 direction of the optical point. At every q

@@ -22,7 +22,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
 &                        qindx_B,qindx_B_max,qindx_B_load,RIM_W,RIM_W_d,&
 &                        RIM_ng,RIM_W_is_diagonal,RIM_W_ng,bare_qpg
  use com,           ONLY:msg
- use stderr,        ONLY:intc
+ use stderr,        ONLY:intc,STRING_match
  use LIVE_t,        ONLY:live_timing
  use X_m,           ONLY:X_t
  use interfaces,    ONLY:el_density_and_current
@@ -37,7 +37,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
 &                        WF_phase,n_BS_blks,BS_blk,BS_T_grp,&
 &                        BS_nT_grps,BS_blks_free,l_BS_ares_from_res,&
 &                        l_BSE_minimize_memory,l_BSE_restart,l_BSE_kernel_complete,&
-&                        BS_perturbative_SOC,BS_K_cutoff,BS_max_val,l_BS_magnons
+&                        BS_perturbative_SOC,BS_K_cutoff,BS_max_val,l_BS_magnons,BSE_L_kind
  use collision_el,  ONLY:elemental_collision_free
  use ALLOC,         ONLY:DIPOLE_ALLOC_global
  use IO_int,        ONLY:io_control
@@ -56,7 +56,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  use parser_m,      ONLY:parser
  use Chi_m,         ONLY:Chi_ng,Chi_n_freqs,Chi_freqs,Chi_fxc,Chi_free,Chi_QP_applied,Chi_n_trans,&
 &                        Chi_serial,Chi_serial_frag
- use Chi_m,         ONLY:Chi_optical_q0,Chi_optical_q0_known,Chi_G_mode,Chi_G_db
+ use Chi_m,         ONLY:Chi_optical_q0,Chi_optical_q0_known,Chi_G_mode,Chi_G_db,Chi_convention
  use Chi_m,         ONLY:Chi_occupations,Chi_occ_bands,Chi_occ_nk,Chi_occ_nsp,Chi_occ_nbf,Chi_occ_nbm,&
 &                        Chi_occ_Tel,Chi_occ_free,Chi_occ_E
  use Chi_m,         ONLY:Chi_dyn_V,Chi_dyn_s,Chi_dyn_filled,Chi_dyn_c,Chi_dyn_free
@@ -383,6 +383,10 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
      ! on its G basis): the same exchange G here, or the Casida response is not the BSE one
      if (index(Chi_G_mode,'BSE-')==1.and.(.not.BS_res_K_exchange.or.BS_n_g_exch/=Chi_ng)) &
 &      call error('[Chi/BSK] BSENGexx must equal the ndb.Chi G-basis size, with the exchange on (the exporting BSE)')
+     ! and with its G=0 exchange: v (Lkind full) or vbar (bar), as the export convention says.
+     ! Without an Lkind line both runs use bar; Lkind= "default" is full at q>1 (5.4 change)
+     if (index(Chi_G_mode,'BSE-')==1.and.((index(Chi_convention,'(Lkind full)')>0).neqv.STRING_match(BSE_L_kind,"full"))) &
+&      call error('[Chi/BSK] Lkind must match the ndb.Chi export (exchange with or without G=0): '//trim(Chi_convention))
      ! A kernel exported with BSEGinplane is exact only with the exchange on the same G
      if ((index(Chi_G_db,'BSEGinplane')>0).neqv.BS_G_inplane) &
 &      call error('[Chi/BSK] BSEGinplane must match the ndb.Chi export (exchange and fxc on the same G)')
