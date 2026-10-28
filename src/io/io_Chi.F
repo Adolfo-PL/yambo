@@ -26,7 +26,7 @@ integer function io_Chi(X,Xw,ID)
 &                        Chi_G_mu,Chi_G_kbt,Chi_G0_error,Chi_rcond
  use Chi_m,         ONLY:Chi_G_axis,Chi_optical_q0,Chi_optical_q0_known
  use Chi_m,         ONLY:Chi_occupations,Chi_occ_bands,Chi_occ_nk,Chi_occ_nsp,Chi_occ_nbf,Chi_occ_nbm,&
-&                        Chi_occ_Tel,Chi_occ_alloc,Chi_occ_free,Chi_occ_E,Chi_n_trans
+&                        Chi_occ_Tel,Chi_occ_alloc,Chi_occ_free,Chi_occ_E,Chi_n_trans,Chi_serial,Chi_serial_frag
  use IO_int,        ONLY:io_connect,io_disconnect,io_elemental,io_header,io_fragment,&
 &                        def_variable_bulk,io_variable_bulk,def_variable_elemental,io_variable_elemental
  use IO_m,          ONLY:io_sec,io_com,io_status,write_is_on,read_is_on,NONE,frag_RESPONSE,&
@@ -45,7 +45,7 @@ integer function io_Chi(X,Xw,ID)
  !
  integer                 :: i1,iq,io_com_save,io_err,ID_frag,ng_qpg,tmp_ib(2)
  character(schlen)       :: ch,axis
- real(SP)                :: n_trans_disk
+ real(SP)                :: n_trans_disk,serial_disk
  real(SP),   allocatable :: RL_vecs_disk(:,:)
  complex(SP),allocatable :: qpg_disk(:,:)
  !
@@ -150,6 +150,13 @@ integer function io_Chi(X,Xw,ID)
      call io_elemental(ID,I0=Chi_occ_nbm,VAR='Occupations: last occupied band ',DESCRIPTOR=Chi_desc)
      call io_elemental(ID,R0=Chi_occ_Tel,UNIT=HA2KEL,&
 &         VAR='Occupations: temperature',TERMINATOR='K',DESCRIPTOR=Chi_desc)
+     call io_elemental(ID,VAR='',VAR_SZ=0,MENU=0)
+   endif
+   ! Serial of a BSEChiOut export, repeated in each q fragment. Older databases have none
+   if (read_is_on(ID)) Chi_serial=0
+   if ((write_is_on(ID).and.Chi_serial>0).or.(read_is_on(ID).and.variable_exist(ID,'CHI_SERIAL'))) then
+     call io_elemental(ID,VAR='CHI_SERIAL',VAR_SZ=1,MENU=0)
+     call io_elemental(ID,I0=Chi_serial)
      call io_elemental(ID,VAR='',VAR_SZ=0,MENU=0)
    endif
    !
@@ -279,6 +286,14 @@ integer function io_Chi(X,Xw,ID)
      call def_variable_bulk(ID_frag,trim(ch),7,(/1/),SP)
      call io_variable_bulk(ID_frag,7,R0=n_trans_disk)
      Chi_n_trans=nint(n_trans_disk)
+   endif
+   ch="CHI_SERIAL_Q_"//trim(intc(iq))
+   if (read_is_on(ID)) Chi_serial_frag=0
+   if ((write_is_on(ID_frag).and.Chi_serial>0).or.(read_is_on(ID_frag).and.variable_exist(ID_frag,trim(ch)))) then
+     serial_disk=real(Chi_serial,SP)
+     call def_variable_bulk(ID_frag,trim(ch),8,(/1/),SP)
+     call io_variable_bulk(ID_frag,8,R0=serial_disk)
+     Chi_serial_frag=nint(serial_disk)
    endif
    !
  endif

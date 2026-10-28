@@ -368,7 +368,9 @@ bubble (stored by the export on the BSE bands, every IBZ k and spin):
 [Chi/BSK] band energies vs the bubble of the exporting BSE: max |dE| [eV]
 ```
 
-It stops above 1e-5 Ha (0.27 meV). The transition window (`BSEEhEny`, `BSehWind`) is
+It stops above 1e-5 Ha (0.27 meV). It also stops when a q fragment carries another export's
+serial (`CHI_SERIAL`, `CHI_SERIAL_Q_iq`), which happens when `ndb.Chi*` files of two exports
+are copied into one directory. The transition window (`BSEEhEny`, `BSehWind`) is
 checked through the number of resonant transitions at each q, stored by the export
 (`CHI_NTRANS_Q_iq`), and with `BSEChiDyn` also through the bubble check below. An
 `ndb.Chi` exported before these checks has neither: the run warns (energies) and goes on. The export itself stops at the start for "full"
@@ -487,8 +489,10 @@ Restrictions: one MPI rank (OpenMP threads parallelize the frequencies), couplin
 the diagonalization solver, length gauge, scalar or spinor states (see "Spinor
 states" below; no collinear spin polarization, magnons or perturbative SOC), no
 transition widths or Z factors, `BSENGexx = BSENGfxc`.
-If the reference bubble or the BSE response is ill-conditioned
-(`[Chi/BSK] minimum rcond` below `ChiRcondMin`), or the kernel fails at some frequency,
+The export reports three reciprocal condition numbers: of the reference bubble, of the
+BSE response ("exc", "full"; for "mdr" the shifted bubble p0, for "nq" the reference
+bubble again), and of P^-1, which is inverted back to P. If any of them is below
+`ChiRcondMin` (`[Chi/BSK] minimum rcond`), or the kernel fails at some frequency,
 the export warns and writes no `ndb.Chi`, and the BSE solver of the run goes on and
 writes its spectrum; reduce the G basis then. z = 0 is computed first, so a basis that
 is already ill-conditioned there skips the frequency loop (on the WS2 test below the
@@ -579,6 +583,14 @@ kernel exported with `BDmRange 0 | 0` sits on the undamped real axis (accepted b
 `BSEChiDyn` for BSE-exported kernels only). Silicon, full matrix on 3.00-3.50 eV:
 lambda falls from 3.486 eV and crosses w at 3.4276 eV (BSE 3.4278 eV); at w = 0
 it is 3.558 eV. A damped z = w + i eta, or one band pair, misses the root.
+
+Only bright roots are excitons. The nonlinear problem lambda(w) = w has further roots
+that are dark in G space, with no density response, and are not BSE eigenvalues: in a
+numpy toy (12 transitions, 4 G, exact kernel) all 9 BSE eigenvalues of the window are
+roots, plus 8 roots with G-space weight below 2e-5 (second in-project review). The
+tools here follow the lowest bright eigenvalue, and the dumped matrices do not carry the
+vertices needed to compute a G-space weight. Do not read dark excitons, or a basis for
+trions, off the eigenvectors of M(w) without checking them against the BSE.
 
 `sbin/chi_tools/sc_scan.py` automates this. It diagonalizes each w-file,
 records lambda(w), and interpolates the crossing with a polynomial (degree up
@@ -1121,7 +1133,18 @@ Read from the PDFs of the papers (equation numbers are the papers').
   poles come from P. The head-only form 1/beta_s - 1/beta puts them at 1.755 and 2.125 eV:
   the local fields of the 7 in-plane G shift them. Sign and shape match Gulevich et al.'s
   F_n/(w^2 - wbar_n^2) with F_n > 0; their WS2 numbers are for another system (experimental
-  spectra, WS2 on SiO2) and are not comparable one to one.
+  spectra, WS2 on SiO2) and are not comparable one to one. The export now reports these
+  extrema of the heads on the BSE grid ("exc" on this test: response zeros 1.765, 2.140,
+  2.620 eV; kernel poles 1.780, 2.230 eV):
+
+  ```text
+  [Chi/BSK] head of P: local minima of |P_00| (response zeros) [eV]
+  [Chi/BSK] head of fxc: local maxima of -Im q^2 fxc_00 (kernel poles) [eV]
+  ```
+
+  The smallest singular value of P does not locate them: on this test the condition number
+  of P dips at the exciton peaks (1.615, 1.650, 2.03, 2.50 eV), where its largest singular
+  value grows, not at the response zero.
 - **Sottile, Karlsson, Reining, Aryasetiawan, PRB 68, 205112 (2003).** A contact BSE
   interaction W = A delta(r - r') (static, resonant part) is reproduced in TDDFT both by a
   short-range kernel, f = -A/2 delta(r - r') (Eq. 13), and by a long-range head-only kernel,

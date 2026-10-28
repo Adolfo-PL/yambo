@@ -28,7 +28,8 @@
 #  MDR kernel (Marini-Del Sole-Rubio, BSEChiOut= "mdr", needs the yambo build with it):
 #                exported on the same grid, then Casida static and with fxc(w)
 #  NQ kernel (BSEChiOut= "nq", all of W to first order; Sottile-Olevano-Reining, PRL 91,
-#                056402, Eq. 3): the same three runs, after the G-space
+#                056402, Eq. 3; Adragna-Del Sole-Marini, PRB 68, 165108, Eqs. 9 and 11):
+#                the same three runs, after the G-space
 #                runs (NQ=0 skips them)
 #
 #  LRC is run with the alpha of the exact kernel at w = 0 and at the exciton (read from
@@ -228,7 +229,7 @@ fi
 fi   # ONLY=exact
 
 python3 - "$A0" "$AX" <<'PY'
-import glob, re, sys
+import glob, os, re, sys
 import numpy as np
 a0, ax = sys.argv[1], sys.argv[2]
 
@@ -253,9 +254,11 @@ for f in glob.glob('r-kc_sex_*'):
     for l in open(f):
         if 'lowest transition energy of the window' in l: gap = float(l.split()[-1])
 rows = []
+skip = set() if os.environ.get('NQ', '1') == '1' else {'kc_nq', 'kc_nqst'}   # NQ=0: no NQ rows
 for job, name in (('kc_sex', 'BSE (SEX), reference'), ('kc_hart', 'RPA (Hartree), transition space'),
                   ('kc_alda', 'ALDA, transition space'), ('kc_mdrst', 'MDR kernel fxc(0), static'),
                   ('kc_nqst', 'NQ kernel fxc(0), static')):
+    if job in skip: continue
     e = rep(job, 'lowest bright excitation (strength')
     rows.append((name, e, gap - e, peak(job)[1]))
 try:
@@ -270,6 +273,7 @@ lrc = []
 for job, name in [('kc_mdr', 'MDR kernel fxc(w)'), ('kc_nq', 'NQ kernel fxc(w)'), ('kc_ip', 'IP'), ('kc_rpa', 'RPA, G space')] + \
         [(re.match(r'o-(.*?)\.eps', f).group(1), None) for f in sorted(glob.glob('o-kc_lrc*.eps_q1_*'))] + \
         [(f'kc_pf{p}', f'PF {p}') for p in ('EMP', 'RBO', 'CUR', 'JGM')]:
+    if job in skip: continue
     p, h = peak(job)
     if name is None:
         a = job[len('kc_lrc'):]

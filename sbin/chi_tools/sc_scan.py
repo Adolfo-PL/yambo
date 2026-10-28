@@ -20,6 +20,8 @@ lambda(w). The exact kernel reproduces the BSE exciton E_x only where
     lambda(E_x) = E_x                      (as the quasiparticle equation E = e + Sigma(E))
 
 so the script looks for the crossing of Re lambda(w) - w and interpolates it linearly.
+It follows the lowest bright eigenvalue on purpose: lambda(w) = w also has roots that are dark
+in G space and are not BSE excitons (doc/greens_function_fxc.md, BSEChiKoutW).
 The whole transition space must be in the files (BSEChiKoutB 0 | 0): a sub-matrix does
 not have the BSE exciton as an eigenvalue.
 

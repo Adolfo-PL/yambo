@@ -54,7 +54,8 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  use MAGNONS,       ONLY:BSS_MAGN_free
  use PHOTOLUM,      ONLY:BSS_PL_free
  use parser_m,      ONLY:parser
- use Chi_m,         ONLY:Chi_ng,Chi_n_freqs,Chi_freqs,Chi_fxc,Chi_free,Chi_QP_applied,Chi_n_trans
+ use Chi_m,         ONLY:Chi_ng,Chi_n_freqs,Chi_freqs,Chi_fxc,Chi_free,Chi_QP_applied,Chi_n_trans,&
+&                        Chi_serial,Chi_serial_frag
  use Chi_m,         ONLY:Chi_optical_q0,Chi_optical_q0_known,Chi_G_mode,Chi_G_db
  use Chi_m,         ONLY:Chi_occupations,Chi_occ_bands,Chi_occ_nk,Chi_occ_nsp,Chi_occ_nbf,Chi_occ_nbm,&
 &                        Chi_occ_Tel,Chi_occ_free,Chi_occ_E
@@ -434,6 +435,9 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
      io_Chi_err=io_Chi(X,Chi_w,ID_Chi)
      if (io_Chi_err/=0) call error('[Chi/BSK] cannot read ndb.Chi q fragment (IO code '//trim(intc(io_Chi_err))//')')
      if (Chi_n_freqs<1) call error('[Chi/BSK] ndb.Chi contains no frequency samples')
+     ! A fragment left from another export (a manual copy into a used directory)
+     if (Chi_serial>0.and.Chi_serial_frag/=Chi_serial) call error('[Chi/BSK] ndb.Chi_fragment_'//trim(intc(iq))//&
+&      ' is not from the export of this ndb.Chi header: copy all ndb.Chi* of one export into a clean directory')
      ! The transitions of the exporting BSE (window, bands, k) at this q: their number. Static
      ! Casida has no other check of the window (BSEChiDyn also compares the bubbles)
      if (Chi_n_trans>0.and.Chi_n_trans/=BS_K_dim(1)) call error('[Chi/BSK] '//trim(intc(BS_K_dim(1)))//&

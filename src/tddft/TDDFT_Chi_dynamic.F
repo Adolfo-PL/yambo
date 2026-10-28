@@ -330,7 +330,8 @@ contains
  ! the chi0^-1 - p0^-1 term carries the shift (doc/greens_function_fxc.md, Literature checks).
  !
  ! Nanoquanta-type kernel (BSEChiOut= "nq"; Sottile, Olevano, Reining, PRL 91, 056402 (2003),
- ! Eq. 3, derived there for the resonant part; see doc/greens_function_fxc.md): the same
+ ! Eq. 3, resonant part, and Adragna, Del Sole, Marini, PRB 68, 165108 (2003), Eqs. 9 and 11,
+ ! with anti-resonant and coupling terms; see doc/greens_function_fxc.md): the same
  ! routines with the diagonal of W not moved into the energies, Ed = E and Koff = M_W - diag(E)
  ! (the whole W part). Then g = diag(1/(z-E)), p0 is the reference bubble chi0, and
  !
@@ -363,19 +364,22 @@ contains
    deallocate(Y,X,YK)
  end subroutine TDDFT_Chi_mdr_response
  !
- recursive subroutine TDDFT_Chi_kernel_mdr(chi0,p0,dP1,d,fxc,P,rcond,ierr)
+ recursive subroutine TDDFT_Chi_kernel_mdr(chi0,p0,dP1,d,fxc,P,rcond,ierr,rcond_P)
    ! fxc = chi0^-1 - p0^-1 + p0^-1 dP1 p0^-1 and P = (p0^-1 - p0^-1 dP1 p0^-1)^-1, inverted on
-   ! the Coulomb-symmetrized matrices D x D as TDDFT_Chi_kernel_from_response
+   ! the Coulomb-symmetrized matrices D x D as TDDFT_Chi_kernel_from_response.
+   ! rcond = reciprocal condition numbers of chi0~ and p0~; rcond_P (optional) that of P~^-1
    complex(DP), intent(in)  :: chi0(:,:),p0(:,:),dP1(:,:),d(:)
    complex(DP), intent(out) :: fxc(:,:),P(:,:)
    real(DP),    intent(out) :: rcond(2)
    integer,     intent(out) :: ierr
+   real(DP),    intent(out), optional :: rcond_P
    complex(DP), allocatable :: A(:,:),B(:,:),C(:,:),T(:,:)
    real(DP) :: rcP
    integer :: ng,i,j
    ! ierr: 20 sizes, 31/32 singular chi0/p0, 33 singular P^-1
    ng=size(d)
    fxc=zero; P=zero; rcond=0._DP
+   if (present(rcond_P)) rcond_P=0._DP
    ierr=20
    if (any(shape(chi0)/=(/ng,ng/)).or.any(shape(p0)/=(/ng,ng/)).or.any(shape(dP1)/=(/ng,ng/)).or.&
 &      any(shape(fxc)/=(/ng,ng/)).or.any(shape(P)/=(/ng,ng/))) return
@@ -408,7 +412,11 @@ contains
      enddo
    enddo
    ierr=0
-1  deallocate(A,B,C,T)
+1  if (present(rcond_P)) then
+     rcond_P=0._DP
+     if (ierr==0) rcond_P=rcP
+   endif
+   deallocate(A,B,C,T)
  contains
    recursive subroutine invert(Mx,rc,err)
      complex(DP), intent(inout) :: Mx(:,:)
@@ -490,7 +498,7 @@ contains
  !   "mdr": fxc = chi0^-1 - p0^-1 + p0^-1 dP1 p0^-1
  !   "nq" : fxc = chi0^-1 T2 chi0^-1, chi0 in both slots of TDDFT_Chi_kernel_mdr (dP1 = T2)
  !
- recursive subroutine TDDFT_Chi_first_order_kernel(mode,z,Ed,Koff,v,s,c,idx,chi0,d,fxc,P,rcond,ierr)
+ recursive subroutine TDDFT_Chi_first_order_kernel(mode,z,Ed,Koff,v,s,c,idx,chi0,d,fxc,P,rcond,ierr,rcond_P)
    character(*), intent(in)  :: mode
    complex(DP),  intent(in)  :: z,Ed(:),Koff(:,:),v(:,:),s(:),chi0(:,:),d(:)
    integer,      intent(in)  :: idx(:)
@@ -498,10 +506,13 @@ contains
    complex(DP),  intent(out) :: fxc(:,:),P(:,:)
    real(DP),     intent(out) :: rcond(2)
    integer,      intent(out) :: ierr
+   real(DP),     intent(out), optional :: rcond_P
    complex(DP), allocatable :: p0(:,:),dP1(:,:)
+   real(DP) :: rcP
    integer :: ng
    ! ierr: 1 unknown mode, 20 sizes, else those of TDDFT_Chi_kernel_mdr
-   fxc=zero; P=zero; rcond=0._DP
+   fxc=zero; P=zero; rcond=0._DP; rcP=0._DP
+   if (present(rcond_P)) rcond_P=0._DP
    ierr=1
    if (trim(mode)/='mdr'.and.trim(mode)/='nq') return
    ng=size(v,1)
@@ -510,14 +521,15 @@ contains
    allocate(p0(ng,ng),dP1(ng,ng))
    call TDDFT_Chi_mdr_response(z,Ed,Koff,v,s,c,p0,dP1)
    if (trim(mode)=='nq') then
-     call TDDFT_Chi_kernel_mdr(chi0,chi0,dP1(idx,idx),d,fxc,P,rcond,ierr)
+     call TDDFT_Chi_kernel_mdr(chi0,chi0,dP1(idx,idx),d,fxc,P,rcond,ierr,rcP)
    else
-     call TDDFT_Chi_kernel_mdr(chi0,p0(idx,idx),dP1(idx,idx),d,fxc,P,rcond,ierr)
+     call TDDFT_Chi_kernel_mdr(chi0,p0(idx,idx),dP1(idx,idx),d,fxc,P,rcond,ierr,rcP)
    endif
+   if (present(rcond_P)) rcond_P=rcP
    deallocate(p0,dP1)
  end subroutine TDDFT_Chi_first_order_kernel
  !
- recursive subroutine TDDFT_Chi_kernel_from_response(chi0,chib,d,exch,fxc,P,rcond,ierr,exch_head)
+ recursive subroutine TDDFT_Chi_kernel_from_response(chi0,chib,d,exch,fxc,P,rcond,ierr,exch_head,rcond_P)
    ! fxc = chi0^-1 - P^-1 with P^-1 = chib^-1 + vbar, vbar = diag(0, d_G^2) when the
    ! response chib contains the exchange (Lbar) of the BSE. Inversions are done on the
    ! Coulomb-symmetrized matrices x~ = D x D, D = diag(d), as in Chi_fxc:
@@ -526,7 +538,7 @@ contains
    ! "default" with a Coulomb cutoff at q>1), so vbar = v and J = 1.
    ! d = sqrt(4 pi)/bare_qpg is complex with a cut Coulomb (v_cut < 0 gives an imaginary
    ! d), exactly as the BSE exchange divides by bare_qpg**2.
-   ! rcond = reciprocal condition numbers of chi0~ and chib~.
+   ! rcond = reciprocal condition numbers of chi0~ and chib~; rcond_P (optional) that of P~^-1.
    complex(DP), intent(in)  :: chi0(:,:),chib(:,:)
    complex(DP), intent(in)  :: d(:)
    logical,     intent(in)  :: exch
@@ -534,12 +546,14 @@ contains
    complex(DP), intent(out) :: fxc(:,:),P(:,:)
    real(DP),    intent(out) :: rcond(2)
    integer,     intent(out) :: ierr
+   real(DP),    intent(out), optional :: rcond_P
    complex(DP), allocatable :: A(:,:),B(:,:)
    real(DP) :: rcP
    integer :: ng,i,j
    ! ierr: 20 sizes, 31/32 singular chi0/chib, 33 singular P^-1
    ng=size(d)
    fxc=zero; P=zero; rcond=0._DP
+   if (present(rcond_P)) rcond_P=0._DP
    ierr=20
    if (any(shape(chi0)/=(/ng,ng/)).or.any(shape(chib)/=(/ng,ng/)).or.&
 &      any(shape(fxc)/=(/ng,ng/)).or.any(shape(P)/=(/ng,ng/))) return
@@ -576,7 +590,11 @@ contains
      enddo
    enddo
    ierr=0
-1  deallocate(A,B)
+1  if (present(rcond_P)) then
+     rcond_P=0._DP
+     if (ierr==0) rcond_P=rcP
+   endif
+   deallocate(A,B)
  contains
    recursive subroutine invert(Mx,rc,err)
      complex(DP), intent(inout) :: Mx(:,:)

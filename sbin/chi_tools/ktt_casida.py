@@ -34,6 +34,9 @@ Notes
    to one band pair (BSEChiKoutB) is a sub-matrix: the binding it gives is not the BSE one.
  * A fixed-z eigenvalue equals the exciton only at z = E_exciton with zero damping. The
    ndb.Chi grid has damping eta and a finite step, so expect deviations of order eta.
+ * Only bright eigenvalues are excitons. With a frequency-dependent kernel, M(w) also has
+   eigenvalues that are dark in G space and are not BSE eigenvalues (doc/greens_function_fxc.md,
+   BSEChiKoutW): do not take dark states off these eigenvectors without checking them.
  * --tda keeps the rr block only; --no-fxc drops F (exchange only, the RPA+LF matrix).
  * Memory: the files are read in chunks; the peak is the dense eigenproblem, about
    0.4 GB for 1024 transitions (coupled 2048) and ~2 GB for 2025 (4050). Run it on a

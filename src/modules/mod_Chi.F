@@ -105,6 +105,9 @@ module Chi_m
  real(SP)                 :: Chi_occ_Tel=0._SP
  ! Resonant transitions of the exporting BSE at this q (window, bands, k): -1 if not stored
  integer                  :: Chi_n_trans=-1
+ ! Serial of a BSEChiOut export, in the header and in each q fragment: a fragment from another
+ ! export (a manual copy into a used directory) has another one. 0 if not stored
+ integer                  :: Chi_serial=0,Chi_serial_frag=0
  !
  contains
    !

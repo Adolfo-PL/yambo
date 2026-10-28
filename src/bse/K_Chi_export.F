@@ -25,7 +25,8 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  !   "nq"  : as "exc", fxc = Pqp^-1 T2 Pqp^-1 with the whole W part of the exchange-free
  !           matrix, diagonal included, to first order: the "mdr" route with Ed = E, whose
  !           shifted bubble is then Pqp itself. Sottile-Olevano-Reining, PRL 91, 056402,
- !           Eq. 3 (resonant part there; doc/greens_function_fxc.md, Literature checks)
+ !           Eq. 3 (resonant part), and Adragna-Del Sole-Marini, PRB 68, 165108, Eqs. 9 and 11
+ !           (with the anti-resonant and coupling terms); doc/greens_function_fxc.md
  !
  ! makes the Casida response with the same reference energies and vbar equal to chib,
  ! and so reproduces this BSE, exciton included (tests/chi_dynamic). ndb.Chi stores
@@ -59,7 +60,7 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
 &                         Chi_optical_q0,Chi_optical_q0_known,Chi_G0_error,Chi_rcond_floor,&
 &                         Chi_dyn_V,Chi_dyn_filled,Chi_dyn_c,Chi_dyn_free
  use Chi_m,          ONLY:Chi_occupations,Chi_occ_bands,Chi_occ_nk,Chi_occ_nsp,Chi_occ_nbf,Chi_occ_nbm,&
-&                         Chi_occ_Tel,Chi_occ_alloc,Chi_occ_free,Chi_occ_E,Chi_n_trans
+&                         Chi_occ_Tel,Chi_occ_alloc,Chi_occ_free,Chi_occ_E,Chi_n_trans,Chi_serial
  use IO_int,         ONLY:io_control
  use IO_m,           ONLY:OP_WR_CL,OP_APP_CL,REP
  use TDDFT_Chi_dynamic_m, ONLY:TDDFT_Chi_full_response,TDDFT_Chi_full_bubble,TDDFT_Chi_kernel_from_response,&
@@ -83,7 +84,11 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  integer                  :: n,nh,ng,nw,iw,it,ig,jg,ik,ikv,ierr,n_bad,ID,io_err
  integer,     external    :: io_Chi
  integer,     allocatable :: err_w(:)
- real(DP)                 :: herm,scale_max,rc(2)
+ real(DP)                 :: herm,scale_max,rc(2),rp
+ real(SP),    allocatable :: rcp_w(:)
+ real(SP)                 :: w_pole(6),w_zero(6),a_max,p_max,y0,y1,y2
+ integer                  :: n_pole,n_zero,dt(8)
+ character(schlen)        :: rc_lab
  real(DP),    allocatable :: E_ref(:)
  complex(DP), allocatable :: d(:),H0(:,:),zz(:),chib(:,:),chi0(:,:),f(:,:),Pm(:,:)
  complex(DP), allocatable :: head(:),F0(:,:),chs(:,:),c0s(:,:),fs(:,:),Ps(:,:)
@@ -193,7 +198,7 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  ! Frequencies: z=0 first, then the BSE grid
  !
  nw=W%n_freqs+1
- allocate(zz(nw),err_w(nw))
+ allocate(zz(nw),err_w(nw),rcp_w(nw))
  zz(1)=(0._DP,0._DP)
  zz(2:)=cmplx(W%p(:),kind=DP)
  !
@@ -225,12 +230,17 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  err_w=0
  head=(0._DP,0._DP)
  Chi_rcond=0._SP
+ rcp_w=0._SP
+ ! rcond of the two inverted matrices and of P^-1 (inverted back to P)
+ rc_lab='(reference bubble, BSE response, P^-1)'
+ if (l_mdr) rc_lab='(reference bubble, shifted bubble p0, P^-1)'
+ if (l_nq)  rc_lab='(reference bubble, reference bubble, P^-1)'
  !
  ! z=0 alone first: a failure or an rcond below the floor there skips the frequency loop
  do ipass=1,2
    iw_range=(/1,1/)
    if (ipass==2) iw_range=(/2,nw/)
-   !$omp parallel default(shared) private(iw,chib,chi0,f,Pm,rc,ierr,chs,c0s,fs,Ps)
+   !$omp parallel default(shared) private(iw,chib,chi0,f,Pm,rc,rp,ierr,chs,c0s,fs,Ps)
    allocate(chib(ng,ng),chi0(ng,ng),f(ng,ng),Pm(ng,ng))
    allocate(chs(ns,ns),c0s(ns,ns),fs(ns,ns),Ps(ns,ns))
    !$omp do schedule(dynamic)
@@ -246,9 +256,10 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
          ! NQ: with Ed = E the shifted bubble is chi0 (checked below), dP1 is T2, and chi0 is
          ! passed in both slots of TDDFT_Chi_kernel_mdr: fxc = chi0^-1 T2 chi0^-1
          call TDDFT_Chi_first_order_kernel(trim(BS_K_Chi_out),zz(iw),Ed,Hw,Vf,sf,Chi_dyn_c,S(:ns),c0s,&
-&                                          d(S(:ns)),fs,Ps,rc,ierr)
+&                                          d(S(:ns)),fs,Ps,rc,ierr,rcond_P=rp)
        else
-         call TDDFT_Chi_kernel_from_response(c0s,chs,d(S(:ns)),.TRUE.,fs,Ps,rc,ierr,exch_head=l_full_L)
+         call TDDFT_Chi_kernel_from_response(c0s,chs,d(S(:ns)),.TRUE.,fs,Ps,rc,ierr,exch_head=l_full_L,&
+&                                            rcond_P=rp)
        endif
        f=(0._DP,0._DP)
        Pm=(0._DP,0._DP)
@@ -261,6 +272,7 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
        Chi_P(:,:,iw)=cmplx(Pm,kind=SP)
        Chi_fxc(:,:,iw)=cmplx(f,kind=SP)
        Chi_rcond(:,iw)=real(rc,SP)
+       rcp_w(iw)=real(rp,SP)
      endif
    enddo
    !$omp end do
@@ -268,7 +280,7 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
    !$omp end parallel
    if (ipass==1) then
      if (err_w(1)/=0) exit
-     if (minval(Chi_rcond(:,1))<Chi_rcond_floor) exit
+     if (min(minval(Chi_rcond(:,1)),rcp_w(1))<Chi_rcond_floor) exit
    endif
  enddo
  !
@@ -282,14 +294,14 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
    call warning('[Chi/BSK] BSEChiOut failed at '//trim(intc(n_bad))//' frequencies; first at '//&
 &    trim(real2ch(real(real(zz(iw))*HA2EV,SP)))//' eV with code '//trim(intc(err_w(iw)))//&
 &    ' (31/32: reduce BSENGfxc). No ndb.Chi is written; the BSE solver continues')
- else if (minval(Chi_rcond(:,1))<Chi_rcond_floor) then
+ else if (min(minval(Chi_rcond(:,1)),rcp_w(1))<Chi_rcond_floor) then
    l_chi_ok=.FALSE.
-   call msg('r','[Chi/BSK] rcond at z=0 (reference bubble, BSE response)',Chi_rcond(:,1))
+   call msg('r','[Chi/BSK] rcond at z=0 '//trim(rc_lab),(/Chi_rcond(:,1),rcp_w(1)/))
    call warning('[Chi/BSK] BSEChiOut: ill-conditioned response at z=0 (rcond below ChiRcondMin), frequency loop '//&
 &    'skipped; reduce BSENGexx/BSENGfxc for this band window. No ndb.Chi is written; the BSE solver continues')
  else
-   call msg('r','[Chi/BSK] minimum rcond (reference bubble, BSE response)',(/minval(Chi_rcond(1,:)),minval(Chi_rcond(2,:))/))
-   if (minval(Chi_rcond)<Chi_rcond_floor) then
+   call msg('r','[Chi/BSK] minimum rcond '//trim(rc_lab),(/minval(Chi_rcond(1,:)),minval(Chi_rcond(2,:)),minval(rcp_w)/))
+   if (min(minval(Chi_rcond),minval(rcp_w))<Chi_rcond_floor) then
      l_chi_ok=.FALSE.
      call warning('[Chi/BSK] BSEChiOut: ill-conditioned response (rcond below ChiRcondMin); reduce BSENGexx/BSENGfxc '//&
 &      'for this band window. No ndb.Chi is written; the BSE solver continues')
@@ -299,7 +311,7 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
    if (l_mdr.or.l_nq) deallocate(Hw,Ed,Wd,Kd)
    call Chi_free()
    call Chi_dyn_free()
-   deallocate(E_ref,d,Vf,sf,df,zz,err_w,H0,head,S)
+   deallocate(E_ref,d,Vf,sf,df,zz,err_w,rcp_w,H0,head,S)
    call timing('ChiExport',OPR='stop')
    return
  endif
@@ -386,6 +398,36 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  call msg('r','[Chi/BSK] static fxc head [Ha] and relative anti-Hermitian part',&
 &         (/real(Chi_fxc(1,1,1)),real(herm/max(scale_max,tiny(1._DP)),SP)/))
  !
+ ! Heads on the BSE grid: local minima of |P_00| are zeros of the response, and between
+ ! excitons they give poles of the exact kernel, local maxima of -Im q^2 fxc_00 (Gulevich et
+ ! al., PRB 107, 165118 (2023)): physical structure, not a numerical artefact
+ a_max=0._SP
+ p_max=0._SP
+ do iw=2,nw
+   a_max=max(a_max,-aimag(Chi_fxc(1,1,iw))*abs(bare_qpg(iq,1))**2)
+   p_max=max(p_max,abs(Chi_P(1,1,iw)))
+ enddo
+ n_pole=0
+ n_zero=0
+ do iw=3,nw-1
+   y0=-aimag(Chi_fxc(1,1,iw-1))*abs(bare_qpg(iq,1))**2
+   y1=-aimag(Chi_fxc(1,1,iw  ))*abs(bare_qpg(iq,1))**2
+   y2=-aimag(Chi_fxc(1,1,iw+1))*abs(bare_qpg(iq,1))**2
+   if (y1>y0.and.y1>=y2.and.y1>0.2_SP*a_max.and.n_pole<6) then
+     n_pole=n_pole+1
+     w_pole(n_pole)=real(zz(iw))*HA2EV
+   endif
+   y0=abs(Chi_P(1,1,iw-1))
+   y1=abs(Chi_P(1,1,iw  ))
+   y2=abs(Chi_P(1,1,iw+1))
+   if (y1<y0.and.y1<=y2.and.y1<0.5_SP*p_max.and.n_zero<6) then
+     n_zero=n_zero+1
+     w_zero(n_zero)=real(zz(iw))*HA2EV
+   endif
+ enddo
+ if (n_zero>0) call msg('r','[Chi/BSK] head of P: local minima of |P_00| (response zeros) [eV]',w_zero(:n_zero))
+ if (n_pole>0) call msg('r','[Chi/BSK] head of fxc: local maxima of -Im q^2 fxc_00 (kernel poles) [eV]',w_pole(:n_pole))
+ !
  ! ndb.Chi in this job's directory
  !
  Chi_ng=ng
@@ -421,6 +463,10 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  ! One header per run (it holds |q+G| of every q); each q appends its fragment. Run q=1
  ! first in a multi-q job (BSEQptR 1 | n) to keep the optical q0 of the header.
  if (.not.header_done) then
+   ! A serial for this export (tenths of a second in the month, below 2^24 to be exact in the
+   ! single-precision record), written in the header and in every q fragment of this run
+   call date_and_time(values=dt)
+   Chi_serial=1+mod(((dt(3)*24+dt(5))*60+dt(6))*600+dt(7)*10+dt(8)/100,16777215)
    ! Occupations of these BSE levels, checked by the Casida run (BSKmod="CHI")
    Chi_occ_bands=BS_bands
    Chi_occ_nk=Ken%nk
@@ -450,7 +496,7 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  call W_reset(W_io)
  call Chi_free()
  call Chi_dyn_free()
- deallocate(E_ref,d,Vf,sf,df,zz,err_w,H0,head,S)
+ deallocate(E_ref,d,Vf,sf,df,zz,err_w,rcp_w,H0,head,S)
  !
  call timing('ChiExport',OPR='stop')
  !

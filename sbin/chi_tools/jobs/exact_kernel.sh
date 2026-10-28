@@ -602,7 +602,7 @@ for g in gl:
     for f in glob.glob(f'{p}/r-{j}_*'):
         for l in open(f, errors='ignore'):
             if 'in-plane G of the basis' in l: d['ns'], d['ng'] = map(int, l.split()[-2:])
-            if 'minimum rcond' in l: d['rc'] = float(l.split()[-1])
+            if 'minimum rcond' in l: d['rc'] = min(float(x) for x in l.split(':')[-1].split())
             if 'lowest bright excitation (strength' in l: d['ea'] = float(l.split()[-1])
             if 'lowest transition energy of the window' in l: d['gap'] = float(l.split()[-1])
     try:
