@@ -103,6 +103,8 @@ FORKCHECK=${FORKCHECK:-1}
 YFLAGS=${YFLAGS-auto}
 RUNNER=${RUNNER:-""}
 CHECK=${CHECK:-1}
+TEL=${TEL:-0.025852}                 # eV, electronic temperature of every run (300 K); the 5.2.3 p2y stores
+                                     # ~1 meV in the SAVE, which would set the occupations of a doped system
 GWDIR=${GWDIR:-}                     # coarse SAVE folder for the GW (default: the GW runs here)
 QPINTERP=${QPINTERP:-ubi}            # interpolation of the QP corrections from GWDIR: ubi (smooth) or uki (nearest k)
 
@@ -292,6 +294,7 @@ el_el_corr
 dyson
 rim_cut
 em1d
+ElecTemp= $TEL eV
 X_Threads= $OMP_NUM_THREADS
 DIP_Threads= $OMP_NUM_THREADS
 SE_Threads= $OMP_NUM_THREADS
@@ -325,6 +328,7 @@ w_in () {
   cat > $1 <<EOF
 em1s
 rim_cut
+ElecTemp= $TEL eV
 X_Threads= $OMP_NUM_THREADS
 DIP_Threads= $OMP_NUM_THREADS
 $par
@@ -367,6 +371,7 @@ optics
 bse
 bss
 rim_cut
+ElecTemp= $TEL eV
 $lines
 BSSmod= "d"
 K_Threads= $([ $kind = ref ] && echo $OMP_NUM_THREADS || echo $NT1)
