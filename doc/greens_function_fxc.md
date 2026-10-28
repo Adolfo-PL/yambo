@@ -455,8 +455,10 @@ Maximum relative difference of eps, Casida with fxc(w) against the BSE:
 At q2 the rows include 10 transitions inside bands 27/28 (k-q -> k, f = 0.05-0.15) and their
 anti-resonant partners with f < 0.
 
-Temperature. `p2y` gives Yambo 300 K whenever the DFT run used smearing
-(`interfaces/p2y/mod_p2y.F:298`); `ElecTemp` overrides it. The identity needs the same
+Temperature. The p2y of this source (5.3) gives Yambo 300 K whenever the DFT run used smearing
+(`interfaces/p2y/mod_p2y.F:288,298`); `ElecTemp` overrides it. The cluster's p2y 5.2.3 did not:
+its SAVE of a 61-k SOC nscf reports 0.95 meV (about 11 K), so check `Electronic Temperature` in
+`r_setup` and set `ElecTemp` explicitly. The identity needs the same
 occupations in the exporting BSE and in the Casida run (last row of the table). A job that
 reads another job's databases takes the temperature stored in them (`src/io/io_header.F`), and
 the Fermi-level search may then add a 0.1 K step (`OCCUPATIONS_Fermi.F`), so two jobs of a

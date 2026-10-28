@@ -25,7 +25,7 @@
 #   cd tmp/ws2.save && DEST=~/wse2ws2/WS2/prod/k24 sbatch ~/yambo-cpu/sbin/chi_tools/jobs/p2y.sh
 #
 # p2y is serial and its time grows with the wavefunction data (k-points x bands x plane waves x spinor
-# components): a SOC nscf with many bands can take hours. For a BSE SAVE, keep nbnd to what the BSE
+# components); with the settings below it takes minutes. For a BSE SAVE, keep nbnd to what the BSE
 # needs (screening bands + a margin, e.g. ~250 with SOC). Progress: tail p2y.log in the .save folder.
 #
 # p2y comes from the cluster's Yambo 5.2.3 module (the 5.3 build has no p2y); Yambo 5.3 reads its
@@ -42,7 +42,11 @@ module load yambo/yambo-5.2.3-openmpi-4.1.5-gcc-12.2.0
 echo "p2y: $(which p2y)"
 echo "QE data: $(du -sh . | cut -f1), $(ls wfc* 2>/dev/null | wc -l) wavefunction files"
 rm -rf SAVE
-p2y > p2y.log 2>&1 || { tail -20 p2y.log; exit 1; }
+# -nompi and no HDF5 file locking: without them p2y (an OpenMPI build started without srun) sat
+# 12 h with an empty log; with them a 61-k, 880-band SOC nscf converted in about one minute.
+# stdbuf keeps p2y.log current while it runs.
+export HDF5_USE_FILE_LOCKING=FALSE
+stdbuf -oL p2y -nompi > p2y.log 2>&1 || { tail -20 p2y.log; exit 1; }
 [ -f SAVE/ns.db1 ] || { echo "!!! p2y wrote no SAVE/ns.db1"; tail -20 p2y.log; exit 1; }
 
 mkdir -p "$DEST" && mv SAVE "$DEST"/ || exit 1
