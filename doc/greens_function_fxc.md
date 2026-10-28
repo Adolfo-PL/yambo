@@ -1173,6 +1173,31 @@ Read from the PDFs of the papers (equation numbers are the papers').
   level"; the ground state is not doped. Bearing on the trion interface (reasoning, to confirm
   with the advisor): F moves the electron between momenta around a fixed hole, so it needs the
   kernel at finite momentum transfer, which the finite-q export provides.
+- **Doping: Liang, Yang, arXiv:1408.5815 (PRL 114, 063001 (2015)).** At 3.4e13 cm^-2 only the
+  head of the static eps^-1 changes (other elements < 0.01); with a 2D cutoff the undoped head
+  goes to 1 as q -> 0, the doped one "immediately drops to 0 ... due to metallic screening",
+  rises and rejoins the undoped curve at q = 2k_F, k_F = sqrt(2 pi n); 120x120x1 k grid. Check
+  here: the doped 6x6 test (0.02 e/cell, about 2.3e13 cm^-2, no cutoff) has the same head as the
+  undoped one to 0.006 at every q, because 2k_F (about 0.24 1/A) is below the smallest finite q
+  (about 0.33 1/A): the grid does not resolve the carrier screening.
+- **Doping: Sesti et al., arXiv:2508.06930.** Yambo W-av extended to metals and doped 2D
+  semiconductors: the q = 0 cell rebuilt by extrapolation from the neighbouring q, with
+  separate static (Thomas-Fermi) and dynamic (sqrt(q) plasmon) forms, no Drude parameter, no
+  dense grid; G0W0 only. The code is in the public Yambo repository (newer than this fork).
+- **Doping: Champagne et al., arXiv:2303.12122 (Nano Lett. 23, 4274 (2023)).** BSE with an
+  effective dynamical screening eps~^-1(q, E_b) = eps^-1_int(q, 0) + Omega^2/(w~ (w~ + E_b))
+  (Eqs. 8-9), self-consistent in E_b, built from the intrinsic static, doped static and doped
+  eps^-1 at one more frequency (Eqs. 5-7). "A static calculation clearly overestimates the
+  screening for free carriers"; carrier screening also changes off-diagonal elements.
+- **Trions: Druppel et al., Nat. Commun. 8, 2117 (2017).** Three-particle GW-BSE with QP energies,
+  screened W for direct and bare V for exchange terms (27x27 grid); doping "not explicitly
+  taken into account", for very low doping. A- in MoS2 vacuum: 43 meV.
+- **Trions: Efimkin, MacDonald, arXiv:1609.06329 (PRB 95, 035417 (2017)).** "A three-particle
+  description is valid only at low-doping eps_F << eps_T"; at eps_F ~ eps_T the trion peak is the
+  attractive exciton-polaron. Static 2D RPA screening and gap renormalization in their model.
+  Bearing on the trion interface (reasoning): the advisor's equation (one extra electron, an
+  exciton of fixed momentum) is the low-density limit, where the undoped ab initio W (and bare
+  V for exchange) are the consistent ingredients for F and w.
 - **Shi, Turkowski, Rahman, PRB 107, 155431 (2023)** (1L WSe2, dark excitons; Turkowski and
   Rahman at UCF). The "nanoquanta kernel" is their Eq. 21, citing Reining et al. PRL 88:
   fxc_GG'(q) = sum 1/(f_v1k1 - f_c2k2) Phi^-1(v1k1,c2k2;G) F(v1c2;v3c4) Phi*^-1(v3k3,c4k4;G'),
