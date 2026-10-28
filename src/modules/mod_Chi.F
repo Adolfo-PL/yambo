@@ -1,9 +1,9 @@
 !
 ! License-Identifier: GPL
 !
-! Copyright (C) 2026 The Yambo Team
+! Copyright (C) 2026 Adolfo Partida
 !
-! Authors (see AUTHORS file for details):
+! Authors: Adolfo Partida, with AI assistance (Claude Code)
 !
 module Chi_m
  !

@@ -1,6 +1,10 @@
 !
 ! License-Identifier: GPL
 !
+! Copyright (C) 2026 Adolfo Partida
+!
+! Authors: Adolfo Partida, with AI assistance (Claude Code)
+!
 subroutine Chi_G_bubble(iq,X,Xk,Xw,Dip,is_G0,response)
  ! Full band-pair density bubble. qindx_X maps k to k-q. scatter_Bamp
  ! supplies the same rho*(G) rho(G') convention as X_irredux_residuals.

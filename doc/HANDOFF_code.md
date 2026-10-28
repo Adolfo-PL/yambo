@@ -25,6 +25,7 @@ Read this file first, then `doc/greens_function_fxc.md`, which is the full refer
   ```
 - Before ending a turn, run `rm -rf sbin/chi_tools/__pycache__`. Never commit it.
 - Match the surrounding Fortran style: the `!` spacer lines, the `ONLY:` lists, and short comments only where needed.
+- Source files created in this fork carry the header `Copyright (C) 2026 Adolfo Partida` and `Authors: Adolfo Partida, with AI assistance (Claude Code)` (user's choice); give new files the same header. Upstream files keep their own authors.
 
 **About the user.**
 - PhD student who is new to this formalism.

@@ -1,6 +1,10 @@
 !
 ! License-Identifier: GPL
 !
+! Copyright (C) 2026 Adolfo Partida
+!
+! Authors: Adolfo Partida, with AI assistance (Claude Code)
+!
 module Chi_Green_m
  ! Independent numerical kernels for a diagonal, bare-vertex dressed bubble.
  ! Energies and frequencies are in Hartree. Spectral weights include dE.

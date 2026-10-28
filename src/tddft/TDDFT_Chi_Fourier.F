@@ -1,6 +1,10 @@
 !
 ! License-Identifier: GPL
 !
+! Copyright (C) 2026 Adolfo Partida
+!
+! Authors: Adolfo Partida, with AI assistance (Claude Code)
+!
 ! Project an unsymmetrized finite-q density kernel onto transition densities.
 ! The stored ndb.Chi matrix has units of energy times cell volume. Vectors
 ! passed from the BSE kernel are the raw Fourier overlap coefficients in
