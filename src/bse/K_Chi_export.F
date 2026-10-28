@@ -190,6 +190,10 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  if (l_full_L)      call msg('r','[Chi/BSK] exchange with G=0 (Lkind full): P^-1 = chib^-1 + v')
  if (.not.l_full_L) call msg('r','[Chi/BSK] exchange without G=0 (Lkind bar): P^-1 = chib^-1 + vbar')
  call msg('r','[Chi/BSK] QP-corrected BSE transitions',l_qp)
+ ! Partly filled bands at q=0: the intraband (zero-energy) transitions are not in this BSE,
+ ! nor in the reference bubble, so the kernel lacks the free-carrier part at this q only
+ if (iq==1.and.any(Ken%nbf(:n_sp_pol)/=Ken%nbm(:n_sp_pol))) call warning('[Chi/BSK] partly filled bands at q=0: '//&
+&  'no intraband transitions in this BSE or kernel (present at finite q), and none in W without a Drude term')
  call msg('r','[Chi/BSK] spinor states (two components, spin_occ = 1)',n_spinor==2)
  call msg('r','[Chi/BSK] lowest BSE transition energy (gap of the window) [eV]',real(minval(BSS_eh_E(1:n))*HA2EV,SP))
  if (l_exc.and..not.l_qp) call warning('[Chi/BSK] BSEChiOut= "'//trim(BS_K_Chi_out)//&

@@ -457,6 +457,14 @@ Maximum relative difference of eps, Casida with fxc(w) against the BSE:
 At q2 the rows include 10 transitions inside bands 27/28 (k-q -> k, f = 0.05-0.15) and their
 anti-resonant partners with f < 0.
 
+At q1 the corresponding intraband transitions (same band, same k, zero energy) are dropped
+(`K_Transition_check.F:47`), so the kernel of a doped system lacks the free-carrier part
+only at q1, and f_xc(q) jumps between q1 and q2. Do not interpolate f_xc(q) towards q -> 0
+in doped runs. The static screening W of these BSEs also lacks the free carriers at q -> 0:
+Yambo includes them there only through a Drude term with a plasma frequency set by hand
+(`X_drude.F`), and the doped test runs report "The system is a metal but Drude term not
+included". The export warns in both cases at q1.
+
 Temperature. The p2y of this source (5.3) gives Yambo 300 K whenever the DFT run used smearing
 (`interfaces/p2y/mod_p2y.F:288,298`); `ElecTemp` overrides it. The cluster's p2y 5.2.3 did not:
 its SAVE of a 61-k SOC nscf reports 0.95 meV (about 11 K), so check `Electronic Temperature` in
