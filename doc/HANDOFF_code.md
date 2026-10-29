@@ -4,6 +4,7 @@ This file passes the technical work on this Yambo fork to a new Claude Code sess
 The other session keeps the cluster runs, convergence, results and explanations.
 This session works on the theory, the Fortran, the tests and new features.
 Read this file first, then `doc/greens_function_fxc.md`, which is the full reference at 1491 lines.
+`doc/casida_solvers.md` maps the equations of the static and dynamic Casida solvers to code lines (for checking against the literature).
 
 ## 1. Goal and working rules
 
