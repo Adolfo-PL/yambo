@@ -559,8 +559,9 @@ PY
   EL=$EA
 fi
 
-# frequency grid of the kernel (fixed once the export has run: read back from its input)
-if [ -s $P/kx_bse.in ] && [ -s $P/kx/ndb.Chi ]; then
+# frequency grid of the kernel (fixed once the export has run and passed its checks: read back from
+# its input; an export that failed its checks, e.g. on a grid from before the doped mode, is redone)
+if [ -s $P/kx_bse.in ] && [ -s $P/kx/ndb.Chi ] && [ -f $P/kx/ok ]; then
   read WLO WHI <<< $(awk '/BEnRange/{getline; print $1, $3}' $P/kx_bse.in); NW=$(awk -F= '/BEnSteps/{print $2+0}' $P/kx_bse.in)
 else
   case $STAGE in export|scan|summary|all|basis|wscan|static0)
