@@ -38,7 +38,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sc_scan import crossings   # noqa: E402
 
 
-def read_bse(paths):
+def read_bse(paths, interband=False):
     """Per momentum index: gap, lowest energies, their strengths, lowest bright."""
     out, iq = {}, None
     for p in paths:
@@ -56,6 +56,14 @@ def read_bse(paths):
                 out[iq]['bright'] = float(line.split()[-1])
             elif 'lowest transition energy of the window' in line:
                 out[iq]['gap'] = float(line.split()[-1])
+            elif interband and 'lowest bright interband excitation' in line:
+                out[iq]['bright_i'] = float(line.split()[-1])
+            elif interband and 'interband gap, lowest transition from a full band' in line:
+                out[iq]['gap_i'] = float(line.split()[-1])
+    if interband:      # partly filled bands: A and the gap are the interband ones
+        for v in out.values():
+            v['bright'] = v.get('bright_i', np.nan)
+            v['gap'] = v.get('gap_i', v.get('gap'))
     return {k: v for k, v in out.items() if 'gap' in v and 'E' in v}
 
 
@@ -67,7 +75,10 @@ def read_static(path):
         if 'lowest Re E' in line and i + 1 < len(lines):
             low = float(lines[i + 1].split()[0])
         m = re.search(r'lowest bright:\s+([-\d.]+)', line)
-        if m:
+        if m and bright is None:
+            bright = float(m.group(1))
+        m = re.search(r'lowest bright interband:\s+([-\d.]+)', line)
+        if m:          # partly filled bands: the interband A
             bright = float(m.group(1))
     return low, bright
 
@@ -82,11 +93,13 @@ def main():
     ap.add_argument('--npz', help='fxc_export.py npz of the same ndb.Chi (for |q|)')
     ap.add_argument('--dir', default='.', help='where sc_q<iq>.dat and static_q<iq>.log are')
     ap.add_argument('--out', default='xq_dispersion')
+    ap.add_argument('--interband', action='store_true', help='partly filled bands: use the report\'s interband gap '
+                    'and lowest bright interband excitation')
     ap.add_argument('--gap', type=float, help='gap of every q (eV) instead of the report\'s lowest transition '
                     '(a doped SAVE, whose lowest transitions are out of the partly filled band)')
     a = ap.parse_args()
 
-    bse = read_bse(sorted(set(sum([glob.glob(p) for p in a.bse], []))))
+    bse = read_bse(sorted(set(sum([glob.glob(p) for p in a.bse], []))), a.interband)
     if not bse:
         sys.exit('no "[BSE]" exciton lines in ' + ' '.join(a.bse))
     qabs = {}

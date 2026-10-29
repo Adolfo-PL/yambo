@@ -515,26 +515,39 @@ case $STAGE in ref|export|all)
   KQP=$(awk -F: '/\[K\+QP\] Indirect Gap  /{print $2+0; exit}' $P/r-bse_ref_* 2>/dev/null)
   [ -n "$KQP" ] && GIND=$KQP && echo "  QP indirect gap of this grid: $GIND eV" ;; esac
 
-# ---------- doped SAVE (see the header): q1 only, grid anchored on A, Eb against the QP direct gap ----------
-# A state more than EBMAX below the QP direct gap is not an exciton of these monolayers (Eb <= ~0.7 eV)
+# ---------- doped SAVE (see the header): q1 only, grid anchored on A, Eb against the interband gap ----------
+# With partly filled bands the fork's BSE report adds the interband gap (lowest transition out of a
+# full band that is in the BSE, i.e. not Pauli-blocked) and the lowest bright interband excitation
+# (> 50% weight on full-band transitions): A and its gap. Without those lines (older yambo): the QP
+# direct gap of the GW and the lowest bright state, which must then lie within EBMAX of the gap.
 EA=$(rep bse_ref 1 'lowest bright excitation (strength'); EL=$(rep_low bse_ref 1)
+PFB=$(grep -hs "partly filled bands, first and last" $P/r-bse_ref_* | tail -1)
+GI=$(rep bse_ref 1 'interband gap, lowest transition from a full band')
+EAI=$(rep bse_ref 1 'lowest bright interband excitation')
 if [ "$DOPED" = auto ]; then
-  DOPED=0; [ -n "$EL" ] && [ -n "$EA" ] &&
-    awk -v l=$EL -v a=$EA -v g=$GDIR -v m=$EBMAX 'BEGIN{exit !(a - l > 0.3 || g - l > m)}' && DOPED=1
+  DOPED=0
+  if [ -n "$PFB" ]; then DOPED=1
+  elif [ -n "$EL" ] && [ -n "$EA" ] &&
+    awk -v l=$EL -v a=$EA -v g=$GDIR -v m=$EBMAX 'BEGIN{exit !(a - l > 0.3 || g - l > m)}'; then DOPED=1; fi
 fi
-NQX=$NQ; GAPX=""; ABAD=""
+NQX=$NQ; GAPX=""; ABAD=""; INTER=""
 if [ "$DOPED" = 1 ]; then
-  GAPX=${WTOP:-$GDIR}; GIND=$GAPX; NQX=1
+  NQX=1
   [ "$QS" = 1 ] || echo "  doped: the kernel is exported at q1 only, scan QS=1 (not \"$QS\")"; QS=1
-  [ -n "$XA" ] && EA=$XA
-  echo "=== doped: lowest BSE state ${EL:-?} eV, A ${EA:-?} eV${XA:+ (XA)}: kernel at q1 only, grid from A down, below the gap $GAPX eV$([ -z "$WTOP" ] && echo " (QP direct gap VB $VB -> CB $CB, GW grid)")"
-  if [ -n "$EA" ] && awk -v a=$EA -v g=$GAPX -v m=$EBMAX 'BEGIN{exit !(a <= 0 || g - a > m)}'; then
-    # the lowest bright state is itself a transition out of the partly filled band (heavy doping):
-    # the A exciton is higher, among the peaks of the reference spectrum just below the gap
+  if [ -n "$GI" ]; then INTER=1; GSRC="interband gap of the reference BSE, lowest unblocked transition VB -> CB"
+  else GSRC="QP direct gap VB $VB -> CB $CB, GW grid (no interband lines in the report: rebuild yambo)"; fi
+  GAPX=${WTOP:-${GI:-$GDIR}}; [ -n "$WTOP" ] && GSRC="WTOP"; GIND=$GAPX
+  ASRC="lowest bright state"; [ -n "$INTER" ] && { EA=$EAI; ASRC="lowest bright interband excitation"; }
+  [ -n "$XA" ] && { EA=$XA; ASRC="XA"; }
+  echo "=== doped (${PFB:+partly filled bands $(echo $PFB | awk '{print $(NF-1)"-"$NF}'); }lowest BSE state ${EL:-?} eV): kernel at q1 only"
+  echo "    gap $GAPX eV ($GSRC); A ${EA:-none} eV ($ASRC)"
+  [ -n "$INTER" ] && grep -hs "lowest interband excitations\|interband excitations, relative" $P/r-bse_ref_* | sed 's/^ *\[BSE\] /    reference BSE, /'
+  if [ -z "$EA" ] || awk -v a=$EA -v g=$GAPX -v m=$EBMAX 'BEGIN{exit !(a <= 0 || g - a > m)}'; then
     ABAD=1
-    echo "!!! the lowest bright BSE state ($EA eV) is more than $EBMAX eV below the gap $GAPX eV: it is a transition out of"
-    echo "    the partly filled band, not the A exciton. Peaks of the reference BSE spectrum (Im eps, broadening $ETA eV) near the gap:"
-    python3 - $GAPX $EBMAX $P/o-bse_ref.*eps* <<'PY'
+    if [ -z "$EA" ]; then echo "!!! no bright interband excitation in the reference BSE: no A exciton to follow (screened out at this doping?)"
+    else echo "!!! A ($EA eV) is more than $EBMAX eV below the gap $GAPX eV: a transition out of the partly filled band, not the A exciton"; fi
+    echo "    Peaks of the reference BSE spectrum (Im, broadening $ETA eV) near the gap:"
+    python3 - $GAPX $EBMAX $(ls $P/o-bse_ref.alpha_q1_* $P/o-bse_ref.eps_q1_* 2>/dev/null | head -1) <<'PY'
 import sys
 import numpy as np
 g, m = float(sys.argv[1]), float(sys.argv[2])
@@ -543,21 +556,24 @@ try:
 except Exception as e:
     sys.exit(f'      (no spectrum: {e})')
 w, s = x[:, 0], x[:, 1]
-i = [j for j in range(1, len(w) - 1) if s[j] >= s[j - 1] and s[j] > s[j + 1] and g - m <= w[j] <= g + 0.1]
+i = [j for j in range(1, len(w) - 1) if s[j] >= s[j - 1] and s[j] > s[j + 1] and g - m <= w[j] <= g + 0.3]
 top = max((s[j] for j in i), default=1.0)
 for j in i:
     print(f'      {w[j]:.4f} eV   height {s[j] / top:.3f}{"   (above the gap)" if w[j] >= g else ""}')
 if not i:
-    print('      none: no bound exciton resolved (screened out at this doping?)')
+    print('      none')
 PY
-    echo "    Set XA=<A exciton energy, eV> to anchor the grid there (check it is an interband peak), or see the summary of"
-    echo "    the reference BSE: at this doping the exciton may be screened out, and the exact kernel at A then has no meaning."
+    echo "    XA=<eV> anchors the grid on a peak below the gap; with none there, the exact kernel at A has nothing to reproduce."
   else
-    [ -n "$EA" ] && echo "    reference BSE: A $EA eV, Eb = $GAPX - $EA = $(python3 -c "print(f'{$GAPX - $EA:.4f}')") eV" &&
-      echo "    (Yambo's \"[K+QP] Indirect Gap\" and the report's gap and Eb count the transitions out of the partly filled band: ignore them)"
+    echo "    reference BSE: Eb = $GAPX - $EA = $(python3 -c "print(f'{$GAPX - $EA:.4f}')") eV"
+    echo "    (Yambo's \"[K+QP] Indirect Gap\" and the report's plain gap and Eb count the transitions out of the partly filled band: ignore them)"
   fi
   EL=$EA
 fi
+
+# the A exciton in the reports: the lowest bright state, or the lowest bright interband one (doped)
+BRK='lowest bright excitation (strength'; [ -n "$INTER" ] && BRK='lowest bright interband excitation'
+FB=""; [ "$DOPED" = 1 ] && FB="--full-bands $VB"    # Casida tools: A among the interband states
 
 # frequency grid of the kernel (fixed once the export has run and passed its checks: read back from
 # its input; an export that failed its checks, e.g. on a grid from before the doped mode, is redone)
@@ -584,10 +600,11 @@ case $STAGE in export|all)
     launch kx_bse "kx_bse,w" kx_done one || exit 1
     mkdir -p $P/kx; cp $P/kx_bse/ndb.Chi* $P/kx/
     # every q: exported response = BSE response, in-plane G reached, excitons inside the grid
-    python3 - $P $NQX $WLO $WHI $DWIN $DOPED <<'PY' || exit 1
+    python3 - $P $NQX $WLO $WHI $DWIN $DOPED "$INTER" <<'PY' || exit 1
 import glob, sys
 p, nq, wlo, whi, dwin = sys.argv[1], int(sys.argv[2]), *map(float, sys.argv[3:6])
 doped = sys.argv[6] == '1'     # the lowest states and the "gap" are transitions out of the partly filled band
+inter = sys.argv[7] == '1'     # the report has the interband gap and A: check against those
 q, d, bad, ns = None, {}, [], 0
 for f in glob.glob(f'{p}/r-kx_bse_*'):
     for l in open(f, errors='ignore'):
@@ -599,6 +616,10 @@ for f in glob.glob(f'{p}/r-kx_bse_*'):
         if 'lowest excitation energies' in l: d[q]['low'] = float(l.split(':')[-1].split()[0])
         if 'lowest bright excitation (strength' in l: d[q]['br'] = float(l.split()[-1])
         if 'lowest transition energy of the window' in l: d[q]['gap'] = float(l.split()[-1])
+        if inter and 'lowest bright interband excitation' in l: d[q]['bi'] = float(l.split()[-1])
+        if inter and 'interband gap, lowest transition from a full band' in l: d[q]['gi'] = float(l.split()[-1])
+if inter:      # the interband A and gap replace the plain ones (missing A: 0, flagged below)
+    for r in d.values(): r['br'], r['gap'] = r.get('bi', 0), r.get('gi', 0)
 print('    q   head residual  |scale/c|   in-plane G   rcond          lowest   bright    gap')
 for iq in range(1, nq + 1):
     r = d.get(iq, {})
@@ -611,8 +632,8 @@ for iq in range(1, nq + 1):
     ex = br if doped else min(lo, br)
     if ex - dwin < wlo: bad.append(f'q{iq}: exciton {ex:.4f} eV below the grid ({wlo} eV): raise WMARGIN')
     if br > whi - 0.002: bad.append(f'q{iq}: bright exciton {br:.4f} eV above the grid (top {whi} eV)')
-    if whi >= gap and not doped: bad.append(f'q{iq}: grid reaches the gap {gap:.4f} eV')
-if doped: print('  (doped: "lowest" and "gap" are transitions out of the partly filled band; the scan lists those in the grid)')
+    if whi >= gap and (inter or not doped): bad.append(f'q{iq}: grid reaches the gap {gap:.4f} eV')
+if doped: print('  (doped: "lowest" is out of the partly filled band;' + (' "bright" and "gap" are the interband ones)' if inter else ' so is "gap"; the scan lists the transitions in the grid)'))
 for b in bad: print('  !!!', b)
 sys.exit(1 if bad else 0)
 PY
@@ -625,7 +646,7 @@ case $STAGE in scan|all)
   [ -f $P/kx/ok ] || { echo "!!! no checked kernel in prod/kx: run STAGE=export"; exit 1; }
   for q in $QS; do
     [ -s $P/sc_q$q.dat ] && [ -s $P/static_q$q.log ] && continue
-    lo=$(rep_low kx_bse $q); br=$(rep kx_bse $q 'lowest bright excitation (strength')
+    lo=$(rep_low kx_bse $q); br=$(rep kx_bse $q "$BRK")
     [ -n "$lo" ] && [ -n "$br" ] || { echo "!!! q$q: no BSE excitons in prod/r-kx_bse_*"; exit 1; }
     [ "$DOPED" = 1 ] && lo=$br       # doped: the lowest states are out of the partly filled band, below the grid
     read W1 W2 <<< $(python3 -c "print(f'{max(min($lo,$br)-$DWIN,$WLO):.4f} {min(max($lo,$br)+$DWIN,$WHI):.4f}')")
@@ -650,12 +671,12 @@ if not w.any():
 if E[full].min() <= hi:
     print(f'    !!! the grid reaches the transitions out of the full bands ({E[full].min():.4f} eV): rerun the export with WTOP below it')
 PY
-    ( cd $P && python3 $T/ktt_casida.py o-xs_q$q.Ktt_q${q}_transitions o-xs_q$q.Ktt_q${q}_w1 > static_q$q.log ) || exit 1
+    ( cd $P && python3 $T/ktt_casida.py o-xs_q$q.Ktt_q${q}_transitions o-xs_q$q.Ktt_q${q}_w1 $FB > static_q$q.log ) || exit 1
     rm -f $P/o-xs_q$q.Ktt_q${q}_w*
     fresh xw_q$q; bse_in $P/xw_q$q.in cas $q $q '% BSEChiKoutW' " $W1 | $W2 | eV" '%'
     launch xw_q$q "xw_q$q,kx,w" "ls o-xw_q$q.Ktt_q${q}_w[0-9]* >/dev/null 2>&1" one || exit 1
     ( cd $P && python3 $T/sc_scan.py o-xw_q$q.Ktt_q${q}_transitions o-xw_q$q.Ktt_q${q}_w* \
-                --out sc_q$q.dat --exciton $br --delete > sc_q$q.log 2>&1 ) || { tail -5 $P/sc_q$q.log; exit 1; }
+                --out sc_q$q.dat --exciton $br --delete $FB > sc_q$q.log 2>&1 ) || { tail -5 $P/sc_q$q.log; exit 1; }
     grep "= w at\|BSE = \|no crossing\|!!!" $P/sc_q$q.log | sed 's/^/    /'
     rm -rf $P/xs_q$q $P/xw_q$q
   done ;; esac
@@ -665,7 +686,7 @@ casida_static () {   # job kerneldir q -> static Casida (matrix at z = 0) -> pro
   local j=$1 kd=$2 q=$3
   fresh $j; bse_in $P/$j.in cas $q $q '% BSEChiKoutW' ' 0.0 | 0.0 | eV' '%'
   launch $j "$j,$kd,w" "ls o-$j.Ktt_q${q}_w1 >/dev/null 2>&1" one || return 1
-  ( cd $P && python3 $T/ktt_casida.py o-$j.Ktt_q${q}_transitions o-$j.Ktt_q${q}_w1 > static_$j.log ) || return 1
+  ( cd $P && python3 $T/ktt_casida.py o-$j.Ktt_q${q}_transitions o-$j.Ktt_q${q}_w1 $FB > static_$j.log ) || return 1
   rm -rf $P/o-$j.Ktt_q${q}_w* $P/$j
 }
 case $STAGE in basis)
@@ -682,9 +703,9 @@ case $STAGE in basis)
       ( NG_X="$g Ry"; casida_static xs$j ${j}k 1 ) || { echo "  $g Ry: static Casida failed, next"; continue; }
     fi
   done
-  python3 - $P "$NG_LIST" "$GAPX" <<'PY' | tee $P/basis_scan.dat
+  python3 - $P "$NG_LIST" "$GAPX" "$BRK" <<'PY' | tee $P/basis_scan.dat
 import glob, sys
-p, gl, gapx = sys.argv[1], sys.argv[2].split(), sys.argv[3]   # gapx: the gap of a doped SAVE
+p, gl, gapx, brk = sys.argv[1], sys.argv[2].split(), sys.argv[3], sys.argv[4]   # gapx: the gap of a doped SAVE
 print('# kernel basis scan, q1: binding of the export BSE and of static Casida with fxc(w = 0)')
 print('#  NG[Ry]  in-plane G  all G   rcond(P)   E_A(BSE)  gap      Eb(BSE)  Eb(static)  ratio')
 for g in gl:
@@ -693,11 +714,11 @@ for g in gl:
         for l in open(f, errors='ignore'):
             if 'in-plane G of the basis' in l: d['ns'], d['ng'] = map(int, l.split()[-2:])
             if 'minimum rcond' in l: d['rc'] = min(float(x) for x in l.split(':')[-1].split())
-            if 'lowest bright excitation (strength' in l: d['ea'] = float(l.split()[-1])
+            if brk in l: d['ea'] = float(l.split()[-1])
             if 'lowest transition energy of the window' in l: d['gap'] = float(l.split()[-1])
     try:
-        st = [l for l in open(f'{p}/static_xs{j}.log') if 'lowest bright:' in l][0]
-        d['es'] = float(st.split('lowest bright:')[1].split()[0])
+        st = [l for l in open(f'{p}/static_xs{j}.log') if 'lowest bright' in l][-1]   # interband line last
+        d['es'] = float(st.split(':')[1].split()[0])
     except Exception:
         pass
     if 'ea' not in d:
@@ -717,13 +738,13 @@ case $STAGE in wscan)
     launch $j "$j,w" "ls $j/ndb.Chi >/dev/null 2>&1" one || exit 1
     mkdir -p $P/${j}k; cp $P/$j/ndb.Chi* $P/${j}k/; rm -f $P/$j/ndb.BS_*
   fi
-  EX=$(rep $j $QW 'lowest bright excitation (strength'); GQ=${GAPX:-$(rep $j $QW 'lowest transition energy of the window')}
+  EX=$(rep $j $QW "$BRK"); GQ=${GAPX:-$(rep $j $QW 'lowest transition energy of the window')}
   if [ ! -s $P/wscan_q$QW.dat ]; then
     c=xw$j; fresh $c; ( XLO=$WSTEP XHI=$WHI XNS=$NWS; bse_in $P/$c.in cas $QW $QW '% BSEChiKoutW' " 0.0 | $WHI | eV" '%' )
     say "$c: Casida matrices with fxc(w) at every w"
     launch $c "$c,${j}k,w" "ls o-$c.Ktt_q${QW}_w1 >/dev/null 2>&1" one || exit 1
     ( cd $P && python3 $T/sc_scan.py o-$c.Ktt_q${QW}_transitions o-$c.Ktt_q${QW}_w* --out wscan_q$QW.dat \
-                --exciton $EX --delete > wscan_q$QW.log 2>&1 ) || { tail $P/wscan_q$QW.log; exit 1; }
+                --exciton $EX --delete $FB > wscan_q$QW.log 2>&1 ) || { tail $P/wscan_q$QW.log; exit 1; }
     rm -rf $P/$c
   fi
   grep "= w at\|BSE = \|jumps" $P/wscan_q$QW.log | sed 's/^/  /'
@@ -800,15 +821,15 @@ case $STAGE in summary|all)
   python3 $T/fxc_export.py kx --out fxc_GGq_static --static --sym --inplane > fxc_static.out || { tail fxc_static.out; exit 1; }
   python3 $T/fxc_export.py kx --out fxc_GGq_allw --sym --inplane > fxc_allw.out || { tail fxc_allw.out; exit 1; }
   if ls sc_q*.dat >/dev/null 2>&1; then
-    python3 $T/xq_summary.py --bse r-kx_bse_* --npz fxc_GGq_static.npz --out xq_dispersion ${GAPX:+--gap $GAPX} > xq_summary.out || { tail xq_summary.out; exit 1; }
+    python3 $T/xq_summary.py --bse r-kx_bse_* --npz fxc_GGq_static.npz --out xq_dispersion ${GAPX:+--gap $GAPX} ${INTER:+--interband} > xq_summary.out || { tail xq_summary.out; exit 1; }
     [ -s xq_dispersion_omega.dat ] && python3 $T/fxc_export.py kx --at xq_dispersion_omega.dat --sym --inplane --out fxc_GGq_scw > fxc_scw.out
   fi
   python3 - "$P" "$(basename "$TOP")${GWDIR:+ (GW on the ${GGRID}x$GGRID grid of $GWDIR, corrections interpolated: $QPINTERP)}" "$GDIR" "$GIND" "$SF" "$NGRID" "$BLO-$BHI" \
     "$(awk -F= '/BSENGexx/{print $2; exit}' bse_ref.in 2>/dev/null)" "$(awk -F= '/BSENGexx/{print $2; exit}' kx_bse.in 2>/dev/null)" \
-    "$GP/o-gw.qp" "$VB" "$CB" "$GW_BANDS${GTERM:+ + $GTERM}" "${GGRID}x$GGRID" "$GAPX" > summary.txt <<'PY'
+    "$GP/o-gw.qp" "$VB" "$CB" "$GW_BANDS${GTERM:+ + $GTERM}" "${GGRID}x$GGRID" "$GAPX" "$BRK" > summary.txt <<'PY'
 import glob, sys
 import numpy as np
-p, name, gdir, gind, sf, ngrid, bands, exx, ngx, gwqp, vb, cb, gwb, ggrid, gapx = sys.argv[1:]
+p, name, gdir, gind, sf, ngrid, bands, exx, ngx, gwqp, vb, cb, gwb, ggrid, gapx, brk = sys.argv[1:]
 vb, cb = int(vb), int(cb)
 def rep(job, key, q=1):
     i, v = None, None
@@ -843,7 +864,7 @@ except Exception as e:
     print('G0W0 table not read:', e)
 for job, what in (('bse_ref', f'reference BSE (TDA, exchange{exx} on all G)'),
                   ('kx_bse', f'export BSE (coupling, exchange{ngx} on in-plane G), q1')):
-    a = num(rep(job, 'lowest bright excitation (strength')); g = float(gapx) if gapx else num(rep(job, 'lowest transition energy of the window'))
+    a = num(rep(job, brk)); g = float(gapx) if gapx else num(rep(job, 'lowest transition energy of the window'))
     lo = rep(job, 'lowest excitation energies'); lo = float(lo.split(':')[-1].split()[0]) if lo else float('nan')
     print(f'{what}:\n    lowest {lo:.4f} eV, A (lowest bright) {a:.4f} eV, gap {g:.4f} eV, Eb(A) {g - a:.4f} eV')
 # Casida with fxc(q, w) against the BSE, per q: every BSE state of the export report (its six lowest)
@@ -856,7 +877,7 @@ for f in glob.glob(f'{p}/r-kx_bse_*'):
         if 'BSE momentum index' in l: q = int(l.split()[-1])
         if q and 'lowest excitation energies' in l: bse.setdefault(q, {})['E'] = [float(v) for v in l.split(':')[-1].split()]
         if q and 'their relative optical strength' in l: bse.setdefault(q, {})['S'] = [float(v) for v in l.split(':')[-1].split()]
-        if q and 'lowest bright excitation (strength' in l: bse.setdefault(q, {})['B'] = float(l.split()[-1])
+        if q and brk in l: bse.setdefault(q, {})['B'] = float(l.split()[-1])
 rows, worst, dark = [], 0.0, []
 for f in sorted(glob.glob(f'{p}/sc_q*.log'), key=lambda x: int(x.split('sc_q')[-1][:-4])):
     iq = int(f.split('sc_q')[-1][:-4])

@@ -87,6 +87,16 @@ def read_rows(path):
     return tr, E, -E, res, 1j * np.conj(res), 1j * res
 
 
+def full_weight(tr, R, nbf):
+    """Weight of each eigenvector (columns of R) on transitions out of a full band (lower band <= nbf):
+    with partly filled bands, the interband states are those with more than half of it."""
+    m = tr[:, 7:9].min(axis=1) <= nbf
+    if R.shape[0] == 2 * len(m):
+        m = np.concatenate([m, m])
+    w = np.abs(R) ** 2
+    return w[m].sum(axis=0) / np.maximum(w.sum(axis=0), 1e-300)
+
+
 def read_matrix(path, n, E, tda, no_fxc, chunk_lines=500000, E_ares=None):
     """Stream a w-file into M(z) chunk by chunk (the text is never held in memory whole).
 
@@ -150,6 +160,9 @@ def main():
     ap.add_argument('--no-fxc', action='store_true', help='drop the fxc part F (exchange only)')
     ap.add_argument('--nlow', type=int, default=8, help='eigenvalues to print')
     ap.add_argument('--bright', type=float, default=0.01, help='relative strength of a bright state')
+    ap.add_argument('--full-bands', type=int, help='partly filled bands: also report the lowest bright interband '
+                    'state (> 50%% weight on transitions out of bands <= this one) and its binding against the '
+                    'lowest such transition')
     ap.add_argument('--spectrum', help='write eps2 up to a constant (Lorentzians) to this file')
     ap.add_argument('--eta', type=float, default=0.05, help='Lorentzian width for --spectrum [eV]')
     ap.add_argument('--wmax', type=float, default=4.0, help='upper energy of --spectrum [eV]')
@@ -176,6 +189,7 @@ def main():
         del M
         # residue of each pole in B^T (w-M)^-1 A: (B^T R)_l (R^-1 A)_l
         strength = (B @ R) * np.linalg.solve(R, A)
+        wfull = full_weight(tr, R, a.full_bands) if a.full_bands else None
         del R
         pos = np.where(lam.real > 1e-6)[0]
         pos = pos[np.argsort(lam[pos].real)]
@@ -190,6 +204,14 @@ def main():
         if len(bright):
             eb = lam[pos[bright[0]]].real
             print(f'    lowest bright: {eb:.4f} eV   binding (lowest transition - bright) = {gap - eb:.4f} eV')
+        if a.full_bands:
+            gi = E[tr[:, 7:9].min(axis=1) <= a.full_bands].min()
+            bi = [k for k in range(len(pos)) if s_rel[k] > a.bright and wfull[pos[k]] > 0.5]
+            if bi:
+                ei = lam[pos[bi[0]]].real
+                print(f'    lowest bright interband: {ei:.4f} eV   binding (interband gap {gi:.4f} - it) = {gi - ei:.4f} eV')
+            else:
+                print(f'    no bright interband state (interband gap {gi:.4f} eV)')
         if a.spectrum:
             w = np.linspace(0.0, a.wmax, 801)
             eps2 = np.zeros_like(w)

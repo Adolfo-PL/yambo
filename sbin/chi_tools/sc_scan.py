@@ -110,6 +110,8 @@ def main():
     ap.add_argument('--out', default='sc_scan.dat')
     ap.add_argument('--exciton', type=float, help='BSE exciton energy [eV] to compare with')
     ap.add_argument('--bright', type=float, default=0.01, help='relative strength of a bright state')
+    ap.add_argument('--full-bands', type=int, help='partly filled bands: follow the lowest bright interband state '
+                    '(> 50%% weight on transitions out of bands <= this one)')
     ap.add_argument('--tda', action='store_true')
     ap.add_argument('--delete', action='store_true', help='remove each w-file after reading it')
     ap.add_argument('--append', action='store_true',
@@ -145,11 +147,15 @@ def main():
         lam, R = np.linalg.eig(M)
         del M
         st = np.abs((B @ R) * np.linalg.solve(R, A))
+        wfull = kc.full_weight(tr, R, a.full_bands) if a.full_bands else None
         del R
         pos = np.where(lam.real > 1e-6)[0]
         pos = pos[np.argsort(lam[pos].real)]
         srel = st[pos] / max(st[pos].max(), 1e-300)
-        b = pos[np.argmax(srel > a.bright)]
+        ok = srel > a.bright
+        if a.full_bands:
+            ok &= wfull[pos] > 0.5
+        b = pos[np.argmax(ok)]
         rows.append((z.real, lam[b].real, lam[b].imag, lam[pos[0]].real))
         print(f'  {z.real:9.4f}  {lam[b].real:13.5f}  {lam[b].imag:13.2e}  {lam[pos[0]].real:14.5f}'
               f'  {lam[b].real - z.real:+14.5f}', flush=True)
