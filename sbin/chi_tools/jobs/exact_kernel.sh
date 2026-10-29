@@ -523,7 +523,7 @@ case $STAGE in ref|export|all)
 EA=$(rep bse_ref 1 'lowest bright excitation (strength'); EL=$(rep_low bse_ref 1)
 PFB=$(grep -hs "partly filled bands, first and last" $P/r-bse_ref_* | tail -1)
 GI=$(rep bse_ref 1 'interband gap, lowest transition from a full band')
-EAI=$(rep bse_ref 1 'lowest bright interband excitation')
+EAI=$(rep bse_ref 1 'lowest bright interband excitation (strength')
 if [ "$DOPED" = auto ]; then
   DOPED=0
   if [ -n "$PFB" ]; then DOPED=1
@@ -572,7 +572,7 @@ PY
 fi
 
 # the A exciton in the reports: the lowest bright state, or the lowest bright interband one (doped)
-BRK='lowest bright excitation (strength'; [ -n "$INTER" ] && BRK='lowest bright interband excitation'
+BRK='lowest bright excitation (strength'; [ -n "$INTER" ] && BRK='lowest bright interband excitation (strength'
 FB=""; [ "$DOPED" = 1 ] && FB="--full-bands $VB"    # Casida tools: A among the interband states
 
 # frequency grid of the kernel (fixed once the export has run and passed its checks: read back from
@@ -616,7 +616,7 @@ for f in glob.glob(f'{p}/r-kx_bse_*'):
         if 'lowest excitation energies' in l: d[q]['low'] = float(l.split(':')[-1].split()[0])
         if 'lowest bright excitation (strength' in l: d[q]['br'] = float(l.split()[-1])
         if 'lowest transition energy of the window' in l: d[q]['gap'] = float(l.split()[-1])
-        if inter and 'lowest bright interband excitation' in l: d[q]['bi'] = float(l.split()[-1])
+        if inter and 'lowest bright interband excitation (strength' in l: d[q]['bi'] = float(l.split()[-1])
         if inter and 'interband gap, lowest transition from a full band' in l: d[q]['gi'] = float(l.split()[-1])
 if inter:      # the interband A and gap replace the plain ones (missing A: 0, flagged below)
     for r in d.values(): r['br'], r['gap'] = r.get('bi', 0), r.get('gi', 0)

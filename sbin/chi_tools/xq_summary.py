@@ -56,7 +56,7 @@ def read_bse(paths, interband=False):
                 out[iq]['bright'] = float(line.split()[-1])
             elif 'lowest transition energy of the window' in line:
                 out[iq]['gap'] = float(line.split()[-1])
-            elif interband and 'lowest bright interband excitation' in line:
+            elif interband and 'lowest bright interband excitation (strength' in line:
                 out[iq]['bright_i'] = float(line.split()[-1])
             elif interband and 'interband gap, lowest transition from a full band' in line:
                 out[iq]['gap_i'] = float(line.split()[-1])
