@@ -855,6 +855,7 @@ for f in glob.glob(f'{p}/r-kx_bse_*'):
         if 'BSE momentum index' in l: q = int(l.split()[-1])
         if q and 'lowest excitation energies' in l: bse.setdefault(q, {})['E'] = [float(v) for v in l.split(':')[-1].split()]
         if q and 'their relative optical strength' in l: bse.setdefault(q, {})['S'] = [float(v) for v in l.split(':')[-1].split()]
+        if q and 'lowest bright excitation (strength' in l: bse.setdefault(q, {})['B'] = float(l.split()[-1])
 rows, worst, dark = [], 0.0, []
 for f in sorted(glob.glob(f'{p}/sc_q*.log'), key=lambda x: int(x.split('sc_q')[-1][:-4])):
     iq = int(f.split('sc_q')[-1][:-4])
@@ -871,6 +872,11 @@ for f in sorted(glob.glob(f'{p}/sc_q*.log'), key=lambda x: int(x.split('sc_q')[-
     ES = list(zip(bse.get(iq, {}).get('E', []), bse.get(iq, {}).get('S', [])))
     dark += [(iq, E) for E, S in ES if S < 1e-6 and w.min() <= E <= w.max()]
     want = [next(((E, S) for E, S in ES if S >= 1e-4), None), next(((E, S) for E, S in ES if S > 1e-2), None)]
+    # the lowest bright state itself: not among the six lowest when they are transitions out of a
+    # partly filled band (doped SAVE)
+    B = bse.get(iq, {}).get('B')
+    if B is not None and not any(x and abs(x[0] - B) < 1e-5 for x in want):
+        want.append((B, float('nan')))
     for E, S in {x for x in want if x and w.min() <= x[0] <= w.max()}:
         d = min((abs(x - E) for x in xs), default=np.inf) * 1000
         worst = max(worst, d); rows.append((iq, E, S, d))
