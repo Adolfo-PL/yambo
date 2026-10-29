@@ -84,7 +84,10 @@
 # transitions out of the partly filled band, CB -> CB+1 at q1 (far below A, nearly dark) and CB -> CB
 # at finite q (at any energy). The lowest BSE state is then not the exciton, and neither Yambo's
 # "[K+QP] Indirect Gap" nor the report's "lowest transition energy of the window" is the band gap.
-# Detected after the reference BSE (lowest state more than 0.3 eV below A; DOPED=1/0 forces it):
+# Detected after the reference BSE (lowest state more than 0.3 eV below A, or more than EBMAX below
+# the QP direct gap; DOPED=1/0 forces it). At heavy doping the lowest bright state is itself such a
+# transition: the script then stops and lists the peaks of the reference spectrum near the gap;
+# XA=<eV> sets the A exciton by hand.
 # the kernel at q1 only (at finite q the CB -> CB transitions reach the window around A), the grid
 # from WMARGIN below A up to just below the QP direct gap VB -> CB of the GW (WTOP overrides it), and
 # every Eb = that gap - E. The scan lists the transitions inside the grid (CB -> CB+1 ones are poles
@@ -102,6 +105,7 @@ NG_X=${NG_X:-"2 Ry"}                 # BSENGexx = BSENGfxc of the export (in-pla
 DW=${DW:-}; WMARGIN=${WMARGIN:-0.5}; DWIN=${DWIN:-0.04}  # eV: grid step (default 0.002, 0.005 for large systems), margin below the exciton, scan half-window
 QS=${QS:-}                           # q of the scan (default: all if cheap, else 1; see below)
 DOPED=${DOPED:-auto}; WTOP=${WTOP:-} # doped mode (auto: from the reference BSE) and the gap its grid stays below (eV)
+XA=${XA:-}; EBMAX=${EBMAX:-1.0}      # doped: the A exciton (eV) if the lowest bright state is not it; largest plausible Eb (eV)
 NG_LIST=${NG_LIST:-"2 4.5 6 8"}      # STAGE=basis: kernel bases (Ry); WS2: 2 Ry = 1 star (7 in-plane G), 4.5 = 2, 6 = 3
 QW=${QW:-1}; WSTEP=${WSTEP:-0.02}    # STAGE=wscan: momentum and frequency step
 ETA=${ETA:-0.05}; DE=${DE:-0.005}    # broadening and step of the reference spectrum
@@ -512,17 +516,46 @@ case $STAGE in ref|export|all)
   [ -n "$KQP" ] && GIND=$KQP && echo "  QP indirect gap of this grid: $GIND eV" ;; esac
 
 # ---------- doped SAVE (see the header): q1 only, grid anchored on A, Eb against the QP direct gap ----------
+# A state more than EBMAX below the QP direct gap is not an exciton of these monolayers (Eb <= ~0.7 eV)
 EA=$(rep bse_ref 1 'lowest bright excitation (strength'); EL=$(rep_low bse_ref 1)
 if [ "$DOPED" = auto ]; then
-  DOPED=0; [ -n "$EL" ] && [ -n "$EA" ] && awk -v l=$EL -v a=$EA 'BEGIN{exit !(a - l > 0.3)}' && DOPED=1
+  DOPED=0; [ -n "$EL" ] && [ -n "$EA" ] &&
+    awk -v l=$EL -v a=$EA -v g=$GDIR -v m=$EBMAX 'BEGIN{exit !(a - l > 0.3 || g - l > m)}' && DOPED=1
 fi
-NQX=$NQ; GAPX=""
+NQX=$NQ; GAPX=""; ABAD=""
 if [ "$DOPED" = 1 ]; then
   GAPX=${WTOP:-$GDIR}; GIND=$GAPX; NQX=1
   [ "$QS" = 1 ] || echo "  doped: the kernel is exported at q1 only, scan QS=1 (not \"$QS\")"; QS=1
-  echo "=== doped: lowest BSE state ${EL:-?} eV, A ${EA:-?} eV: kernel at q1 only, grid from A down, below the gap $GAPX eV$([ -z "$WTOP" ] && echo " (QP direct gap VB $VB -> CB $CB, GW grid)")"
-  [ -n "$EA" ] && echo "    reference BSE: A $EA eV, Eb = $GAPX - $EA = $(python3 -c "print(f'{$GAPX - $EA:.4f}')") eV" &&
-    echo "    (Yambo's \"[K+QP] Indirect Gap\" and the report's gap and Eb count the transitions out of the partly filled band: ignore them)"
+  [ -n "$XA" ] && EA=$XA
+  echo "=== doped: lowest BSE state ${EL:-?} eV, A ${EA:-?} eV${XA:+ (XA)}: kernel at q1 only, grid from A down, below the gap $GAPX eV$([ -z "$WTOP" ] && echo " (QP direct gap VB $VB -> CB $CB, GW grid)")"
+  if [ -n "$EA" ] && awk -v a=$EA -v g=$GAPX -v m=$EBMAX 'BEGIN{exit !(a <= 0 || g - a > m)}'; then
+    # the lowest bright state is itself a transition out of the partly filled band (heavy doping):
+    # the A exciton is higher, among the peaks of the reference spectrum just below the gap
+    ABAD=1
+    echo "!!! the lowest bright BSE state ($EA eV) is more than $EBMAX eV below the gap $GAPX eV: it is a transition out of"
+    echo "    the partly filled band, not the A exciton. Peaks of the reference BSE spectrum (Im eps, broadening $ETA eV) near the gap:"
+    python3 - $GAPX $EBMAX $P/o-bse_ref.*eps* <<'PY'
+import sys
+import numpy as np
+g, m = float(sys.argv[1]), float(sys.argv[2])
+try:
+    x = np.loadtxt(sys.argv[3], comments='#', ndmin=2)
+except Exception as e:
+    sys.exit(f'      (no spectrum: {e})')
+w, s = x[:, 0], x[:, 1]
+i = [j for j in range(1, len(w) - 1) if s[j] >= s[j - 1] and s[j] > s[j + 1] and g - m <= w[j] <= g + 0.1]
+top = max((s[j] for j in i), default=1.0)
+for j in i:
+    print(f'      {w[j]:.4f} eV   height {s[j] / top:.3f}{"   (above the gap)" if w[j] >= g else ""}')
+if not i:
+    print('      none: no bound exciton resolved (screened out at this doping?)')
+PY
+    echo "    Set XA=<A exciton energy, eV> to anchor the grid there (check it is an interband peak), or see the summary of"
+    echo "    the reference BSE: at this doping the exciton may be screened out, and the exact kernel at A then has no meaning."
+  else
+    [ -n "$EA" ] && echo "    reference BSE: A $EA eV, Eb = $GAPX - $EA = $(python3 -c "print(f'{$GAPX - $EA:.4f}')") eV" &&
+      echo "    (Yambo's \"[K+QP] Indirect Gap\" and the report's gap and Eb count the transitions out of the partly filled band: ignore them)"
+  fi
   EL=$EA
 fi
 
@@ -530,9 +563,13 @@ fi
 if [ -s $P/kx_bse.in ] && [ -s $P/kx/ndb.Chi ]; then
   read WLO WHI <<< $(awk '/BEnRange/{getline; print $1, $3}' $P/kx_bse.in); NW=$(awk -F= '/BEnSteps/{print $2+0}' $P/kx_bse.in)
 else
-  case $STAGE in export|scan|summary|all|basis|wscan|static0) [ -n "$EL" ] || { echo "!!! no reference BSE: run STAGE=ref first"; exit 1; } ;; esac
+  case $STAGE in export|scan|summary|all|basis|wscan|static0)
+    [ -n "$EL" ] || { echo "!!! no reference BSE: run STAGE=ref first"; exit 1; }
+    [ -z "$ABAD" ] || { echo "!!! no A exciton to anchor the kernel grid: nothing else run"; exit 1; } ;; esac
   [ -n "$EL" ] && read WLO WHI NW <<< $(grid $EL $GIND)
 fi
+case $STAGE in export|scan|summary|all|basis|wscan|static0)   # e.g. an "exciton" above the gap: Yambo would crash
+  [ "${NW:-0}" -ge 10 ] || { echo "!!! kernel grid $WLO..$WHI eV ($NW frequencies) from the exciton ${EL:-?} eV and the gap $GIND eV: not usable, nothing else run"; exit 1; } ;; esac
 
 # ---------- kernel export ----------
 case $STAGE in export|all)
