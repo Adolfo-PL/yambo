@@ -79,6 +79,16 @@
 # spin-forbidden dark excitons of a spinor SAVE, relative strength ~1e-8) is not a pole of P, and
 # no density kernel puts it back: Casida leaves those transitions at their bare energies. The
 # summary lists them. With SOC the lowest exciton of WSe2/WS2 is such a dark state.
+#
+# Doped SAVE (extra electrons in the conduction band, nscf with tot_charge): the electrons add
+# transitions out of the partly filled band, CB -> CB+1 at q1 (far below A, nearly dark) and CB -> CB
+# at finite q (at any energy). The lowest BSE state is then not the exciton, and neither Yambo's
+# "[K+QP] Indirect Gap" nor the report's "lowest transition energy of the window" is the band gap.
+# Detected after the reference BSE (lowest state more than 0.3 eV below A; DOPED=1/0 forces it):
+# the kernel at q1 only (at finite q the CB -> CB transitions reach the window around A), the grid
+# from WMARGIN below A up to just below the QP direct gap VB -> CB of the GW (WTOP overrides it), and
+# every Eb = that gap - E. The scan lists the transitions inside the grid (CB -> CB+1 ones are poles
+# of chi0 there too). The doped kernel has no intraband (Drude) part at q1.
 
 STAGE=${STAGE:-all}
 # GW (converged for WS2: 40 Ry, 800 bands or 400 with the BG terminator, 12 Ry, RIM-W)
@@ -91,6 +101,7 @@ XBLK=${XBLK:-6}; WBLK=${WBLK:-3}; EXX_REF=${EXX_REF:-6}
 NG_X=${NG_X:-"2 Ry"}                 # BSENGexx = BSENGfxc of the export (in-plane G of it are kept)
 DW=${DW:-}; WMARGIN=${WMARGIN:-0.5}; DWIN=${DWIN:-0.04}  # eV: grid step (default 0.002, 0.005 for large systems), margin below the exciton, scan half-window
 QS=${QS:-}                           # q of the scan (default: all if cheap, else 1; see below)
+DOPED=${DOPED:-auto}; WTOP=${WTOP:-} # doped mode (auto: from the reference BSE) and the gap its grid stays below (eV)
 NG_LIST=${NG_LIST:-"2 4.5 6 8"}      # STAGE=basis: kernel bases (Ry); WS2: 2 Ry = 1 star (7 in-plane G), 4.5 = 2, 6 = 3
 QW=${QW:-1}; WSTEP=${WSTEP:-0.02}    # STAGE=wscan: momentum and frequency step
 ETA=${ETA:-0.05}; DE=${DE:-0.005}    # broadening and step of the reference spectrum
@@ -198,7 +209,7 @@ plan () {
   echo "    GW   : PPA, EXX $GW_EXX Ry, $GW_BANDS bands${GTERM:+ + $GTERM terminator}, block $GW_BLOCK Ry, RIM-W, QP bands $BLO-$BHI at all $GNK k${GWDIR:+ of the ${GGRID}x$GGRID grid in $GWDIR, interpolated ($QPINTERP) onto this grid}"
   echo "    W    : static screening, $WB bands, block $XBLK Ry"
   echo "    ref  : BSE bands $BLO-$BHI ($BANDS), TDA, exchange $EXX_REF Ry (all G), W block $WBLK Ry, RIM-W"
-  echo "    kernel: coupled BSE + export at q = 1..$NQ, exchange/kernel $NG_X (in-plane G), $NTR resonant transitions per q (Casida matrix $((2 * NTR)))"
+  echo "    kernel: coupled BSE + export at q = 1..$NQ (q1 only if doped: decided after the reference BSE), exchange/kernel $NG_X (in-plane G), $NTR resonant transitions per q (Casida matrix $((2 * NTR)))"
   echo "    scan : Casida at q = $QS"
   [ -n "${QS_NOTE:-}" ] && echo "           (large matrices: scan the other q in parallel jobs, e.g. STAGE=scan QS=\"2 3 4 5\" sbatch ...)"
   return 0
@@ -500,11 +511,25 @@ case $STAGE in ref|export|all)
   KQP=$(awk -F: '/\[K\+QP\] Indirect Gap  /{print $2+0; exit}' $P/r-bse_ref_* 2>/dev/null)
   [ -n "$KQP" ] && GIND=$KQP && echo "  QP indirect gap of this grid: $GIND eV" ;; esac
 
+# ---------- doped SAVE (see the header): q1 only, grid anchored on A, Eb against the QP direct gap ----------
+EA=$(rep bse_ref 1 'lowest bright excitation (strength'); EL=$(rep_low bse_ref 1)
+if [ "$DOPED" = auto ]; then
+  DOPED=0; [ -n "$EL" ] && [ -n "$EA" ] && awk -v l=$EL -v a=$EA 'BEGIN{exit !(a - l > 0.3)}' && DOPED=1
+fi
+NQX=$NQ; GAPX=""
+if [ "$DOPED" = 1 ]; then
+  GAPX=${WTOP:-$GDIR}; GIND=$GAPX; NQX=1
+  [ "$QS" = 1 ] || echo "  doped: the kernel is exported at q1 only, scan QS=1 (not \"$QS\")"; QS=1
+  echo "=== doped: lowest BSE state ${EL:-?} eV, A ${EA:-?} eV: kernel at q1 only, grid from A down, below the gap $GAPX eV$([ -z "$WTOP" ] && echo " (QP direct gap VB $VB -> CB $CB, GW grid)")"
+  [ -n "$EA" ] && echo "    reference BSE: A $EA eV, Eb = $GAPX - $EA = $(python3 -c "print(f'{$GAPX - $EA:.4f}')") eV" &&
+    echo "    (Yambo's \"[K+QP] Indirect Gap\" and the report's gap and Eb count the transitions out of the partly filled band: ignore them)"
+  EL=$EA
+fi
+
 # frequency grid of the kernel (fixed once the export has run: read back from its input)
 if [ -s $P/kx_bse.in ] && [ -s $P/kx/ndb.Chi ]; then
   read WLO WHI <<< $(awk '/BEnRange/{getline; print $1, $3}' $P/kx_bse.in); NW=$(awk -F= '/BEnSteps/{print $2+0}' $P/kx_bse.in)
 else
-  EL=$(rep_low bse_ref 1)
   case $STAGE in export|scan|summary|all|basis|wscan|static0) [ -n "$EL" ] || { echo "!!! no reference BSE: run STAGE=ref first"; exit 1; } ;; esac
   [ -n "$EL" ] && read WLO WHI NW <<< $(grid $EL $GIND)
 fi
@@ -513,17 +538,18 @@ fi
 case $STAGE in export|all)
   if [ -s $P/kx/ndb.Chi ] && [ -f $P/kx/ok ]; then echo "=== kernel export done ($NW frequencies $WLO..$WHI eV)"
   else
-    echo "=== kernel export: q = 1..$NQ, $NW undamped frequencies $WLO..$WHI eV (indirect QP gap $GIND eV), $NT1 threads ($(date +%H:%M)) ==="
+    echo "=== kernel export: q = 1..$NQX, $NW undamped frequencies $WLO..$WHI eV ($([ "$DOPED" = 1 ] && echo "doped, below the gap" || echo "indirect QP gap") $GIND eV), $NT1 threads ($(date +%H:%M)) ==="
     fresh kx_bse; rm -rf $P/kx
-    bse_in $P/kx_bse.in kx 1 $NQ || exit 1
-    kx_done () { ls kx_bse/ndb.Chi >/dev/null 2>&1 && [ "$(awk '/BSE momentum index/{n=$NF} END{print n}' r-kx_bse_* 2>/dev/null)" = $NQ ] &&
-                 [ "$(grep -c 'lowest excitation energies' r-kx_bse_* 2>/dev/null | awk -F: '{s+=$NF} END{print s}')" -ge $NQ ]; }
+    bse_in $P/kx_bse.in kx 1 $NQX || exit 1
+    kx_done () { ls kx_bse/ndb.Chi >/dev/null 2>&1 && [ "$(awk '/BSE momentum index/{n=$NF} END{print n}' r-kx_bse_* 2>/dev/null)" = $NQX ] &&
+                 [ "$(grep -c 'lowest excitation energies' r-kx_bse_* 2>/dev/null | awk -F: '{s+=$NF} END{print s}')" -ge $NQX ]; }
     launch kx_bse "kx_bse,w" kx_done one || exit 1
     mkdir -p $P/kx; cp $P/kx_bse/ndb.Chi* $P/kx/
     # every q: exported response = BSE response, in-plane G reached, excitons inside the grid
-    python3 - $P $NQ $WLO $WHI $DWIN <<'PY' || exit 1
+    python3 - $P $NQX $WLO $WHI $DWIN $DOPED <<'PY' || exit 1
 import glob, sys
-p, nq, wlo, whi, dwin = sys.argv[1], int(sys.argv[2]), *map(float, sys.argv[3:])
+p, nq, wlo, whi, dwin = sys.argv[1], int(sys.argv[2]), *map(float, sys.argv[3:6])
+doped = sys.argv[6] == '1'     # the lowest states and the "gap" are transitions out of the partly filled band
 q, d, bad, ns = None, {}, [], 0
 for f in glob.glob(f'{p}/r-kx_bse_*'):
     for l in open(f, errors='ignore'):
@@ -544,9 +570,11 @@ for iq in range(1, nq + 1):
     if not r: bad.append(f'q{iq}: no report')
     if h[0] > 1e-4 or abs(h[1] - 1) > 1e-3: bad.append(f'q{iq}: exported response differs from the BSE response')
     if ns < 7: bad.append(f'q{iq}: only {ns} in-plane G (need G=0 + the first star, 7): raise NG_X')
-    if min(lo, br) - dwin < wlo: bad.append(f'q{iq}: exciton {min(lo, br):.4f} eV below the grid ({wlo} eV): raise WMARGIN')
+    ex = br if doped else min(lo, br)
+    if ex - dwin < wlo: bad.append(f'q{iq}: exciton {ex:.4f} eV below the grid ({wlo} eV): raise WMARGIN')
     if br > whi - 0.002: bad.append(f'q{iq}: bright exciton {br:.4f} eV above the grid (top {whi} eV)')
-    if whi >= gap: bad.append(f'q{iq}: grid reaches the gap {gap:.4f} eV')
+    if whi >= gap and not doped: bad.append(f'q{iq}: grid reaches the gap {gap:.4f} eV')
+if doped: print('  (doped: "lowest" and "gap" are transitions out of the partly filled band; the scan lists those in the grid)')
 for b in bad: print('  !!!', b)
 sys.exit(1 if bad else 0)
 PY
@@ -561,10 +589,29 @@ case $STAGE in scan|all)
     [ -s $P/sc_q$q.dat ] && [ -s $P/static_q$q.log ] && continue
     lo=$(rep_low kx_bse $q); br=$(rep kx_bse $q 'lowest bright excitation (strength')
     [ -n "$lo" ] && [ -n "$br" ] || { echo "!!! q$q: no BSE excitons in prod/r-kx_bse_*"; exit 1; }
+    [ "$DOPED" = 1 ] && lo=$br       # doped: the lowest states are out of the partly filled band, below the grid
     read W1 W2 <<< $(python3 -c "print(f'{max(min($lo,$br)-$DWIN,$WLO):.4f} {min(max($lo,$br)+$DWIN,$WHI):.4f}')")
     say "q$q: BSE lowest $lo, bright $br eV: static Casida, and self-consistent on $W1..$W2 eV"
     fresh xs_q$q; bse_in $P/xs_q$q.in cas $q $q '% BSEChiKoutW' ' 0.0 | 0.0 | eV' '%'
     launch xs_q$q "xs_q$q,kx,w" "ls o-xs_q$q.Ktt_q${q}_w1 >/dev/null 2>&1" one || exit 1
+    # doped: the transitions inside the grid (poles of chi0 there) and the lowest one out of the full bands
+    [ "$DOPED" = 1 ] && python3 - $P/o-xs_q$q.Ktt_q${q}_transitions $WLO $WHI $VB <<'PY' | tee $P/doped_transitions_q$q.txt
+import sys
+import numpy as np
+t = np.loadtxt(sys.argv[1], comments='#', ndmin=2)
+lo, hi, vb = float(sys.argv[2]), float(sys.argv[3]), int(sys.argv[4])
+v, c, E, f = t[:, 7].astype(int), t[:, 8].astype(int), t[:, 9], t[:, 10]
+full = v <= vb
+print(f'    transitions: lowest {E.min():.4f} eV; lowest out of the full bands (v <= {vb}) {E[full].min():.4f} eV, grid {lo}..{hi} eV')
+w = (E >= lo) & (E <= hi)
+for vv, cc in sorted(set(zip(v[w], c[w]))):
+    m = w & (v == vv) & (c == cc)
+    print(f'    inside the grid: {vv} -> {cc}: {m.sum()} transitions, {E[m].min():.4f}..{E[m].max():.4f} eV, f {f[m].min():.3f}..{f[m].max():.3f}')
+if not w.any():
+    print('    no transition inside the grid')
+if E[full].min() <= hi:
+    print(f'    !!! the grid reaches the transitions out of the full bands ({E[full].min():.4f} eV): rerun the export with WTOP below it')
+PY
     ( cd $P && python3 $T/ktt_casida.py o-xs_q$q.Ktt_q${q}_transitions o-xs_q$q.Ktt_q${q}_w1 > static_q$q.log ) || exit 1
     rm -f $P/o-xs_q$q.Ktt_q${q}_w*
     fresh xw_q$q; bse_in $P/xw_q$q.in cas $q $q '% BSEChiKoutW' " $W1 | $W2 | eV" '%'
@@ -597,9 +644,9 @@ case $STAGE in basis)
       ( NG_X="$g Ry"; casida_static xs$j ${j}k 1 ) || { echo "  $g Ry: static Casida failed, next"; continue; }
     fi
   done
-  python3 - $P "$NG_LIST" <<'PY' | tee $P/basis_scan.dat
+  python3 - $P "$NG_LIST" "$GAPX" <<'PY' | tee $P/basis_scan.dat
 import glob, sys
-p, gl = sys.argv[1], sys.argv[2].split()
+p, gl, gapx = sys.argv[1], sys.argv[2].split(), sys.argv[3]   # gapx: the gap of a doped SAVE
 print('# kernel basis scan, q1: binding of the export BSE and of static Casida with fxc(w = 0)')
 print('#  NG[Ry]  in-plane G  all G   rcond(P)   E_A(BSE)  gap      Eb(BSE)  Eb(static)  ratio')
 for g in gl:
@@ -612,12 +659,13 @@ for g in gl:
             if 'lowest transition energy of the window' in l: d['gap'] = float(l.split()[-1])
     try:
         st = [l for l in open(f'{p}/static_xs{j}.log') if 'lowest bright:' in l][0]
-        d['ebs'] = float(st.split('=')[-1].split()[0])
+        d['es'] = float(st.split('lowest bright:')[1].split()[0])
     except Exception:
         pass
     if 'ea' not in d:
         print(f'  {g:>6s}  (no export: failed or ill-conditioned)'); continue
-    eb = d['gap'] - d['ea']; ebs = d.get('ebs', float('nan'))
+    if gapx: d['gap'] = float(gapx)
+    eb = d['gap'] - d['ea']; ebs = d['gap'] - d.get('es', float('nan'))
     print(f'  {g:>6s}  {d.get("ns", 0):9d}  {d.get("ng", 0):6d}  {d.get("rc", 0):9.2e}  {d["ea"]:8.4f}  {d["gap"]:7.4f}  {eb:7.4f}  {ebs:9.4f}  {ebs / eb:6.1%}')
 PY
 ;; esac
@@ -631,7 +679,7 @@ case $STAGE in wscan)
     launch $j "$j,w" "ls $j/ndb.Chi >/dev/null 2>&1" one || exit 1
     mkdir -p $P/${j}k; cp $P/$j/ndb.Chi* $P/${j}k/; rm -f $P/$j/ndb.BS_*
   fi
-  EX=$(rep $j $QW 'lowest bright excitation (strength'); GQ=$(rep $j $QW 'lowest transition energy of the window')
+  EX=$(rep $j $QW 'lowest bright excitation (strength'); GQ=${GAPX:-$(rep $j $QW 'lowest transition energy of the window')}
   if [ ! -s $P/wscan_q$QW.dat ]; then
     c=xw$j; fresh $c; ( XLO=$WSTEP XHI=$WHI XNS=$NWS; bse_in $P/$c.in cas $QW $QW '% BSEChiKoutW' " 0.0 | $WHI | eV" '%' )
     say "$c: Casida matrices with fxc(w) at every w"
@@ -714,15 +762,15 @@ case $STAGE in summary|all)
   python3 $T/fxc_export.py kx --out fxc_GGq_static --static --sym --inplane > fxc_static.out || { tail fxc_static.out; exit 1; }
   python3 $T/fxc_export.py kx --out fxc_GGq_allw --sym --inplane > fxc_allw.out || { tail fxc_allw.out; exit 1; }
   if ls sc_q*.dat >/dev/null 2>&1; then
-    python3 $T/xq_summary.py --bse r-kx_bse_* --npz fxc_GGq_static.npz --out xq_dispersion > xq_summary.out || { tail xq_summary.out; exit 1; }
+    python3 $T/xq_summary.py --bse r-kx_bse_* --npz fxc_GGq_static.npz --out xq_dispersion ${GAPX:+--gap $GAPX} > xq_summary.out || { tail xq_summary.out; exit 1; }
     [ -s xq_dispersion_omega.dat ] && python3 $T/fxc_export.py kx --at xq_dispersion_omega.dat --sym --inplane --out fxc_GGq_scw > fxc_scw.out
   fi
   python3 - "$P" "$(basename "$TOP")${GWDIR:+ (GW on the ${GGRID}x$GGRID grid of $GWDIR, corrections interpolated: $QPINTERP)}" "$GDIR" "$GIND" "$SF" "$NGRID" "$BLO-$BHI" \
     "$(awk -F= '/BSENGexx/{print $2; exit}' bse_ref.in 2>/dev/null)" "$(awk -F= '/BSENGexx/{print $2; exit}' kx_bse.in 2>/dev/null)" \
-    "$GP/o-gw.qp" "$VB" "$CB" "$GW_BANDS${GTERM:+ + $GTERM}" "${GGRID}x$GGRID" > summary.txt <<'PY'
+    "$GP/o-gw.qp" "$VB" "$CB" "$GW_BANDS${GTERM:+ + $GTERM}" "${GGRID}x$GGRID" "$GAPX" > summary.txt <<'PY'
 import glob, sys
 import numpy as np
-p, name, gdir, gind, sf, ngrid, bands, exx, ngx, gwqp, vb, cb, gwb, ggrid = sys.argv[1:]
+p, name, gdir, gind, sf, ngrid, bands, exx, ngx, gwqp, vb, cb, gwb, ggrid, gapx = sys.argv[1:]
 vb, cb = int(vb), int(cb)
 def rep(job, key, q=1):
     i, v = None, None
@@ -733,7 +781,11 @@ def rep(job, key, q=1):
     return v
 num = lambda l, k=-1: float(l.split()[k]) if l else float('nan')
 print(f'{name}: {ngrid}x{ngrid} k grid, {"spinors (SOC)" if sf == "2" else "no SOC"}, BSE bands {bands}')
-print(f'QP gap (G0W0, RIM-W) of the GW grid: direct {gdir} eV; QP indirect gap of this grid {gind} eV')
+if gapx:
+    print(f'QP gap (G0W0, RIM-W) of the GW grid: direct {gdir} eV. DOPED: partly filled conduction band; kernel at q1 only;'
+          f' every gap and Eb below are against {gapx} eV (VB -> CB); no intraband (Drude) part in the kernel')
+else:
+    print(f'QP gap (G0W0, RIM-W) of the GW grid: direct {gdir} eV; QP indirect gap of this grid {gind} eV')
 # G0W0 at the k of the smallest direct gap of the GW grid: KS and QP energies, corrections
 try:
     E0, dE = {}, {}
@@ -753,7 +805,7 @@ except Exception as e:
     print('G0W0 table not read:', e)
 for job, what in (('bse_ref', f'reference BSE (TDA, exchange{exx} on all G)'),
                   ('kx_bse', f'export BSE (coupling, exchange{ngx} on in-plane G), q1')):
-    a = num(rep(job, 'lowest bright excitation (strength')); g = num(rep(job, 'lowest transition energy of the window'))
+    a = num(rep(job, 'lowest bright excitation (strength')); g = float(gapx) if gapx else num(rep(job, 'lowest transition energy of the window'))
     lo = rep(job, 'lowest excitation energies'); lo = float(lo.split(':')[-1].split()[0]) if lo else float('nan')
     print(f'{what}:\n    lowest {lo:.4f} eV, A (lowest bright) {a:.4f} eV, gap {g:.4f} eV, Eb(A) {g - a:.4f} eV')
 # Casida with fxc(q, w) against the BSE, per q: every BSE state of the export report (its six lowest)

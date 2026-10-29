@@ -82,6 +82,8 @@ def main():
     ap.add_argument('--npz', help='fxc_export.py npz of the same ndb.Chi (for |q|)')
     ap.add_argument('--dir', default='.', help='where sc_q<iq>.dat and static_q<iq>.log are')
     ap.add_argument('--out', default='xq_dispersion')
+    ap.add_argument('--gap', type=float, help='gap of every q (eV) instead of the report\'s lowest transition '
+                    '(a doped SAVE, whose lowest transitions are out of the partly filled band)')
     a = ap.parse_args()
 
     bse = read_bse(sorted(set(sum([glob.glob(p) for p in a.bse], []))))
@@ -96,7 +98,7 @@ def main():
     print(' iq   |q|      gap    BSE low  BSE brt   sc low   sc brt  static brt   Eb BSE   Eb sc  Eb static  sc-BSE')
     for iq in sorted(bse):
         b = bse[iq]
-        gap, blow, bbr = b['gap'], b['E'][0], b.get('bright', np.nan)
+        gap, blow, bbr = (a.gap or b['gap']), b['E'][0], b.get('bright', np.nan)
         sc_low = sc_br = st_br = np.nan
         f = os.path.join(a.dir, f'sc_q{iq}.dat')
         if os.path.exists(f):
