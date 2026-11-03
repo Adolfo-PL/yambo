@@ -143,8 +143,9 @@ def main():
     S = {}
     if ks is not None:
         S['ks'] = (ks, dict(color='#a8a39a', lw=1.0), r'$\chi_0$ (DFT energies)')
-    S['chi0'] = (curves['chi0'], dict(color='#898781', lw=1.2, ls=':'), r'$\chi_0$ (independent QP transitions)')
+    # chi0 (QP) and chi nearly coincide for in-plane light at q -> 0: chi0 on top, in its own colour
     S['chi'] = (curves['chi'], dict(color='#52514e', lw=1.2, ls='--'), r'$\chi$ (+ Hartree local fields)')
+    S['chi0'] = (curves['chi0'], dict(color='#b5761c', lw=1.6, ls=':', zorder=4), r'$\chi_0$ (independent QP transitions)')
     S['bse'] = (bse, dict(color='#2a78d6', lw=4, alpha=0.45), 'BSE')
     if dyn is not None:
         S['dyn'] = (dyn, dict(color='#0d366b', lw=1.3, ls='--'), r'TDDFT, exact $f_{xc}(\omega)$ at every $\omega$')
@@ -152,7 +153,7 @@ def main():
     S['fxcA'] = (curves['fxcA'], dict(color='#eb6834', lw=1.5, ls='-.'),
                  rf'TDDFT, exact $f_{{xc}}$ at $\omega=E_A$ ({zA:.3f} eV)')
     figs = (('', list(S), 'in-plane absorption'),
-            ('_chi', [k for k in ('ks', 'chi0', 'chi') if k in S], 'independent particles and RPA'),
+            ('_chi', [k for k in ('ks', 'chi', 'chi0') if k in S], 'independent particles and RPA'),
             ('_tddft', [k for k in ('bse', 'dyn', 'fxc0', 'fxcA') if k in S], 'BSE and TDDFT with the exact kernel'))
     for sfx, keys, what in figs:
         fig, ax = plt.subplots(figsize=(9.5, 4.6))
