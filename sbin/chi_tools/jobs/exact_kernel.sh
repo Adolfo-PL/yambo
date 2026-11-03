@@ -44,6 +44,9 @@
 #                  -> prod/wscan_q<QW>.dat and .png
 #   STAGE=static0: Casida with fxc(0) against the same BSE (broadened, q1): equal at w = 0 (the static
 #                  response the w = 0 kernel is defined by), different at the exciton -> prod/static0.*
+#   STAGE=spectra: absorption at q1 (Im alpha, broadening ETAS, default 0.03 eV): the export's BSE, chi0
+#                  (QP transitions), chi (+ Hartree local fields) and Casida with the exact kernel frozen at
+#                  w = 0 and at the A exciton -> prod/casida_spectra.dat/.png (LABEL= sets the title)
 #   STAGE=all    : all of them in a row (default). Every stage skips what is already done, so a job
 #                  that stops (time limit, error) is resubmitted with the same command.
 #
@@ -812,6 +815,42 @@ try:
 except Exception as e:
     print('# no plot:', e)
 PY
+;; esac
+
+case $STAGE in spectra)   # absorption at q1: BSE, chi0, chi and Casida with fxc frozen at 0 and at E_A
+  [ -f $P/kx/ok ] || { echo "!!! no checked kernel in prod/kx: run STAGE=export"; exit 1; }
+  ETAS=${ETAS:-0.03}; GQ=${GAPX:-$GDIR}
+  EX=$(rep kx_bse 1 "$BRK"); [ -n "$EX" ] || { echo "!!! no A exciton in prod/r-kx_bse_*"; exit 1; }
+  SHI=$(python3 -c "print(f'{$GQ + 0.8:.3f}')"); SNS=$(python3 -c "print(int(round($SHI / 0.005)) + 1)")
+  echo "=== absorption at q1: BSE, chi0, chi, exact fxc frozen at 0 and at E_A = $EX eV, broadening $ETAS eV ($(date +%H:%M)) ==="
+  if ! ls $P/o-bsp.*_q1_* >/dev/null 2>&1; then    # the export's BSE, broadened, 0..gap + 0.8 eV
+    fresh bsp; ( XLO=0 XHI=$SHI XNS=$SNS XDM=$ETAS; bse_in $P/bsp.in bcp 1 1 )
+    say "bsp: BSE spectrum"
+    launch bsp "bsp,w" "ls o-bsp.*_q1_* >/dev/null 2>&1" one || exit 1
+    rm -rf $P/bsp
+  fi
+  for j in xsp0 xspA; do       # Casida matrices at z = 0 and at the kernel frequencies within DW of E_A
+    ls $P/o-$j.Ktt_q1_w* >/dev/null 2>&1 && continue
+    win=' 0.0 | 0.0 | eV'
+    [ $j = xspA ] && win=$(python3 -c "print(f' {$EX - $DW:.4f} | {$EX + $DW:.4f} | eV')")
+    fresh $j; bse_in $P/$j.in cas 1 1 '% BSEChiKoutW' "$win" '%'
+    say "$j: Casida matrix at w =$win"
+    launch $j "$j,kx,w" "ls o-$j.Ktt_q1_w* >/dev/null 2>&1" one || exit 1
+    rm -rf $P/$j
+  done
+  FA=$(cd $P && python3 -c "
+import glob, sys
+best = None
+for f in glob.glob('o-xspA.Ktt_q1_w*'):
+    for l in open(f):
+        if 'z =' in l:
+            d = abs(float(l.split('z =')[1].split()[0]) - $EX); best = min(best or (d, f), (d, f)); break
+        if not l.startswith('#'): break
+print(best[1] if best else '')")
+  [ -n "$FA" ] || { echo "!!! no Casida matrix near E_A in prod/o-xspA.Ktt_q1_w*"; exit 1; }
+  ( cd $P && python3 $T/casida_spectra.py o-xsp0.Ktt_q1_transitions o-xsp0.Ktt_q1_w1 $FA \
+      --bse $(ls o-bsp.alpha_q1_* o-bsp.eps_q1_* 2>/dev/null | head -1) --eta $ETAS --exciton $EX --gap $GQ \
+      --label "${LABEL:-}" --out casida_spectra ) || exit 1
 ;; esac
 
 # ---------- summary ----------
