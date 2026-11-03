@@ -47,7 +47,8 @@
 #   STAGE=spectra: absorption at q1 (Im alpha, broadening ETAS, default 0.03 eV): the export's BSE, chi0
 #                  (QP transitions), chi (+ Hartree local fields) and Casida with the exact kernel frozen at
 #                  w = 0 and at the A exciton, chi0 also on DFT energies, and with fxc(w) at every w (kernel exported on the same
-#                  broadened grid; lies on the BSE) -> prod/casida_spectra.dat/.png (LABEL= sets the title)
+#                  broadened grid; lies on the BSE) -> prod/casida_spectra.dat/.png, and the two halves
+#                  casida_spectra_chi.png (chi0, chi) and casida_spectra_tddft.png (BSE, TDDFT) (LABEL= sets the title)
 #   STAGE=all    : all of them in a row (default). Every stage skips what is already done, so a job
 #                  that stops (time limit, error) is resubmitted with the same command.
 #
