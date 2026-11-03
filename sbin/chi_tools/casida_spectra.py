@@ -74,6 +74,7 @@ def main():
     ap.add_argument('wA', help='w-file at the frequency nearest the A exciton')
     ap.add_argument('--bse', required=True, help="Yambo's BSE spectrum of the same model (broadened)")
     ap.add_argument('--dyn', help="Yambo's spectrum of Casida with fxc(w) at every w (BSEChiDyn, same grid)")
+    ap.add_argument('--ks', help="a Yambo BSE spectrum on KS energies: its independent-particle column is chi0 with DFT energies")
     ap.add_argument('--eta', type=float, default=0.05, help='Lorentzian width [eV], as the Yambo run')
     ap.add_argument('--exciton', type=float, help='A exciton of the BSE [eV] (marked)')
     ap.add_argument('--gap', type=float, help='gap [eV] (marked)')
@@ -86,7 +87,10 @@ def main():
     tr, E, Ea, res, Aa, Ba = kc.read_rows(a.transitions)
     n = len(tr)
     w, bse, ip_y = yambo_spectrum(a.bse)
-    dyn = None
+    dyn = ks = None
+    if a.ks:
+        wk, _, ksip = yambo_spectrum(a.ks)
+        ks = np.interp(w, wk, ksip)
     if a.dyn:
         wd, dyn, _ = yambo_spectrum(a.dyn)
         dyn = np.interp(w, wd, dyn)
@@ -121,9 +125,11 @@ def main():
         print(f'  strongest peak {lab:9s} {w[i]:.4f} eV')
     print(f'  strongest peak {"BSE":9s} {w[np.argmax(bse)]:.4f} eV')
 
-    cols = [w, bse, curves['chi0'], curves['chi'], curves['fxc0'], curves['fxcA']] + ([dyn] if dyn is not None else [])
+    cols = [w, bse, curves['chi0'], curves['chi'], curves['fxc0'], curves['fxcA']] + ([dyn] if dyn is not None else []) \
+        + ([ks] if ks is not None else [])
     np.savetxt(f'{a.out}.dat', np.column_stack(cols), fmt='%.6e',
                header=f'w[eV] Im BSE, chi0, chi, fxc(0), fxc(w={zA:.4f})' + (', fxc(w) at every w' if dyn is not None else '')
+               + (', chi0 on DFT energies' if ks is not None else '')
                + ' (Casida curves scaled to the Yambo units)')
     try:
         import matplotlib
@@ -133,6 +139,8 @@ def main():
         print('no plot:', e)
         return
     fig, ax = plt.subplots(figsize=(9.5, 4.6))
+    if ks is not None:
+        ax.plot(w, ks, color='#a8a39a', lw=1.0, label=r'$\chi_0$ (DFT energies)')
     ax.plot(w, curves['chi0'], color='#898781', lw=1.2, ls=':', label=r'$\chi_0$ (independent QP transitions)')
     ax.plot(w, curves['chi'], color='#52514e', lw=1.2, ls='--', label=r'$\chi$ (+ Hartree local fields)')
     ax.plot(w, bse, color='#2a78d6', lw=4, alpha=0.45, label='BSE')
@@ -142,9 +150,14 @@ def main():
     ax.plot(w, curves['fxcA'], color='#eb6834', lw=1.5, ls='-.',
             label=rf'TDDFT, exact $f_{{xc}}$ at $\omega=E_A$ ({zA:.3f} eV)')
     lo = a.emin if a.emin is not None else (a.exciton - 0.35 if a.exciton else w.min())
+    if a.emin is None and ks is not None:     # the DFT chi0 starts at the KS gap, far below the QP one
+        on = np.where(ks > 0.05 * ks.max())[0]
+        if len(on):
+            lo = min(lo, max(w[on[0]] - 0.15, w.min()))
     hi = a.emax if a.emax is not None else (a.gap + 0.75 if a.gap else w.max())
     m = (w >= lo) & (w <= hi)
-    top = max(bse[m].max(), *(c[m].max() for c in curves.values()), *([dyn[m].max()] if dyn is not None else []))
+    top = max(bse[m].max(), *(c[m].max() for c in curves.values()), *([dyn[m].max()] if dyn is not None else []),
+              *([ks[m].max()] if ks is not None else []))
     for x, lab in ((a.exciton, 'exciton'), (a.gap, 'QP gap')):
         if x:
             ax.axvline(x, color='k', lw=0.8, ls=':')

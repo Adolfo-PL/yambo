@@ -46,7 +46,7 @@
 #                  response the w = 0 kernel is defined by), different at the exciton -> prod/static0.*
 #   STAGE=spectra: absorption at q1 (Im alpha, broadening ETAS, default 0.03 eV): the export's BSE, chi0
 #                  (QP transitions), chi (+ Hartree local fields) and Casida with the exact kernel frozen at
-#                  w = 0 and at the A exciton, and with fxc(w) at every w (kernel exported on the same
+#                  w = 0 and at the A exciton, chi0 also on DFT energies, and with fxc(w) at every w (kernel exported on the same
 #                  broadened grid; lies on the BSE) -> prod/casida_spectra.dat/.png (LABEL= sets the title)
 #   STAGE=all    : all of them in a row (default). Every stage skips what is already done, so a job
 #                  that stops (time limit, error) is resubmitted with the same command.
@@ -830,6 +830,13 @@ case $STAGE in spectra)   # absorption at q1: BSE, chi0, chi and Casida with fxc
     launch bsp "bsp,w" "ls o-bsp.*_q1_* >/dev/null 2>&1" one || exit 1
     rm -rf $P/bsp
   fi
+  # the same BSE on DFT (KS) energies: its independent-particle column is chi0 without the GW corrections
+  if ! ls $P/o-bks.*_q1_* >/dev/null 2>&1; then
+    fresh bks; ( XLO=0 XHI=$SHI XNS=$SNS XDM=$ETAS; bse_in $P/bks.in bcp 1 1 ); sed -i '/^KfnQPdb/d' $P/bks.in
+    say "bks: BSE spectrum on KS energies (for chi0 with DFT energies)"
+    launch bks "bks,w" "ls o-bks.*_q1_* >/dev/null 2>&1" one || exit 1
+    rm -rf $P/bks
+  fi
   # the exact kernel on the broadened grid of that spectrum (w + i ETAS), then Casida with fxc(w) at each w
   # of it (BSEChiDyn): the full frequency dependence, which must lie on the BSE
   if [ ! -s $P/kxs/ndb.Chi ]; then
@@ -865,7 +872,8 @@ print(best[1] if best else '')")
   [ -n "$FA" ] || { echo "!!! no Casida matrix near E_A in prod/o-xspA.Ktt_q1_w*"; exit 1; }
   ( cd $P && python3 $T/casida_spectra.py o-xsp0.Ktt_q1_transitions o-xsp0.Ktt_q1_w1 $FA \
       --bse $(ls o-bsp.alpha_q1_* o-bsp.eps_q1_* 2>/dev/null | head -1) --eta $ETAS \
-      --dyn $(ls o-xdyn.alpha_q1_* o-xdyn.eps_q1_* 2>/dev/null | head -1) --exciton $EX --gap $GQ \
+      --dyn $(ls o-xdyn.alpha_q1_* o-xdyn.eps_q1_* 2>/dev/null | head -1) \
+      --ks $(ls o-bks.alpha_q1_* o-bks.eps_q1_* 2>/dev/null | head -1) --exciton $EX --gap $GQ \
       --label "${LABEL:-}" --out casida_spectra ) || exit 1
 ;; esac
 
