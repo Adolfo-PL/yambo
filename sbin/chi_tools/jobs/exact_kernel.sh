@@ -46,7 +46,8 @@
 #                  response the w = 0 kernel is defined by), different at the exciton -> prod/static0.*
 #   STAGE=spectra: absorption at q1 (Im alpha, broadening ETAS, default 0.03 eV): the export's BSE, chi0
 #                  (QP transitions), chi (+ Hartree local fields) and Casida with the exact kernel frozen at
-#                  w = 0 and at the A exciton -> prod/casida_spectra.dat/.png (LABEL= sets the title)
+#                  w = 0 and at the A exciton, and with fxc(w) at every w (kernel exported on the same
+#                  broadened grid; lies on the BSE) -> prod/casida_spectra.dat/.png (LABEL= sets the title)
 #   STAGE=all    : all of them in a row (default). Every stage skips what is already done, so a job
 #                  that stops (time limit, error) is resubmitted with the same command.
 #
@@ -829,6 +830,20 @@ case $STAGE in spectra)   # absorption at q1: BSE, chi0, chi and Casida with fxc
     launch bsp "bsp,w" "ls o-bsp.*_q1_* >/dev/null 2>&1" one || exit 1
     rm -rf $P/bsp
   fi
+  # the exact kernel on the broadened grid of that spectrum (w + i ETAS), then Casida with fxc(w) at each w
+  # of it (BSEChiDyn): the full frequency dependence, which must lie on the BSE
+  if [ ! -s $P/kxs/ndb.Chi ]; then
+    fresh kxsp; ( XLO=0 XHI=$SHI XNS=$SNS XDM=$ETAS; bse_in $P/kxsp.in kx 1 1 )
+    say "kxsp: export on the broadened grid, $SNS frequencies"
+    launch kxsp "kxsp,w" "ls kxsp/ndb.Chi >/dev/null 2>&1" one || exit 1
+    mkdir -p $P/kxs; cp $P/kxsp/ndb.Chi* $P/kxs/; rm -rf $P/kxsp
+  fi
+  if ! ls $P/o-xdyn.*_q1_* >/dev/null 2>&1; then
+    fresh xdyn; ( XLO=0 XHI=$SHI XNS=$SNS XDM=$ETAS; bse_in $P/xdyn.in cas 1 1 )
+    say "xdyn: Casida with fxc(w) at every w"
+    launch xdyn "xdyn,kxs,w" "ls o-xdyn.*_q1_* >/dev/null 2>&1" one || exit 1
+    rm -rf $P/xdyn
+  fi
   for j in xsp0 xspA; do       # Casida matrices at z = 0 and at the kernel frequencies within DW of E_A
     ls $P/o-$j.Ktt_q1_w* >/dev/null 2>&1 && continue
     win=' 0.0 | 0.0 | eV'
@@ -849,7 +864,8 @@ for f in glob.glob('o-xspA.Ktt_q1_w*'):
 print(best[1] if best else '')")
   [ -n "$FA" ] || { echo "!!! no Casida matrix near E_A in prod/o-xspA.Ktt_q1_w*"; exit 1; }
   ( cd $P && python3 $T/casida_spectra.py o-xsp0.Ktt_q1_transitions o-xsp0.Ktt_q1_w1 $FA \
-      --bse $(ls o-bsp.alpha_q1_* o-bsp.eps_q1_* 2>/dev/null | head -1) --eta $ETAS --exciton $EX --gap $GQ \
+      --bse $(ls o-bsp.alpha_q1_* o-bsp.eps_q1_* 2>/dev/null | head -1) --eta $ETAS \
+      --dyn $(ls o-xdyn.alpha_q1_* o-xdyn.eps_q1_* 2>/dev/null | head -1) --exciton $EX --gap $GQ \
       --label "${LABEL:-}" --out casida_spectra ) || exit 1
 ;; esac
 
