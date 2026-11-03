@@ -466,7 +466,7 @@ def grid_table(sfx, title):
     for n in Ns:
         print(f'  {n:8d} ' + ' '.join(f'{vals.get((n, x), float("nan")):8.4f}' for x in Bs))
 
-out = {}
+out, var = {}, {'bands': {}, 'block': {}}     # var: the bands and block scans of every variant (RIM-W, BG, MPA)
 out['exx'] = scan('exx', 'Exchange cutoff EXXRLvcs (Ry): exchange-only gap (Sigma_x - Vxc)', 'Ry', 'hf')
 for sfx, tag in [(r + b + m, ' [' + ', '.join(x for x in (r and 'RIM-W', b and 'BG terminator', m and 'MPA') if x) + ']' if r + b + m else '')
                  for m in ('', '_mpa') for r in ('', '_rimw') for b in ('', '_bg')]:
@@ -480,8 +480,10 @@ for sfx, tag in [(r + b + m, ' [' + ', '.join(x for x in (r and 'RIM-W', b and '
         print(f'  1/N extrapolation (last 3 points): gap(N -> inf) = {ginf:.4f} eV '
               f'({(ginf - g[-1])*1000:+.0f} meV from N = {N[-1]:g})')
     bl = scan('block', 'Screening block NGsBlkXp (Ry)' + tag, 'Ry', sfx=sfx)
-    if not sfx:
-        out['bands'], out['block'] = b, bl
+    if b:
+        var['bands'][tag.strip(' []') or 'plain'] = b
+    if bl:
+        var['block'][tag.strip(' []') or 'plain'] = bl
     grid_table(sfx, 'QP gap (eV), bands (rows) x block in Ry (columns)' + tag)
 
 # k grids (STAGE=dirs): the final runs in this directory, its subdirectories and DIRS
@@ -531,12 +533,17 @@ if spl:
         print(f'  {n:>36s} {k:3d} {dv[0]*1000:8.1f} {dv[1]*1000:8.1f} {dc[0]*1000:8.1f} {dc[1]*1000:8.1f}')
 try:
     import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
-    pl = [(k, t, u) for k, t, u in (('exx', 'EXXRLvcs (Ry)', ''), ('bands', 'bands N', ''), ('block', 'NGsBlkXp (Ry)', '')) if out[k]]
+    # one panel per scan; the bands and block panels carry one line per variant that has runs
+    series = {'exx': {'': out['exx']} if out['exx'] else {}, 'bands': var['bands'], 'block': var['block']}
+    pl = [(k, t) for k, t in (('exx', 'EXXRLvcs (Ry)'), ('bands', 'bands N'), ('block', 'NGsBlkXp (Ry)')) if series[k]]
     if pl:
         fig, ax = plt.subplots(1, len(pl), figsize=(4 * len(pl), 3.2), squeeze=False)
-        for a, (k, t, _) in zip(ax[0], pl):
-            x = [r[0] for r in out[k]]; y = [r[3] for r in out[k]]
-            a.plot(x, y, 'o-'); a.set_xlabel(t); a.set_ylabel('QP gap (eV)')
+        for a, (k, t) in zip(ax[0], pl):
+            for lab, rows in series[k].items():
+                a.plot([r[0] for r in rows], [r[3] for r in rows], 'o-', label=lab or None)
+            a.set_xlabel(t); a.set_ylabel('QP gap (eV)' if k != 'exx' else 'exchange-only gap (eV)')
+            if any(series[k]):
+                a.legend(fontsize=7)
         fig.tight_layout(); fig.savefig(f'{top}/gw_convergence.png', dpi=150)
         print(f'\nwrote {top}/gw_convergence.png')
 except Exception as e:
