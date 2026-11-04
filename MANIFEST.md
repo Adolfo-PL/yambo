@@ -113,3 +113,35 @@ Not included at all (outside this path):
 Not tested: `"full"`, finite q, partly filled bands, and the removed failure paths (the guards stop a run; the
 reading copies simply do not). The reduced `mod_BS.F`/`mod_Chi.F` were type-checked, not linked into the run.
 The branch as a whole does not build: files outside this path are missing on purpose.
+
+## Build branch (`numerics-reading-build`): what is added beyond the reading copy
+
+This branch is `numerics-reading` plus only the infrastructure needed to **build and switch on** the same path.
+The numerics files are the reading copies, with the guards still removed.
+
+| added | purpose |
+| --- | --- |
+| `src/io/io_Chi.F` (fork, unchanged) and the full fork `src/modules/mod_Chi.F` | `ndb.Chi` read/write; the reduced module lacks what `io_Chi` needs |
+| `"Chi"` in `src/Yio/io_fragment*.F` | fragment I/O for `ndb.Chi` |
+| `.objects` in `src/bse`, `src/io`, `src/modules`, `src/tddft` | the new files are compiled |
+| `l_chi_bs_fxc` (`mod_drivers.F`, `INIT*.F`), `BS_K_is_Chi` default (`SET_defaults.F`) | `BSKmod = "CHI"`, `-k chi` |
+| `BSEChiOut`, `BSEChiDyn`, `BSEGinplane` (`INIT_load.F`, `INIT_activate.F`, `K_driver_init.F`) | the input variables |
+| `TDDFT_do_X_W_typs.F`, `K_OUTPUT.F`, `X_OUTPUT_driver.F` | skip the local TDDFT setup; output name `ChiDyn` |
+
+Still left out: `BSEChiKoutW/B` (text dump), the Green-function route, `ndb.W`, all guards and the `Lkind` checks.
+Without the guards a mismatched Casida run is not stopped.
+
+### Check: built and run on the WS2 test
+
+The branch was configured and built in its own tree with the fork's configure options (gfortran, MPI + OpenMP, NetCDF/HDF5).
+On the same WS2 inputs as above (`BSEChiOut = "exc"` at q = 0, then static and dynamic Casida), compared with the fork's binary:
+
+| compared with the fork's results | result |
+| --- | --- |
+| `CHI_FREQ`, `CHI0`, `P`, `FXC` of `ndb.Chi` (322 x 21 x 21) | identical, bit for bit |
+| BSE spectrum of the export run | identical |
+| static Casida spectrum | identical |
+| dynamic Casida spectrum | identical |
+
+`ndb.Chi` written by this branch lacks two metadata fields the fork writes (`CHI_NTRANS`, `CHI_SERIAL`); they feed only the guards.
+Not tested: `"full"`, finite q, partly filled bands.

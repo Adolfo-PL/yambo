@@ -51,6 +51,7 @@ subroutine K_OUTPUT(iq,W,WHAT,OBS)
    if (STRING_match(WHAT,"Slepc"))     solver="slepc"
    if (STRING_match(WHAT,"Inversion")) solver="inv"
    if (STRING_match(WHAT,"IP"))        solver="IP"
+   if (STRING_match(WHAT,"ChiDyn"))    solver="chidyn"
    !
    if (STRING_match(WHAT,"bare")) then
      out_string=""

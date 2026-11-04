@@ -55,7 +55,7 @@ subroutine SET_defaults(INSTR,IND,OD,COM_DIR)
 #endif
  use BS,         ONLY:BS_n_g_W,BS_eh_en,BS_identifier,BS_q,BS_eh_win,MAX_BSK_LIN_size,&
 &                     BS_K_dim,BS_not_const_eh_f,BSK_mode,l_BSE_kernel_complete,&
-&                     BS_K_is_ALDA,BSE_mode,BSE_prop,BSE_L_kind,BS_K_cutoff,BS_perturbative_SOC,BSK_IO_mode
+&                     BS_K_is_ALDA,BS_K_is_Chi,BSE_mode,BSE_prop,BSE_L_kind,BS_K_cutoff,BS_perturbative_SOC,BSK_IO_mode
  use TDDFT,      ONLY:FXC_type,FXC_n_g_corr,FXC_mode,&
 &                     FXC_per_memstps,FXC_LRC_alpha,FXC_PF_alpha,FXC_LRC_beta,FXC_SVD_digits,&
 &                     FXC_is_retarded,TDDFT_mode
@@ -444,6 +444,7 @@ subroutine SET_defaults(INSTR,IND,OD,COM_DIR)
  BSS_uses_DbGd=.FALSE.
  BSS_damp_reference=0._SP
  BS_K_is_ALDA=.FALSE.
+ BS_K_is_Chi=.FALSE.
  BS_not_const_eh_f=.FALSE.
  BS_perturbative_SOC=.FALSE.
  Haydock_threshold=-0.02_SP
