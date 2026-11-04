@@ -35,10 +35,10 @@ if type module >/dev/null 2>&1; then
 fi
 [ -f SAVE/ns.db1 ] || { echo "!!! no SAVE here"; exit 1; }
 if [ ! -f "$IN" ]; then
-  yambo -nompi -F "$IN" -gw0 p -hf -dyson n -rim_cut -Q > /dev/null 2>&1 || yambo -F "$IN" -gw0 p -hf -dyson n -rim_cut -Q
+  yambo -nompi -F "$IN" -gw0 p -hf -dyson n -r -Q > /dev/null 2>&1 || yambo -F "$IN" -gw0 p -hf -dyson n -r -Q
   echo "wrote $IN: edit it (bands, cutoffs, QPkrange, CUTGeo), then sbatch this script"
   exit 0
 fi
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1}
-srun yambo -F "$IN" -J "$JOB"
+srun --cpus-per-task=$OMP_NUM_THREADS yambo -F "$IN" -J "$JOB"
 ls o-$JOB.qp* 2>/dev/null && tail -25 o-$JOB.qp* | grep -v "^#"
