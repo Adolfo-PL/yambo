@@ -27,6 +27,10 @@ module BS
  logical :: BS_cpl_K_exchange=.FALSE.
  logical :: BS_cpl_K_corr=.FALSE.
  logical :: BS_K_is_ALDA=.FALSE.
+ logical :: BS_K_is_Chi=.FALSE.
+ logical :: BS_K_Chi_dynamic=.FALSE.
+ character(schlen) :: BS_K_Chi_out="none"
+ logical  :: BS_G_inplane=.FALSE.
  logical :: BS_not_const_eh_f=.FALSE.
  logical :: BS_perturbative_SOC=.FALSE.
  logical :: BS_K_has_been_calculated_loaded=.FALSE.

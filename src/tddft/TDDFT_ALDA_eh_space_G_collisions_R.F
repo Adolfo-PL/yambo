@@ -7,7 +7,7 @@
 !
 #include<dev_defs.h>
 !
-subroutine TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_T_grp,NG,l_bs_tddft_wf_in_loop,tddft_wf,mode)
+subroutine TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_T_grp,NG,l_bs_tddft_wf_in_loop,tddft_wf,mode,l_bare)
  !
  ! Calculates the F_xc scattering 
  !
@@ -20,12 +20,15 @@ subroutine TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_T_grp,NG,l_bs_tddft_wf_in_
  use xc_functionals, ONLY:F_xc_mat
  use interfaces,     ONLY:WF_load,WF_free
  use R_lattice,      ONLY:qindx_X,bz_samp,minus_G
- use BS,             ONLY:l_BS_magnons,BS_T_grp,BS_bands
+ use BS,             ONLY:l_BS_magnons,BS_T_grp,BS_bands,BS_K_is_Chi,BS_n_g_fxc
+ use BS_solvers,     ONLY:BSS_q0
+ use DIPOLES,        ONLY:DIP_iR
  use electrons,      ONLY:n_spinor,n_sp_pol,n_spin
  use timing_m,       ONLY:timing
  use openmp,         ONLY:OPENMP_update,master_thread
  use interfaces,     ONLY:WF_apply_symm
  use TDDFT,          ONLY:tddft_wf_t
+ use collision_el,   ONLY:elemental_collision,elemental_collision_alloc,elemental_collision_free
  !
  implicit none
  !
@@ -34,10 +37,12 @@ subroutine TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_T_grp,NG,l_bs_tddft_wf_in_
  logical,      intent(in) :: l_bs_tddft_wf_in_loop
  character(1), intent(in) :: mode
  type(tddft_wf_t), target, intent(inout) :: tddft_wf 
+ logical, intent(in) :: l_bare
  ! 
  ! Work Space
  !
  logical     :: l_load_WFs
+ logical     :: bare_vertex
  integer     :: i_spinor,j_spinor,ip_spinor,jp_spinor,ifft,irhotw,is_yambo,os_yambo,i_spinor_y,j_spinor_y,&
 &               i_sp_loop,o_sp_loop
  integer     :: i_T_el,i_T_el_p,N_T_el_p,i_c,i_v,i_sp_c,i_sp_v,i_k_bz,i_k,i_s,i_g0,i_g1,i_g2,i_p_bz,i_g_p,i_p,&
@@ -46,12 +51,15 @@ subroutine TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_T_grp,NG,l_bs_tddft_wf_in_
  complex(DP), pointer :: rhotwr_p(:)
  complex(SP), pointer :: WF_symm1_p(:,:)
  complex(SP), pointer :: WF_symm2_p(:,:)
+ complex(SP) :: chi_dipole(3),chi_head
+ type(elemental_collision) :: chi_scatt
  !
 #if defined _CUDA
  call error("TDDFT ALDA Osc. not GPU ported")
 #endif
  !
  call timing('T_space ALDA Osc.',OPR='start')
+ bare_vertex=l_bare
  !
  ! Allocate
  !
@@ -62,6 +70,7 @@ subroutine TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_T_grp,NG,l_bs_tddft_wf_in_
  WF_symm1_p=cZERO
  WF_symm2_p=cZERO
  rhotwr_p=  cZERO
+ if (bare_vertex) call elemental_collision_alloc(chi_scatt,NG=BS_n_g_fxc,CPU_ONLY=.TRUE.,TITLE='Chi/BSK')
  !
  ! Use pointers both for CUDA and to avoid continuous allocation and de-allocation
  !
@@ -125,17 +134,31 @@ subroutine TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_T_grp,NG,l_bs_tddft_wf_in_
    if ( (is(4)/=os(4)) .and. ((.not.l_BS_magnons).or. n_sp_pol==1) ) call error(" TDDFT_ALDA_R_space: wrong spin index")
    if ( (is(4)==os(4)) .and. ((     l_BS_magnons).and.n_sp_pol==2) ) call error(" TDDFT_ALDA_R_space: wrong spin index")
    !
-   call WF_apply_symm(is,WF_symm1_p)
-   call WF_apply_symm(os,WF_symm2_p)
+   if (.not.bare_vertex) then
+     call WF_apply_symm(is,WF_symm1_p)
+     call WF_apply_symm(os,WF_symm2_p)
+   endif
    !
-   if( n_spin==1 ) then
+   if (bare_vertex) then
+     chi_scatt%is=is
+     chi_scatt%os=os
+     chi_scatt%qs=(/i_g_p,iq,1/)
+     call scatter_Bamp(chi_scatt)
+     BS_T_grp(i_T_grp)%O_tddft_R(:,i_T_el,1,1)=conjg(chi_scatt%rhotw)
+     if (iq==1) then
+       call DIPOLE_rotate(i_c,i_v,i_k_bz,i_sp_c,'DIP_iR',Xk,chi_dipole)
+       chi_head=-dot_product(BSS_q0,chi_dipole)
+       if (mode=='A'.or.mode=='C') chi_head=-conjg(chi_head)
+       BS_T_grp(i_T_grp)%O_tddft_R(1,i_T_el,1,1)=chi_head
+     endif
+   else if( n_spin==1 ) then
      !
      rhotwr_p(:)=cmplx(F_xc_mat(:,1,1,1,1)*WF_symm1_p(:,1)*conjg(WF_symm2_p(:,1)),kind=DP)
      call perform_fft_3d(qs,rhotwr_p,BS_T_grp(i_T_grp)%O_tddft_R(:,i_T_el,1,1))
      !
    endif
    !
-   if(n_sp_pol==2) then
+   if(n_sp_pol==2.and..not.bare_vertex) then
      !
      do i_sp_loop=1,n_sp_pol
        do o_sp_loop=1,n_sp_pol
@@ -155,7 +178,7 @@ subroutine TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_T_grp,NG,l_bs_tddft_wf_in_
      enddo
    endif
    !
-   if(n_spinor==2) then
+   if(n_spinor==2.and..not.bare_vertex) then
      !
      do i_spinor=1,n_spinor
        do j_spinor=1,n_spinor
@@ -180,6 +203,7 @@ subroutine TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_T_grp,NG,l_bs_tddft_wf_in_
  enddo
  !
  if(l_bs_tddft_wf_in_loop) call WF_free(WF,keep_fft=.true.,keep_states_to_load=.true.)
+ if (bare_vertex) call elemental_collision_free(chi_scatt)
  !
  nullify(WF_symm1_p)
  nullify(WF_symm2_p)

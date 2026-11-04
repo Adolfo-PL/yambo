@@ -9,7 +9,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  !
  ! K = <2V-W> for n_spin=1; K=<V-W> for n_spin>1
  !
- use pars,          ONLY:SP,schlen,pi,cZERO,cI
+ use pars,          ONLY:SP,DP,schlen,pi,cZERO,cI
  use LOGO,          ONLY:pickup_a_random
  use drivers,       ONLY:l_bs_fxc,l_tddft,l_rim_w
  use frequency,     ONLY:w_samp
@@ -29,15 +29,16 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  use BS,            ONLY:BS_bands,BS_res_K_corr,BS_W,BS_W_is_diagonal,&
 &                        BS_res_K_exchange,BS_Block_size,BS_n_g_W,&
 &                        O_ng,BS_n_g_exch,BS_n_g_fxc,BS_identifier,BS_LiveTiming_steps,&
-&                        BS_K_dim,BS_K_is_ALDA,BS_cpl_K_exchange,&
+&                        BS_K_dim,BS_K_is_ALDA,BS_K_is_Chi,BS_K_Chi_dynamic,BS_K_Chi_out,BS_K_coupling,BS_cpl_K_exchange,&
 &                        BS_cpl_K_corr,K_EXCH_collision,K_CORR_collision,&
 &                        WF_phase,n_BS_blks,BS_blk,BS_T_grp,&
 &                        BS_nT_grps,BS_blks_free,l_BS_ares_from_res,&
 &                        l_BSE_minimize_memory,l_BSE_restart,l_BSE_kernel_complete,&
 &                        BS_perturbative_SOC,BS_K_cutoff,BS_max_val,l_BS_magnons
  use collision_el,  ONLY:elemental_collision_free
+ use ALLOC,         ONLY:DIPOLE_ALLOC_global
  use IO_int,        ONLY:io_control
- use IO_m,          ONLY:REP,OP_WR,RD,WR_CL,OP_APP,deliver_IO_error_message,WR
+ use IO_m,          ONLY:REP,OP_WR,RD,WR_CL,OP_APP,deliver_IO_error_message,WR,OP_RD_CL,DUMP
  use TDDFT,         ONLY:FXC_K_diagonal,F_xc_gspace,FXC_n_g_corr,io_BS_Fxc, &
 &                        FXC_mode,tddft_wf_t,l_Fxc_from_Vxc
  use xc_functionals,ONLY:V_xc,F_xc,F_xc_mat,magn,XC_potential_driver
@@ -50,6 +51,8 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  use MAGNONS,       ONLY:BSS_MAGN_free
  use PHOTOLUM,      ONLY:BSS_PL_free
  use parser_m,      ONLY:parser
+ use Chi_m,         ONLY:Chi_ng,Chi_fxc,Chi_free,Chi_dyn_V,Chi_dyn_s,Chi_dyn_filled,Chi_dyn_c,Chi_dyn_free
+ use TDDFT_Chi_Fourier_m, ONLY:TDDFT_Chi_pair_G
  !
 #include<dev_defs.h>
 #include<y_memory.h>
@@ -63,6 +66,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  ! Work Space ...
  !
  type(tddft_wf_t), target  :: tddft_wf
+ type(w_samp)               :: Chi_w
  character(schlen) :: section_title
  character(1)      :: mode_now
  !
@@ -107,6 +111,12 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  !
  logical :: BS_blk_done(n_BS_blks),l_partial_kernel_loaded
  integer :: n_steps,m_steps,i_steps
+ integer :: ID_Chi,io_Chi_err,chi_grp_p,i_T_dyn,i_ra
+ integer, external :: io_Chi
+ logical :: l_chi_vtx,l_chi_vtx_only
+ complex(DP) :: chi_pair
+ complex(DP), allocatable :: Chi_static(:,:)
+ complex(SP), allocatable :: chi_R_res(:,:),chi_R_cpl(:,:)
  !
  ! Constants & Setup
  !==================
@@ -153,6 +163,8 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  call section('=',trim(section_title))
  !
  l_bs_exch=(any((/BS_res_K_exchange,BS_cpl_K_exchange/)).or.l_bs_fxc).and..not.(l_BS_magnons.and.n_sp_pol==2)
+ l_chi_vtx     =BS_K_is_Chi.or.trim(BS_K_Chi_out)/='none'
+ l_chi_vtx_only=l_chi_vtx.and..not.BS_K_is_Chi
  l_bs_corr=(any((/BS_res_K_corr,BS_cpl_K_corr/)) .and. .not.l_bs_fxc)
  !
  ! Oscillators Setup
@@ -173,12 +185,12 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
    call msg('r','[BSE] Exchange components ',BS_n_g_exch)
  endif
  !
- if (BS_K_is_ALDA) then
+ if (BS_K_is_ALDA.or.l_chi_vtx) then
    O_ng_tddft =maxval(qindx_X(iq,:,2))
-   l_tddft_gsum=(index(FXC_mode,"G-")>0)
-   l_tddft_rsum=(index(FXC_mode,"R-")>0)
+   l_tddft_gsum=l_chi_vtx.or.(index(FXC_mode,"G-")>0)
+   l_tddft_rsum=(.not.l_chi_vtx).and.(index(FXC_mode,"R-")>0)
    if( .not.(l_tddft_gsum.or.l_tddft_rsum) ) call error("Wrong FXC_mode:"//trim(FXC_mode))
-   if(index(FXC_mode,"cut_GmGp")>0) then
+   if(BS_K_is_ALDA.and.index(FXC_mode,"cut_GmGp")>0) then
      FXC_n_g_corr=BS_n_g_fxc
      if (BS_n_g_fxc/= eval_G_minus_G(BS_n_g_fxc,0) ) then
        BS_n_g_fxc   = eval_G_minus_G(BS_n_g_fxc,0)
@@ -239,6 +251,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
    YAMBO_FREE_GPU(DEV_VAR(RIM_W))
    YAMBO_FREE(RIM_W)
    !
+   if (l_chi_vtx.and.iq==1) call DIPOLE_ALLOC_global()
    return
    !
  endif
@@ -303,7 +316,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
    !
  if ((.not.l_bs_exch).and.iHxc==1) cycle
  !
- if ((.not.BS_K_is_ALDA).and.iHxc==2) cycle
+ if ((.not.(BS_K_is_ALDA.or.l_chi_vtx)).and.iHxc==2) cycle
  !
  if ((.not.l_bs_corr).and.iHxc==3) cycle
  !
@@ -318,9 +331,38 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  !======
  if (iHxc==2) then
    !
+   if (BS_K_is_Chi) then
+     chi_grp_p=0
+     call io_control(ACTION=OP_RD_CL,COM=REP,MODE=DUMP,SEC=(/1/),ID=ID_Chi)
+     io_Chi_err=io_Chi(X,Chi_w,ID_Chi)
+     call io_control(ACTION=OP_RD_CL,COM=REP,MODE=DUMP,SEC=(/2*iq,2*iq+1/),ID=ID_Chi)
+     io_Chi_err=io_Chi(X,Chi_w,ID_Chi)
+     if (BS_K_Chi_dynamic) then
+       call Chi_dyn_free()
+       allocate(Chi_dyn_V(Chi_ng,BS_K_dim(1),2),Chi_dyn_s(BS_K_dim(1)),Chi_dyn_filled(BS_K_dim(1),2))
+       Chi_dyn_V=(0._DP,0._DP)
+       Chi_dyn_s=0._DP
+       Chi_dyn_filled=.FALSE.
+       Chi_dyn_c=real(Co,DP)/(4._DP*real(pi,DP))
+     else
+       YAMBO_ALLOC(Chi_static,(Chi_ng,Chi_ng))
+       Chi_static=cmplx(Chi_fxc(:,:,1),kind=DP)
+     endif
+   endif
+   !
+   if (l_chi_vtx_only) then
+     call Chi_dyn_free()
+     allocate(Chi_dyn_V(BS_n_g_fxc,BS_K_dim(1),2),Chi_dyn_s(BS_K_dim(1)),Chi_dyn_filled(BS_K_dim(1),2))
+     Chi_dyn_V=(0._DP,0._DP)
+     Chi_dyn_s=0._DP
+     Chi_dyn_filled=.FALSE.
+     Chi_dyn_c=real(Co,DP)/(4._DP*real(pi,DP))
+     chi_grp_p=0
+   endif
+   !
    call WF_load(WF,NG(1),NG(2),(/1,Ken%nbm/),(/1,Xk%nibz/),space='R',title="-TDDFT",keep_states_to_load=.true.)
    !
-   QP_ng_Vxc=BS_n_g_fxc
+   if (BS_K_is_ALDA) QP_ng_Vxc=BS_n_g_fxc
    !
    if (l_tddft_rsum) then
      YAMBO_ALLOC(tddft_wf%rhotwr1,(fft_size*n_spinor*n_spinor))
@@ -332,27 +374,29 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
    YAMBO_ALLOC(tddft_wf%WF_symm1,(fft_size,n_spinor))
    YAMBO_ALLOC(tddft_wf%WF_symm2,(fft_size,n_spinor))
    !
-   YAMBO_ALLOC(F_xc,(fft_size,n_spin,n_spin))
-   if(l_BS_magnons .or. n_spinor==2 .or. l_Fxc_from_Vxc) then
-     YAMBO_ALLOC(V_xc,(fft_size,n_spin))
-     V_xc=0._SP
+   if (BS_K_is_ALDA) then
+     YAMBO_ALLOC(F_xc,(fft_size,n_spin,n_spin))
+     if(l_BS_magnons .or. n_spinor==2 .or. l_Fxc_from_Vxc) then
+       YAMBO_ALLOC(V_xc,(fft_size,n_spin))
+       V_xc=0._SP
+     endif
+     !
+     if(n_spin>1) then
+       YAMBO_ALLOC(magn,(fft_size,3))
+     endif
+     call XC_potential_driver(Ken,Xk,WF_kind,WF_xc_functional,2)
+     YAMBO_ALLOC(F_xc_mat,(fft_size,n_spin,n_spin,n_spin,n_spin))
+     call Build_F_xc_mat(V_xc,F_xc,F_xc_mat)
+     YAMBO_FREE(F_xc)
+     if(l_BS_magnons .or. n_spinor==2 .or. l_Fxc_from_Vxc) then
+       YAMBO_FREE(V_xc)
+     endif
+     if(n_spin>1) then
+       YAMBO_FREE(magn)
+     endif
+     !
+     call TDDFT_ALDA_lower_cutoff(FXC_mode)
    endif
-   !
-   if(n_spin>1) then
-     YAMBO_ALLOC(magn,(fft_size,3))
-   endif
-   call XC_potential_driver(Ken,Xk,WF_kind,WF_xc_functional,2)
-   YAMBO_ALLOC(F_xc_mat,(fft_size,n_spin,n_spin,n_spin,n_spin))
-   call Build_F_xc_mat(V_xc,F_xc,F_xc_mat)
-   YAMBO_FREE(F_xc)
-   if(l_BS_magnons .or. n_spinor==2 .or. l_Fxc_from_Vxc) then
-     YAMBO_FREE(V_xc)
-   endif
-   if(n_spin>1) then
-     YAMBO_FREE(magn)
-   endif
-   !
-   call TDDFT_ALDA_lower_cutoff(FXC_mode)
    !
    call WF_free(WF,keep_states_to_load=.true.)
    !
@@ -455,7 +499,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
    mode_now=BS_blk(i_block)%mode
    if (.not.l_BS_ares_from_res) mode_now="F"
    !
-   if (iHxc==1) l_write_kernel=.not.(BS_K_is_ALDA.or.l_bs_corr)
+   if (iHxc==1) l_write_kernel=.not.(BS_K_is_ALDA.or.BS_K_is_Chi.or.l_bs_corr)
    if (iHxc==2) l_write_kernel=.not. l_bs_corr
    if (iHxc==3) l_write_kernel=.true.
    !
@@ -503,15 +547,46 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
    !
    ! TDDFT oscillators
    !----------------------
-   if(iHxc==2 .and. l_tddft_gsum) then
+   if(iHxc==2 .and. l_tddft_gsum .and. .not.l_chi_vtx_only) then
      if (.not.allocated( BS_T_grp(i_Tgrp_k)%O_tddft_L) ) then
        call TDDFT_oscillators_alloc_L(i_Tgrp_k)
        call TDDFT_ALDA_eh_space_G_collisions_L(iq,Xk,i_Tgrp_k,NG,l_bs_tddft_wf_in_loop,tddft_wf,mode_now)
      endif
      if (.not.allocated( BS_T_grp(i_Tgrp_p)%O_tddft_R) ) then
        call TDDFT_oscillators_alloc_R(i_Tgrp_p)
-       call TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_Tgrp_p,NG,l_bs_tddft_wf_in_loop,tddft_wf,mode_now)
+       call TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_Tgrp_p,NG,l_bs_tddft_wf_in_loop,tddft_wf,mode_now,BS_K_is_Chi)
      endif
+   endif
+   !
+   if(iHxc==2 .and. l_tddft_gsum .and. l_chi_vtx .and. chi_grp_p/=i_Tgrp_p) then
+     if (allocated(chi_R_res)) deallocate(chi_R_res)
+     if (allocated(chi_R_cpl)) deallocate(chi_R_cpl)
+     if (.not.allocated(BS_T_grp(i_Tgrp_p)%O_tddft_R)) call TDDFT_oscillators_alloc_R(i_Tgrp_p)
+     allocate(chi_R_res(size(BS_T_grp(i_Tgrp_p)%O_tddft_R,1),size(BS_T_grp(i_Tgrp_p)%O_tddft_R,2)))
+     call TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_Tgrp_p,NG,l_bs_tddft_wf_in_loop,tddft_wf,"R",.TRUE.)
+     chi_R_res=BS_T_grp(i_Tgrp_p)%O_tddft_R(:,:,1,1)
+     if ((BS_K_coupling.or.BS_K_Chi_dynamic).and.l_BS_ares_from_res) then
+       allocate(chi_R_cpl(size(chi_R_res,1),size(chi_R_res,2)))
+       call TDDFT_ALDA_eh_space_G_collisions_R(iq,Xk,i_Tgrp_p,NG,l_bs_tddft_wf_in_loop,tddft_wf,"C",.TRUE.)
+       chi_R_cpl=BS_T_grp(i_Tgrp_p)%O_tddft_R(:,:,1,1)
+     endif
+     if (BS_K_Chi_dynamic.or.l_chi_vtx_only) then
+       i_ra=BS_T_grp(i_Tgrp_p)%i_res_ares
+       do i_Tp=1,BS_T_grp(i_Tgrp_p)%size
+         i_T_dyn=BS_blk(i_block)%coordinate(2)+i_Tp-1
+         if (l_BS_ares_from_res) then
+           Chi_dyn_V(:,i_T_dyn,1)=cmplx(chi_R_res(:,i_Tp),kind=DP)
+           Chi_dyn_V(:,i_T_dyn,2)=cmplx(chi_R_cpl(:,i_Tp),kind=DP)
+           Chi_dyn_s(i_T_dyn)=sqrt(real(BS_T_grp(i_Tgrp_p)%f(i_Tp),DP))
+           Chi_dyn_filled(i_T_dyn,:)=.TRUE.
+         else
+           Chi_dyn_V(:,i_T_dyn,i_ra)=cmplx(chi_R_res(:,i_Tp),kind=DP)
+           if (i_ra==1) Chi_dyn_s(i_T_dyn)=sqrt(real(BS_T_grp(i_Tgrp_p)%f(i_Tp),DP))
+           Chi_dyn_filled(i_T_dyn,i_ra)=.TRUE.
+         endif
+       enddo
+     endif
+     chi_grp_p=i_Tgrp_p
    endif
    !
    ! Correlation oscillators
@@ -535,7 +610,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
    !DEV_OMP &       ig_W,iq_W,iq_W_s,iq_W_bz,iq_W_bz_mq,ig_W_mq,iq_W_mq,iq_W_s_mq,H_x,H_c, &
    !DEV_OMP &       i_p_bz_last,i_k_bz_last,i_pmq_bz_last,i_kmq_bz_last, &
    !DEV_OMP &       iq_W_bz_last,ig_W_last,iq_W_bz_mq_last,ig_W_mq_last, &
-   !DEV_OMP &       i_k_bz_mem,i_kmq_bz_mem,qindx_tmp,BS_mat_tmp,tddft_wf )
+   !DEV_OMP &       i_k_bz_mem,i_kmq_bz_mem,qindx_tmp,BS_mat_tmp,tddft_wf,chi_pair )
    !
    call OPENMP_update(master_thread)   
    !
@@ -697,8 +772,14 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
          ! ALDA
          if (iHxc==2) then
            if(l_tddft_rsum)     H_x=H_x+TDDFT_ALDA_eh_space_R_kernel(is_k,os_k,is_p,os_p,tddft_wf,'RES')
-           if(l_tddft_gsum)     H_x=H_x+TDDFT_ALDA_eh_space_G_kernel(BS_n_g_fxc,&
+           if(l_tddft_gsum.and.BS_K_is_ALDA) H_x=H_x+TDDFT_ALDA_eh_space_G_kernel(BS_n_g_fxc,&
 &                                   BS_T_grp(i_Tgrp_p),i_Tp, BS_T_grp(i_Tgrp_k),i_Tk)
+           if(BS_K_is_Chi.and..not.BS_K_Chi_dynamic) then
+             call TDDFT_Chi_pair_G(Chi_static,&
+&              cmplx(BS_T_grp(i_Tgrp_k)%O_tddft_L(:,i_Tk,1,1),kind=DP),&
+&              cmplx(chi_R_res(:,i_Tp),kind=DP),chi_pair)
+             H_x=H_x+cmplx(chi_pair,kind=SP)/(4._SP*pi)
+           endif
          endif
          !
          ! Correlations
@@ -727,8 +808,14 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
          ! ALDA
          if (iHxc==2) then
            if(l_tddft_rsum)     H_x=H_x+TDDFT_ALDA_eh_space_R_kernel(is_k,os_k,is_p,os_p,tddft_wf,'CPL')
-           if(l_tddft_gsum)     H_x=H_x+TDDFT_ALDA_eh_space_G_kernel(BS_n_g_fxc,&
+           if(l_tddft_gsum.and.BS_K_is_ALDA) H_x=H_x+TDDFT_ALDA_eh_space_G_kernel(BS_n_g_fxc,&
 &                                 BS_T_grp(i_Tgrp_p),i_Tp, BS_T_grp(i_Tgrp_k),i_Tk)
+           if(BS_K_is_Chi.and..not.BS_K_Chi_dynamic) then
+             call TDDFT_Chi_pair_G(Chi_static,&
+&              cmplx(BS_T_grp(i_Tgrp_k)%O_tddft_L(:,i_Tk,1,1),kind=DP),&
+&              cmplx(chi_R_cpl(:,i_Tp),kind=DP),chi_pair)
+             H_x=H_x+cmplx(chi_pair,kind=SP)/(4._SP*pi)
+           endif
          endif
          !
          ! Correlations
@@ -853,6 +940,13 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
      YAMBO_FREE(FXC_K_diagonal)
    else if (BS_K_is_ALDA) then
      YAMBO_FREE(F_xc_mat)
+   else if (l_chi_vtx) then
+     if (allocated(Chi_static)) then
+       YAMBO_FREE(Chi_static)
+     endif
+     if (allocated(chi_R_res)) deallocate(chi_R_res)
+     if (allocated(chi_R_cpl)) deallocate(chi_R_cpl)
+     if (BS_K_is_Chi.and..not.BS_K_Chi_dynamic) call Chi_free()
    endif
    !
  endif
@@ -896,5 +990,6 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
 #endif
  !
  call timing('X T_space Kernel',OPR='stop')
+ if (l_chi_vtx.and.iq==1) call DIPOLE_ALLOC_global()
  !
 end subroutine K_kernel

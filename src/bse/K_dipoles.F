@@ -22,7 +22,7 @@ subroutine K_dipoles(iq,Ken,Xk,q,X_oscillators,Dip)
  use X_m,           ONLY:X_t,global_gauge,i_G_shift
  use DIPOLES,       ONLY:DIPOLE_t
  use BS_solvers,    ONLY:BSS_Vnl_included,BSS_Q_dir,BSS_E_dir,BSS_P_dir
- use BS,            ONLY:BS_T_grp,BS_K_coupling,BS_nT_grps,BSE_L_kind,BS_bands,&
+ use BS,            ONLY:BS_T_grp,BS_K_coupling,BS_K_is_Chi,BS_K_Chi_out,BS_nT_grps,BSE_L_kind,BS_bands,&
 &                        BS_dip_size,l_BS_trace,BS_n_eh_spaces,&
 &                        l_BS_abs,l_BS_kerr,l_BS_magnons,l_BS_dichroism,l_BS_photolum,&
 &                        BSE_dipole_geometry,BS_field_direction,l_BS_ares_from_res
@@ -253,7 +253,7 @@ subroutine K_dipoles(iq,Ken,Xk,q,X_oscillators,Dip)
  !
  if (iq==1.and.i_G_shift==1.and.io_DIP) then
    !
-   call DIPOLE_ALLOC_global( )
+   if (.not.(BS_K_is_Chi.or.trim(BS_K_Chi_out)/='none')) call DIPOLE_ALLOC_global( )
    !
    ! Here I need the distribution over k
    call PARALLEL_SETUP_K_scheme("Kdef")
