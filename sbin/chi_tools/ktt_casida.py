@@ -45,6 +45,7 @@ Notes
 Usage
   python ktt_casida.py o-cas_dyn_exc.Ktt_q1_transitions o-cas_dyn_exc.Ktt_q1_w225 [more w-files]
          [--tda] [--no-fxc] [--nlow 8] [--bright 0.01] [--spectrum eps.dat --eta 0.05]
+         [--eq0 Eq0.dat] [--emission em.dat --temp 0.01 --occupation boltzmann|bose]
 """
 import argparse
 import os
@@ -166,6 +167,14 @@ def main():
     ap.add_argument('--spectrum', help='write eps2 up to a constant (Lorentzians) to this file')
     ap.add_argument('--eta', type=float, default=0.05, help='Lorentzian width for --spectrum [eV]')
     ap.add_argument('--wmax', type=float, default=4.0, help='upper energy of --spectrum [eV]')
+    ap.add_argument('--eq0', help='write every eigenvalue (Re > 0) to this file as in the k-space program\'s Eq0: '
+                    'index, eigenvalue - lowest transition, eigenvalue, relative strength')
+    ap.add_argument('--emission', help='write an emission spectrum to this file: w^4 * absorption * occupation of '
+                    'the states above the lowest eigenvalue E1 at temperature --temp')
+    ap.add_argument('--temp', type=float, default=0.01, help='temperature of --emission [eV] (0.01 eV ~ 116 K)')
+    ap.add_argument('--occupation', choices=['boltzmann', 'bose'], default='boltzmann',
+                    help='--emission factor: exp(-(w-E1)/T), or 1/(exp((w-E1)/T)-1) as the k-space program '
+                    '(the latter diverges at w = E1)')
     a = ap.parse_args()
 
     tr, E, Ea, res, Aa, Ba = read_rows(a.transitions)
@@ -212,15 +221,37 @@ def main():
                 print(f'    lowest bright interband: {ei:.4f} eV   binding (interband gap {gi:.4f} - it) = {gi - ei:.4f} eV')
             else:
                 print(f'    no bright interband state (interband gap {gi:.4f} eV)')
-        if a.spectrum:
+        tag = '' if len(a.wfiles) == 1 else '.' + wf.rsplit('_w', 1)[-1]
+        if a.eq0:
+            with open(a.eq0 + tag, 'w') as f:
+                f.write(f'# {kind}, M at z = {z.real:.6f} eV; lowest transition {gap:.6f} eV\n'
+                        f'#   i   E_i - gap [eV]    E_i [eV]   rel. strength\n')
+                for i, k in enumerate(pos, 1):
+                    f.write(f'{i:6d} {lam[k].real - gap:14.6f} {lam[k].real:12.6f} {s_rel[i - 1]:14.4e}\n')
+            print(f'    eigenvalues written to {a.eq0 + tag} ({len(pos)})')
+        if a.spectrum or a.emission:
             w = np.linspace(0.0, a.wmax, 801)
             eps2 = np.zeros_like(w)
             for k in pos:
                 eps2 += (-(strength[k] / (w + 1j * a.eta - lam[k]))).imag
-            out = a.spectrum if len(a.wfiles) == 1 else f'{a.spectrum}.{wf.rsplit("_w", 1)[-1]}'
-            np.savetxt(out, np.column_stack([w, eps2]), fmt='%14.6e',
+        if a.spectrum:
+            np.savetxt(a.spectrum + tag, np.column_stack([w, eps2]), fmt='%14.6e',
                        header=f'eps2 up to a constant, Lorentzians eta={a.eta} eV, M at z={z}')
-            print(f'    spectrum written to {out}')
+            print(f'    spectrum written to {a.spectrum + tag}')
+        if a.emission:
+            # van Roosbroeck-Shockley-type emission from the absorption: w^4 x absorption x the thermal
+            # occupation of the excitations above the lowest one, E1 (the k-space program's W(1))
+            e1 = lam[pos[0]].real
+            x = (w - e1) / a.temp
+            if a.occupation == 'boltzmann':
+                occ = np.exp(-np.clip(x, 0.0, 700.0))
+            else:
+                occ = np.where(x > 0, 1.0 / np.expm1(np.clip(x, 1e-12, 700.0)), 0.0)
+            em = np.where(w >= e1, w ** 4 * np.abs(eps2) * occ, 0.0)
+            np.savetxt(a.emission + tag, np.column_stack([w, em]), fmt='%14.6e',
+                       header=f'emission up to a constant: w^4 * absorption * {a.occupation} occupation, '
+                              f'T = {a.temp} eV, E1 = {e1:.6f} eV, eta = {a.eta} eV')
+            print(f'    emission written to {a.emission + tag} (E1 = {e1:.4f} eV, T = {a.temp} eV)')
 
 
 if __name__ == '__main__':
