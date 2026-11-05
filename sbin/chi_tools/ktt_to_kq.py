@@ -20,6 +20,8 @@ coupling) of the whole transition space, every transition t = (v, c, k) one "k" 
   kpoints.dat   kx ky kz weight: k of the transition (crystal units), weight 1/N
   F_kq_LR.dat   t t' (re,im): (X + F)_tt' / (Hartree * sqrt(w_t w_t')), row by row, so that the
                 program's Hartree * F_kq * sqrt(w w) is the Casida matrix element in eV again
+  dipoles.dat   t (re,im): the optical vertex a_t of each transition, for a program that weights each
+                eigenvector n with the coherent |sum_t conj(a_t) U_tn|^2 (the oscillator strength in TDA)
   params.txt    the parameter values to set in the program (n_k_max = N_m = N, ...)
 
 and diagonalizes the same matrix itself (numpy, Hermitian): its eigenvalues minus the lowest
@@ -116,6 +118,9 @@ def main():
     with open(os.path.join(a.out, 'F_kq_LR.dat'), 'w') as f:     # row by row: l1, then m1
         for i in range(n):
             f.write(''.join(f'{i + 1} {j + 1} ({F[i, j].real:.12e},{F[i, j].imag:.12e})\n' for j in range(n)))
+    with open(os.path.join(a.out, 'dipoles.dat'), 'w') as f:   # optical vertex a_t of each transition, (re,im)
+        for t in range(n):
+            f.write(f'{t + 1} ({res[t].real:.12e},{res[t].imag:.12e})\n')
     with open(os.path.join(a.out, 'params.txt'), 'w') as f:
         f.write(f'n_k_max = {n}   (N_m = n_k_max)\nn_bands = {a.n_bands}\nn_spin = {a.n_spin}\n'
                 f'n_v = {a.nv}\nn_c = {a.nc}\nn_spin_v = 1\nn_spin_c = 1\nepsilon = 1.0d0\n'
@@ -124,7 +129,7 @@ def main():
 
     lam = np.linalg.eigvalsh(np.diag(E) + K)          # what the program diagonalizes
     gap = E.min()
-    print(f'  wrote {a.out}/energy_all, kpoints.dat, F_kq_LR.dat, params.txt')
+    print(f'  wrote {a.out}/energy_all, kpoints.dat, F_kq_LR.dat, dipoles.dat, params.txt')
     print(f'  set in the program: n_k_max = {n} (N_m), n_bands = {a.n_bands}, n_v = {a.nv}, n_c = {a.nc}, '
           f'n_spin = {a.n_spin}, epsilon = 1')
     print(f'  expected program output: gap = {gap:.6f}; Eq0 (eigenvalue - gap), lowest {a.nlow}:')
