@@ -5,6 +5,7 @@ The other session keeps the cluster runs, convergence, results and explanations.
 This session works on the theory, the Fortran, the tests and new features.
 Read this file first, then `doc/greens_function_fxc.md`, which is the full reference at 1491 lines.
 `doc/casida_solvers.md` maps the equations of the static and dynamic Casida solvers to code lines (for checking against the literature).
+`doc/NUMERICS_PROVENANCE.md` says where every numerical piece of the exact kernel comes from (Yambo, literature, or neither, with the justification), and lists every source file of the fork.
 
 ## 1. Goal and working rules
 
