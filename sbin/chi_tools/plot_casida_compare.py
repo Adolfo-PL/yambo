@@ -61,32 +61,34 @@ def main():
 
     C_COUP, C_TDA, C_HIS = '#2a78d6', '#eb6834', '#1baf7a'
     rows = [  # (row, column, file, colour, style, width, label)
-        (0, 0, 'abs_coupled.dat', C_COUP, '-', 1.8, 'ours, coupled'),
-        (0, 0, 'abs_tda.dat', C_TDA, '--', 1.8, 'ours, TDA'),
-        (0, 1, 'em_coupled.dat', C_COUP, '-', 1.8, 'ours, coupled'),
-        (0, 1, 'em_tda.dat', C_TDA, '--', 1.8, 'ours, TDA'),
-        (1, 0, 'volo_coupled/absorption_0', C_COUP, '-', 1.8, 'his formulas, coupled (our run)'),
-        (1, 0, 'volo_tda/absorption_0', C_TDA, '--', 1.8, 'his formulas, TDA (our run)'),
-        (1, 1, 'volo_coupled/emission_0', C_COUP, '-', 1.8, 'his formulas, coupled (our run)'),
-        (1, 1, 'volo_tda/emission_0', C_TDA, '--', 1.8, 'his formulas, TDA (our run)'),
+        (0, 0, 'abs_coupled.dat', C_COUP, '-', 1.8, 'TDDFT:Yambo, coupled'),
+        (0, 0, 'abs_tda.dat', C_TDA, '--', 1.8, 'TDDFT:Yambo, TDA'),
+        (0, 1, 'em_coupled.dat', C_COUP, '-', 1.8, 'TDDFT:Yambo, coupled'),
+        (0, 1, 'em_tda.dat', C_TDA, '--', 1.8, 'TDDFT:Yambo, TDA'),
+        # bottom row: the same Yambo-kernel eigenvalues drawn with the original formulation
+        # (every state weight 1/N, 0.1 eV width, Bose emission): ktt_casida.py --volo
+        (1, 0, 'volo_coupled/absorption_0', C_COUP, '-', 1.8, 'TDDFT:Yambo, coupled (original formulation)'),
+        (1, 0, 'volo_tda/absorption_0', C_TDA, '--', 1.8, 'TDDFT:Yambo, TDA (original formulation)'),
+        (1, 1, 'volo_coupled/emission_0', C_COUP, '-', 1.8, 'TDDFT:Yambo, coupled (original formulation)'),
+        (1, 1, 'volo_tda/emission_0', C_TDA, '--', 1.8, 'TDDFT:Yambo, TDA (original formulation)'),
     ]
     if a.his:
-        rows += [(1, 0, os.path.join(a.his, 'absorption_0'), C_HIS, ':', 2.6, 'his program, TDA input'),
-                 (1, 1, os.path.join(a.his, 'emission_0'), C_HIS, ':', 2.6, 'his program, TDA input')]
+        rows += [(1, 0, os.path.join(a.his, 'absorption_0'), C_HIS, ':', 2.6, 'TDDFT:Volo, (TDA)'),
+                 (1, 1, os.path.join(a.his, 'emission_0'), C_HIS, ':', 2.6, 'TDDFT:Volo, (TDA)')]
     if a.his_fold:
-        rows += [(1, 0, os.path.join(a.his_fold, 'absorption_0'), '#0d366b', ':', 2.6, 'his program, --fold input'),
-                 (1, 1, os.path.join(a.his_fold, 'emission_0'), '#0d366b', ':', 2.6, 'his program, --fold input')]
+        rows += [(1, 0, os.path.join(a.his_fold, 'absorption_0'), '#0d366b', ':', 2.6, 'TDDFT:Volo, (--fold input)'),
+                 (1, 1, os.path.join(a.his_fold, 'emission_0'), '#0d366b', ':', 2.6, 'TDDFT:Volo, (--fold input)')]
 
     # the dipole-weighted copy of his program has our absorption formula: top row (its emission keeps
     # his Bose factor)
     if a.his_dip:
-        rows += [(0, 0, os.path.join(a.his_dip, 'absorption_0'), C_HIS, ':', 2.6, 'his program + dipoles, TDA input'),
-                 (0, 1, os.path.join(a.his_dip, 'emission_0'), C_HIS, ':', 2.6, 'his program + dipoles (Bose), TDA input')]
+        rows += [(0, 0, os.path.join(a.his_dip, 'absorption_0'), C_HIS, ':', 2.6, 'TDDFT:Volo + Yambo dipoles, (TDA)'),
+                 (0, 1, os.path.join(a.his_dip, 'emission_0'), C_HIS, ':', 2.6, 'TDDFT:Volo + Yambo dipoles, (TDA)')]
     if a.his_dip_fold:
         rows += [(0, 0, os.path.join(a.his_dip_fold, 'absorption_0'), '#0d366b', ':', 2.6,
-                  'his program + dipoles, --fold input'),
+                  'TDDFT:Volo + Yambo dipoles, (--fold input)'),
                  (0, 1, os.path.join(a.his_dip_fold, 'emission_0'), '#0d366b', ':', 2.6,
-                  'his program + dipoles (Bose), --fold input')]
+                  'TDDFT:Volo + Yambo dipoles, (--fold input)')]
 
     fig, ax = plt.subplots(2, 2, figsize=(12, 7.2), sharex=True)
     drawn = 0
@@ -101,8 +103,8 @@ def main():
             continue
         ax[r, c].plot(w[m], y[m] / y[m].max(), ls=ls, color=col, lw=lw, label=lab)
         drawn += 1
-    titles = [['absorption, our formulas (oscillator strengths)', 'emission, our formulas (Boltzmann)'],
-              ['absorption, his formulas (every state weight 1/N)', 'emission, his formulas (Bose)']]
+    titles = [['absorption', 'emission'],
+              ['absorption, original formulation (every state weight 1/N)', 'emission, original formulation']]
     for r in range(2):
         for c in range(2):
             x = ax[r, c]
