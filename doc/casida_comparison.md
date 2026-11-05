@@ -77,8 +77,11 @@ $$
 
 (at $q \to 0$ with time reversal $C = -B^*$, $D = -A^*$).
 
-**Eigenproblem** (`np.linalg.eig`): $M R = R\,\Lambda$, eigenvalues $\lambda_n$; the excitations
-are the $N$ eigenvalues with ${\rm Re}\,\lambda_n > 0$.
+**Eigenproblem** (`np.linalg.eig`): $M R = R\Lambda$, with $\Lambda = \mathrm{diag}(\lambda_1, \dots,
+\lambda_{2N})$ the eigenvalues (the energies) and the columns of $R$ the eigenvectors (excitation
+amplitudes $X$ on top, de-excitation amplitudes $Y$ below). The $2N$ eigenvalues come in pairs
+$\pm\omega$: the excitation energies are the $N$ with $\mathrm{Re}(\lambda_n) > 0$, the negative ones
+their mirror images.
 
 **Response** (`ktt_casida.py`, the same form as Yambo's):
 
@@ -97,7 +100,7 @@ $$
 **Absorption** (`--spectrum`), Lorentzians of half-width $\eta$ (0.03 eV):
 
 $$
-\alpha_2(\omega) \propto \sum_{{\rm Re}\,\lambda_n>0} {\rm Im}\left[ \frac{-s_n}{\omega + i\eta - \lambda_n} \right]
+\alpha_2(\omega) \propto \sum_{\mathrm{Re}(\lambda_n)>0} {\rm Im}\left[ \frac{-s_n}{\omega + i\eta - \lambda_n} \right]
 = \sum_n \frac{s_n\,\eta}{(\omega - \lambda_n)^2 + \eta^2} \quad (\text{real } s_n, \lambda_n).
 $$
 
