@@ -13,8 +13,6 @@ Run in the folder with the files of (all optional; what exists is drawn):
 
   abs_coupled.dat, em_coupled.dat   ktt_casida.py ...           --spectrum --emission   (ours, coupled)
   abs_tda.dat, em_tda.dat           ktt_casida.py ... --tda     --spectrum --emission   (ours, TDA)
-  volo_tda/                         ktt_casida.py ... --tda --volo volo_tda   (his formulas, TDA)
-  volo_coupled/                     ktt_casida.py ...       --volo volo_coupled  (his formulas, coupled)
   --his DIR                         his program's own output (absorption_0, emission_0), plain input
   --his-fold DIR                    his program's own output on the ktt_to_kq.py --fold input
   --his-dip DIR                     output of the copy of his program with dipole weights
@@ -25,9 +23,10 @@ Run in the folder with the files of (all optional; what exists is drawn):
                                 [--his-dip-fold kq_dip_fold] [--bse 2.3774] [--label WS2]
                                 [--emin 2.2 --emax 3.2] [--out casida_compare.png]
 
-Every curve is normalized to its maximum inside the plotted range. Upper panels: our formulas
-(oscillator strengths, eta = 0.03 eV, Boltzmann emission); lower panels: his formulas (every state
-weight 1/N, 0.1 eV width, Bose emission). Solid = coupled, dashed = TDA.
+Every curve is normalized to its maximum inside the plotted range. Both rows show the two Yambo-kernel
+results (ktt_casida.py: oscillator strengths, eta = 0.03 eV, Boltzmann emission; solid = coupled,
+dashed = TDA); the upper row adds his program with the fixes (--his-dip, --his-dip-fold), the lower row
+his original program (--his, --his-fold).
 """
 import argparse
 import os
@@ -60,18 +59,13 @@ def main():
     a = ap.parse_args()
 
     C_COUP, C_TDA, C_HIS = '#2a78d6', '#eb6834', '#1baf7a'
-    rows = [  # (row, column, file, colour, style, width, label)
-        (0, 0, 'abs_coupled.dat', C_COUP, '-', 1.8, 'TDDFT:Yambo, coupled'),
-        (0, 0, 'abs_tda.dat', C_TDA, '--', 1.8, 'TDDFT:Yambo, TDA'),
-        (0, 1, 'em_coupled.dat', C_COUP, '-', 1.8, 'TDDFT:Yambo, coupled'),
-        (0, 1, 'em_tda.dat', C_TDA, '--', 1.8, 'TDDFT:Yambo, TDA'),
-        # bottom row: the same Yambo-kernel eigenvalues drawn with the original formulation
-        # (every state weight 1/N, 0.1 eV width, Bose emission): ktt_casida.py --volo
-        (1, 0, 'volo_coupled/absorption_0', C_COUP, '-', 1.8, 'TDDFT:Yambo, coupled (original formulation)'),
-        (1, 0, 'volo_tda/absorption_0', C_TDA, '--', 1.8, 'TDDFT:Yambo, TDA (original formulation)'),
-        (1, 1, 'volo_coupled/emission_0', C_COUP, '-', 1.8, 'TDDFT:Yambo, coupled (original formulation)'),
-        (1, 1, 'volo_tda/emission_0', C_TDA, '--', 1.8, 'TDDFT:Yambo, TDA (original formulation)'),
-    ]
+    rows = []  # (row, column, file, colour, style, width, label)
+    # both rows: the two Yambo-kernel results with the oscillator strengths (ktt_casida.py)
+    for r in (0, 1):
+        rows += [(r, 0, 'abs_coupled.dat', C_COUP, '-', 1.8, 'TDDFT:Yambo, coupled'),
+                 (r, 0, 'abs_tda.dat', C_TDA, '--', 1.8, 'TDDFT:Yambo, TDA'),
+                 (r, 1, 'em_coupled.dat', C_COUP, '-', 1.8, 'TDDFT:Yambo, coupled'),
+                 (r, 1, 'em_tda.dat', C_TDA, '--', 1.8, 'TDDFT:Yambo, TDA')]
     if a.his:
         rows += [(1, 0, os.path.join(a.his, 'absorption_0'), C_HIS, ':', 2.6, 'TDDFT:Volo, (TDA)'),
                  (1, 1, os.path.join(a.his, 'emission_0'), C_HIS, ':', 2.6, 'TDDFT:Volo, (TDA)')]
@@ -103,8 +97,8 @@ def main():
             continue
         ax[r, c].plot(w[m], y[m] / y[m].max(), ls=ls, color=col, lw=lw, label=lab)
         drawn += 1
-    titles = [['absorption', 'emission'],
-              ['absorption, original formulation (every state weight 1/N)', 'emission, original formulation']]
+    titles = [['absorption: Yambo vs Volo with the fixes (dipoles)', 'emission: Yambo vs Volo with the fixes'],
+              ['absorption: Yambo vs Volo, original program', 'emission: Yambo vs Volo, original program']]
     for r in range(2):
         for c in range(2):
             x = ax[r, c]
