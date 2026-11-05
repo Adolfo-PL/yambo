@@ -17,8 +17,12 @@ Run in the folder with the files of (all optional; what exists is drawn):
   volo_coupled/                     ktt_casida.py ...       --volo volo_coupled  (his formulas, coupled)
   --his DIR                         his program's own output (absorption_0, emission_0), plain input
   --his-fold DIR                    his program's own output on the ktt_to_kq.py --fold input
+  --his-dip DIR                     output of the copy of his program with dipole weights
+                                    (eigenvalues_SPN_dipoles.f90, 0.03 eV width), plain input: top row
+  --his-dip-fold DIR                the same on the --fold input: top row
 
-  python plot_casida_compare.py [--his ../TEST_CAS] [--his-fold kq_fold] [--bse 2.3774] [--label WS2]
+  python plot_casida_compare.py [--his ../TEST_CAS] [--his-fold kq_fold] [--his-dip kq_dip]
+                                [--his-dip-fold kq_dip_fold] [--bse 2.3774] [--label WS2]
                                 [--emin 2.2 --emax 3.2] [--out casida_compare.png]
 
 Every curve is normalized to its maximum inside the plotted range. Upper panels: our formulas
@@ -46,6 +50,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[1])
     ap.add_argument('--his', help="folder with his program's absorption_0 and emission_0 (plain, TDA input)")
     ap.add_argument('--his-fold', help="folder with his program's output on the --fold input")
+    ap.add_argument('--his-dip', help="folder with the dipole-weighted copy of his program's output (plain input)")
+    ap.add_argument('--his-dip-fold', help="folder with the dipole-weighted copy's output on the --fold input")
     ap.add_argument('--bse', type=float, default=None, help='BSE A exciton (eV), marked')
     ap.add_argument('--label', default='')
     ap.add_argument('--emin', type=float, default=2.2)
@@ -70,6 +76,17 @@ def main():
     if a.his_fold:
         rows += [(1, 0, os.path.join(a.his_fold, 'absorption_0'), '#0d366b', ':', 2.6, 'his program, --fold input'),
                  (1, 1, os.path.join(a.his_fold, 'emission_0'), '#0d366b', ':', 2.6, 'his program, --fold input')]
+
+    # the dipole-weighted copy of his program has our absorption formula: top row (its emission keeps
+    # his Bose factor)
+    if a.his_dip:
+        rows += [(0, 0, os.path.join(a.his_dip, 'absorption_0'), C_HIS, ':', 2.6, 'his program + dipoles, TDA input'),
+                 (0, 1, os.path.join(a.his_dip, 'emission_0'), C_HIS, ':', 2.6, 'his program + dipoles (Bose), TDA input')]
+    if a.his_dip_fold:
+        rows += [(0, 0, os.path.join(a.his_dip_fold, 'absorption_0'), '#0d366b', ':', 2.6,
+                  'his program + dipoles, --fold input'),
+                 (0, 1, os.path.join(a.his_dip_fold, 'emission_0'), '#0d366b', ':', 2.6,
+                  'his program + dipoles (Bose), --fold input')]
 
     fig, ax = plt.subplots(2, 2, figsize=(12, 7.2), sharex=True)
     drawn = 0
