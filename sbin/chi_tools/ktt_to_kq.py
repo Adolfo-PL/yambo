@@ -28,6 +28,10 @@ transition are what the program writes to Eq0, for a direct check of the hand-of
   python ktt_to_kq.py o-xspA.Ktt_q1_transitions o-xspA.Ktt_q1_w37 --out kq_EA [--no-x]
 
 --no-x leaves the exchange (Hartree) part X out of F_kq: the kernel part alone.
+--fold writes the coupled problem instead: H_eff = sum_n lambda_n |X~_n><X~_n| over its N positive
+eigenvalues, with X~_n the orthonormalized excitation parts of the eigenvectors. It is Hermitian and
+N x N, so the program diagonalizes it unchanged and returns the coupled energies (its absorption
+weights stay 1/N per state).
 The exact kernel reproduces the BSE only in the coupled problem (ktt_casida.py without --tda);
 ktt_casida.py --tda on the same files gives the TDA numbers this hand-off should reproduce.
 """
@@ -49,6 +53,8 @@ def main():
     ap.add_argument('wfile', help='w-file of the frequency to freeze the kernel at')
     ap.add_argument('--out', default='kq', help='folder for the program input files')
     ap.add_argument('--no-x', action='store_true', help='kernel part only, without the exchange X')
+    ap.add_argument('--fold', action='store_true', help='write the coupled problem folded into an N x N Hermitian '
+                    'matrix with the same N positive eigenvalues (the program then gives the coupled energies)')
     ap.add_argument('--n-bands', type=int, default=17, help='bands in energy_all (program n_bands)')
     ap.add_argument('--nv', type=int, default=13, help='valence band index of the program (n_v)')
     ap.add_argument('--nc', type=int, default=14, help='conduction band index of the program (n_c)')
@@ -60,15 +66,37 @@ def main():
 
     tr, E, Ea, res, Aa, Ba = kc.read_rows(a.transitions)
     n = len(tr)
-    z, M, coupled = kc.read_matrix(a.wfile, n, E, True, False, E_ares=Ea)     # resonant block, X + F
-    K = M - np.diag(E)                                                       # X + F
+    z, M, coupled = kc.read_matrix(a.wfile, n, E, not a.fold, False, E_ares=Ea)   # TDA: resonant block, X + F
     if a.no_x:
-        _, MX, _ = kc.read_matrix(a.wfile, n, E, True, True, E_ares=Ea)      # X only
-        K = K - (MX - np.diag(E))
+        _, MX, _ = kc.read_matrix(a.wfile, n, E, not a.fold, True, E_ares=Ea)    # X only
+        M = M - MX + np.diag(np.concatenate([E, Ea]) if M.shape[0] == 2 * n else E)
+    if a.fold:
+        if M.shape[0] != 2 * n:
+            sys.exit('--fold needs a w-file with the four blocks (a coupled run)')
+        # the N eigenvalues with Re > 0 of the coupled problem, and the excitation parts X_n of their
+        # eigenvectors, orthonormalized (Loewdin): H_eff = Xt diag(lambda) Xt^dagger has exactly
+        # those eigenvalues and Hermitian form, as the program's ZHEEV needs
+        lam, R = np.linalg.eig(M)
+        pos = np.where(lam.real > 1e-6)[0]
+        pos = pos[np.argsort(lam[pos].real)]
+        if len(pos) != n:
+            sys.exit(f'--fold: {len(pos)} eigenvalues with Re > 0, expected {n}')
+        print(f'  coupled problem: largest |Im lambda| of the excitations {np.abs(lam[pos].imag).max():.1e} eV')
+        Xn = R[:n, pos]
+        s, V = np.linalg.eigh(Xn.conj().T @ Xn)
+        if s.min() <= 1e-12 * s.max():
+            sys.exit('--fold: the excitation parts are linearly dependent; cannot fold')
+        Xt = Xn @ (V * s ** -0.5) @ V.conj().T
+        H = (Xt * lam[pos].real) @ Xt.conj().T
+        H = 0.5 * (H + H.conj().T)
+        K = H - np.diag(E)
+    else:
+        K = M - np.diag(E)                                                   # X + F
     herm = np.abs(K - K.conj().T).max() / max(np.abs(K).max(), 1e-300)
     pairs = sorted({(int(v), int(c)) for v, c in tr[:, 7:9]})
     print(f'{n} transitions (band pairs {pairs}), kernel frozen at z = {z.real:.4f} {z.imag:+.4f}i eV, '
-          f'{"F only" if a.no_x else "X + F"}, resonant block (TDA)')
+          f'{"F only" if a.no_x else "X + F"}, '
+          + ('coupled problem folded into N x N' if a.fold else 'resonant block (TDA)'))
     print(f'  non-Hermitian part of the block: {herm:.1e} of its largest element'
           + ('' if herm < 1e-6 else '  !!! ZHEEV reads the upper triangle only: the hand-off is not exact'))
     if abs(z.imag) > 1e-6:
@@ -91,7 +119,8 @@ def main():
     with open(os.path.join(a.out, 'params.txt'), 'w') as f:
         f.write(f'n_k_max = {n}   (N_m = n_k_max)\nn_bands = {a.n_bands}\nn_spin = {a.n_spin}\n'
                 f'n_v = {a.nv}\nn_c = {a.nc}\nn_spin_v = 1\nn_spin_c = 1\nepsilon = 1.0d0\n'
-                f'kernel frozen at z = {z.real:.6f} eV; {"F only" if a.no_x else "X + F"}; TDA\n')
+                f'kernel frozen at z = {z.real:.6f} eV; {"F only" if a.no_x else "X + F"}; '
+                f'{"coupled, folded" if a.fold else "TDA"}\n')
 
     lam = np.linalg.eigvalsh(np.diag(E) + K)          # what the program diagonalizes
     gap = E.min()

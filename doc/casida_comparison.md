@@ -259,7 +259,9 @@ lowest eigenvalue, bright or dark. The factor $0.8/1600$ and the overall scale a
 ## 7. Bringing the results together without changing the program
 
 1. **Replicate Solver V with Solver Y:** `--tda` gives its eigenvalues (§6.1); evaluating §5's
-   $A(\omega)$ and $B(\omega)$ with $d_n = 1/N$ on its grid gives its two spectra.
+   $A(\omega)$ and $B(\omega)$ with $d_n = 1/N$ on its grid gives its two spectra. Option `--volo DIR`
+   of `ktt_casida.py` writes `Eq0`, `absorption_0` and `emission_0` this way (from the eigenvalues of
+   the program's own run they reproduce its three files to $5\times10^{-14}$).
 2. **Give Solver V the coupled energies:** solve the coupled problem, orthonormalize the excitation
    parts $X_n$ of its $N$ positive eigenvectors ($\tilde X_n$), and hand the program
 
@@ -269,6 +271,8 @@ lowest eigenvalue, bright or dark. The factor $0.8/1600$ and the overall scale a
 
    Hermitian and $N\times N$: ZHEEV returns exactly the coupled $\lambda_n$, so `Eq0` gives A at
    −0.555 eV. The heights stay $1/N$ (§6.4): that is in the program's formula, not its input.
+   Option `--fold` of `ktt_to_kq.py` writes $H_{\rm eff}$ in the program's three input files
+   (tested: the program's reading and ZHEEV return the coupled eigenvalues of `ktt_casida.py`).
 
 ## 8. Summary of the WS2 numbers
 

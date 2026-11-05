@@ -45,7 +45,7 @@ Notes
 Usage
   python ktt_casida.py o-cas_dyn_exc.Ktt_q1_transitions o-cas_dyn_exc.Ktt_q1_w225 [more w-files]
          [--tda] [--no-fxc] [--nlow 8] [--bright 0.01] [--spectrum eps.dat --eta 0.05]
-         [--eq0 Eq0.dat] [--emission em.dat --temp 0.01 --occupation boltzmann|bose]
+         [--eq0 Eq0.dat] [--emission em.dat --temp 0.01 --occupation boltzmann|bose] [--volo DIR]
 """
 import argparse
 import os
@@ -140,6 +140,25 @@ def read_matrix(path, n, E, tda, no_fxc, chunk_lines=500000, E_ares=None):
     return z, M, True
 
 
+def volo_files(W, gap, out):
+    """Eq0, absorption_0 and emission_0 of the k-space Casida program (eigenvalues_SPN.f90) from the
+    eigenvalues W, with its formulas: every eigenvalue weighted d = 1/N (its sum_t |U_tn|^2 w_t with
+    w_t = 1/N), A(w) = sum_n d / ((w - W_n)^2 + 0.01) on w = 0, 0.02, ..., 20 eV, and
+    B(w) = 4 pi |w^4 A / (exp((w - W_1)/T) - 1)| for w > W_1, T = 0.01 eV, written as 0.8 B / 1600."""
+    W = np.sort(np.asarray(W, float))
+    os.makedirs(out, exist_ok=True)
+    with open(os.path.join(out, 'Eq0'), 'w') as f:
+        for i, x in enumerate(W, 1):
+            f.write(f'{i:21d} {x - gap:25.17g}\n')
+    w = 0.02 * np.arange(1001)
+    A = (1.0 / len(W) / ((w[:, None] - W[None, :]) ** 2 + 0.01)).sum(1)
+    with np.errstate(divide='ignore', over='ignore', invalid='ignore'):
+        B = np.where(w > W[0], 4.0 * np.pi * np.abs(w ** 4 * A / (np.exp((w - W[0]) / 0.01) - 1.0)), 0.0)
+    B = np.nan_to_num(B, nan=0.0, posinf=0.0)
+    np.savetxt(os.path.join(out, 'absorption_0'), np.column_stack([w, A]), fmt='%25.17g')
+    np.savetxt(os.path.join(out, 'emission_0'), np.column_stack([w, 0.8 * B / 1600.0]), fmt='%25.17g')
+
+
 def _scatter(lines, ncol, blocks, no_fxc, path):
     rows = np.fromstring(''.join(lines), sep=' ')
     if rows.size % ncol:
@@ -172,6 +191,8 @@ def main():
     ap.add_argument('--emission', help='write an emission spectrum to this file: w^4 * absorption * occupation of '
                     'the states above the lowest eigenvalue E1 at temperature --temp')
     ap.add_argument('--temp', type=float, default=0.01, help='temperature of --emission [eV] (0.01 eV ~ 116 K)')
+    ap.add_argument('--volo', help='also write Eq0, absorption_0 and emission_0 in this folder with the formulas '
+                    'of the k-space Casida program (equal weights, 0.1 eV width, its grid and emission)')
     ap.add_argument('--occupation', choices=['boltzmann', 'bose'], default='boltzmann',
                     help='--emission factor: exp(-(w-E1)/T), or 1/(exp((w-E1)/T)-1) as the k-space program '
                     '(the latter diverges at w = E1)')
@@ -229,6 +250,9 @@ def main():
                 for i, k in enumerate(pos, 1):
                     f.write(f'{i:6d} {lam[k].real - gap:14.6f} {lam[k].real:12.6f} {s_rel[i - 1]:14.4e}\n')
             print(f'    eigenvalues written to {a.eq0 + tag} ({len(pos)})')
+        if a.volo:
+            volo_files(lam[pos].real, gap, a.volo + tag)
+            print(f'    Eq0, absorption_0, emission_0 of the k-space program written to {a.volo + tag}/')
         if a.spectrum or a.emission:
             w = np.linspace(0.0, a.wmax, 801)
             eps2 = np.zeros_like(w)
