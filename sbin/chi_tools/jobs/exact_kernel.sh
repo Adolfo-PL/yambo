@@ -25,6 +25,10 @@
 #   STAGE=gw     : G0W0 plasmon pole, RIM-W, slab cutoff, QP energies of the BSE bands at every k
 #                  -> prod/gw/ndb.QP, or <GWDIR>/prod_gw/gw/ndb.QP with GWDIR (below)       (MPI)
 #   STAGE=w      : static screening of the BSE -> prod/w/ndb.em1s                            (MPI)
+#   STAGE=occ    : doped SAVE, a minute (not part of "all"): the occupations of the BSE. An
+#                  independent-particle run with KfnQP_KeepOcc prints, in prod/r-occ_*, the kept
+#                  (reference) occupations next to the Fermi-Dirac refill of the QP levels that
+#                  Yambo does by default, state by state
 #   STAGE=ref    : reference BSE at q = 0: Tamm-Dancoff, exchange on all G (BSENGexx = EXX_REF), as
 #                  in the convergence; its A exciton is the number to quote                  (MPI)
 #   STAGE=export : coupled BSE at every q with BSEChiOut "exc" and BSEGinplane, on undamped real
@@ -97,6 +101,13 @@
 # from WMARGIN below A up to just below the QP direct gap VB -> CB of the GW (WTOP overrides it), and
 # every Eb = that gap - E. The scan lists the transitions inside the grid (CB -> CB+1 ones are poles
 # of chi0 there too). The doped kernel has no intraband (Drude) part at q1.
+#
+# Occupations of a doped BSE (doc/HANDOFF_doped_occupations.md): with QP energies Yambo refills the
+# levels (Fermi-Dirac on the QP energies, QP_apply.F), so the BSE has other occupations than the
+# screening and the GW. KEEPOCC=1 adds KfnQP_KeepOcc to every BSE input: QP energies with the
+# reference occupations. Runs with and without it must not share a folder: PROD=<name> (default
+# prod) is the folder of the run, e.g. KEEPOCC=1 PROD=prod_ko; the screening (and a GW done in
+# prod) is linked from prod, since neither depends on this choice.
 
 STAGE=${STAGE:-all}
 # GW (converged for WS2: 40 Ry, 800 bands or 400 with the BG terminator, 12 Ry, RIM-W)
@@ -123,6 +134,7 @@ FORKCHECK=${FORKCHECK:-1}
 YFLAGS=${YFLAGS-auto}
 RUNNER=${RUNNER:-""}
 CHECK=${CHECK:-1}
+KEEPOCC=${KEEPOCC:-0}; PROD=${PROD:-prod}   # see "Occupations of a doped BSE" in the header
 TEL=${TEL:-0.025852}                 # eV, electronic temperature of every run (300 K); the 5.2.3 p2y stores
                                      # ~1 meV in the SAVE, which would set the occupations of a doped system
 GWDIR=${GWDIR:-}                     # coarse SAVE folder for the GW (default: the GW runs here)
@@ -150,8 +162,8 @@ if [ "$NP" -gt 1 ]; then
   YFLAGS=""
 fi
 TOP="${SLURM_SUBMIT_DIR:-$PWD}"
-cd "$TOP"; mkdir -p log prod
-P=$TOP/prod
+cd "$TOP"; mkdir -p log $PROD
+P=$TOP/$PROD
 [ -e "$P/SAVE" ] || ln -s ../SAVE "$P/SAVE"
 FFTGL=""; [ -n "$FFTG" ] && FFTGL="FFTGvecs= $FFTG"
 T=$YSRC/sbin/chi_tools
@@ -168,6 +180,27 @@ if [ "$FORKCHECK" = 1 ]; then
     echo "!!! $YSRC lacks the finite-q export, BSEGinplane or the binding report: git pull + make yambo"; exit 1; }
   [ "$(which yambo)" -nt $YSRC/src/bse/K_Chi_export.F ] || {
     echo "!!! $(which yambo) is older than $YSRC/src/bse/K_Chi_export.F: make yambo (FORKCHECK=0 skips this test)"; exit 1; }
+  if [ "$KEEPOCC" = 1 ] || [ "$STAGE" = occ ]; then
+    grep -qs "KfnQP_KeepOcc" $YSRC/src/qp_control/QP_apply.F && [ -e $YSRC/src/qp_control/QP_apply_keep_occupations.F ] || {
+      echo "!!! $YSRC lacks KfnQP_KeepOcc: git pull + make yambo"; exit 1; }
+    [ "$(which yambo)" -nt $YSRC/src/qp_control/QP_apply_keep_occupations.F ] || {
+      echo "!!! $(which yambo) is older than KfnQP_KeepOcc in $YSRC: make yambo (FORKCHECK=0 skips this test)"; exit 1; }
+  fi
+fi
+# a folder holds runs of one kind of occupations: the reference BSE of $P says which
+KOL=""; [ "$KEEPOCC" = 1 ] && KOL="KfnQP_KeepOcc"
+SUMF=summary.txt; [ "$PROD" = prod ] || SUMF=summary_$PROD.txt
+if ls $P/r-bse_ref_* >/dev/null 2>&1; then
+  HASKO=0; grep -qs "KfnQP_KeepOcc: occupations of the reference levels kept" $P/r-bse_ref_* && HASKO=1
+  [ "$HASKO" = "$KEEPOCC" ] || {
+    echo "!!! $P holds a reference BSE with $([ $HASKO = 1 ] && echo "the reference occupations (KEEPOCC=1)" || echo "refilled occupations (KEEPOCC=0)"), this run has KEEPOCC=$KEEPOCC"
+    echo "    use another folder: PROD=<name> (nothing was run)"; exit 1; }
+fi
+if [ "$PROD" != prod ]; then   # the screening and the GW do not depend on the occupations of the BSE
+  [ -e $P/w ] || { ls $TOP/prod/w/ndb.em1s >/dev/null 2>&1 && ln -s ../prod/w $P/w; }
+  if [ -z "$GWDIR" ] && [ ! -e $P/gw ] && [ -s $TOP/prod/gw/ndb.QP ] && [ -s $TOP/prod/o-gw.qp ]; then
+    ln -s ../prod/gw $P/gw; ln -s ../prod/o-gw.qp $P/o-gw.qp
+  fi
 fi
 
 # --- system ---
@@ -421,6 +454,7 @@ BEnSteps= $ns
 %
 BSEprop= "abs"
 KfnQPdb= "E < $QPDB"
+$KOL
 $EXTRA_BSE
 EOF
   for l in "$@"; do printf '%s\n' "$l" >> $f; done
@@ -495,6 +529,34 @@ KQP=$(awk -F: '/\[K\+QP\] Indirect Gap  /{print $2+0; exit}' $P/r-bse_ref_* 2>/d
 if [ -n "$KQP" ]; then GIND=$KQP
 elif [ -n "$GWDIR" ]; then GIND=$(python3 -c "print(f'{min($GIND, $KSIND + $DMIN):.4f}')"); fi
 
+# ---------- occupations of the BSE (doped SAVE; see the header) ----------
+case $STAGE in occ)
+  echo "=== occupations of the BSE: reference (kept) against the refill of the QP levels ($(date +%H:%M)) ==="
+  fresh occ
+  cat > $P/occ.in <<EOF
+optics
+bse
+ElecTemp= $TEL eV
+BSKmod= "IP"
+% BSEBands
+ $BLO | $BHI |
+%
+% DipBands
+ $BLO | $BHI |
+%
+% BEnRange
+ 0.0 | 1.0 | eV
+%
+BEnSteps= 2
+KfnQPdb= "E < $QPDB"
+KfnQP_KeepOcc
+EOF
+  launch occ occ "grep -qs 'KfnQP_KeepOcc: occupations of the reference levels kept' r-occ_*" one || {
+    echo "!!! no KfnQP_KeepOcc lines in the report: is this yambo built from the current fork?"; exit 1; }
+  grep -h "\[K+QP\]" $P/r-occ_* | grep -v "===\|Temperature\|El. density" | sed 's/^ */  /'
+  echo "  (full: y = no room for an electron, the BSE drops the transitions into that state; report: $PROD/r-occ_*)"
+  exit 0 ;; esac
+
 # ---------- static screening ----------
 case $STAGE in w|ref|export|all)
   if ls $P/w/ndb.em1s >/dev/null 2>&1; then echo "=== screening done"
@@ -513,6 +575,9 @@ case $STAGE in ref|export|all)
     fresh bse_ref; bse_in $P/bse_ref.in ref 1 1 || exit 1
     say "bse_ref: TDA, bands $BLO-$BHI, exchange $EXX_REF Ry, W block $WBLK Ry, RIM-W"
     launch bse_ref "bse_ref,w" "ls r-bse_ref_* >/dev/null 2>&1 && grep -q 'binding energy, gap' r-bse_ref_*" || exit 1
+    if [ "$KEEPOCC" = 1 ] && ! grep -qs "KfnQP_KeepOcc: occupations of the reference levels kept" $P/r-bse_ref_*; then
+      echo "!!! KEEPOCC=1 but the reference BSE refilled the occupations: this yambo does not know KfnQP_KeepOcc (make yambo)"; exit 1
+    fi
     grep -qs "break level degeneracy" $P/LOG/l-bse_ref_* $P/l-bse_ref_* &&
       echo "  note: BSE bands $BLO-$BHI split a degenerate pair at some k (Yambo warning): consider another BANDS window"
   fi
@@ -890,7 +955,7 @@ case $STAGE in summary|all)
   fi
   python3 - "$P" "$(basename "$TOP")${GWDIR:+ (GW on the ${GGRID}x$GGRID grid of $GWDIR, corrections interpolated: $QPINTERP)}" "$GDIR" "$GIND" "$SF" "$NGRID" "$BLO-$BHI" \
     "$(awk -F= '/BSENGexx/{print $2; exit}' bse_ref.in 2>/dev/null)" "$(awk -F= '/BSENGexx/{print $2; exit}' kx_bse.in 2>/dev/null)" \
-    "$GP/o-gw.qp" "$VB" "$CB" "$GW_BANDS${GTERM:+ + $GTERM}" "${GGRID}x$GGRID" "$GAPX" "$BRK" > summary.txt <<'PY'
+    "$GP/o-gw.qp" "$VB" "$CB" "$GW_BANDS${GTERM:+ + $GTERM}" "${GGRID}x$GGRID" "$GAPX" "$BRK" > $SUMF <<'PY'
 import glob, sys
 import numpy as np
 p, name, gdir, gind, sf, ngrid, bands, exx, ngx, gwqp, vb, cb, gwb, ggrid, gapx, brk = sys.argv[1:]
@@ -995,5 +1060,5 @@ else:
     print('no self-consistent Casida results yet (STAGE=scan)')
 print('kernel files (prod/): fxc_GGq_static.*, fxc_GGq_allw.*' + (', fxc_GGq_scw.*' if glob.glob(f'{p}/fxc_GGq_scw*') else ''))
 PY
-  cat summary.txt
+  cat $SUMF
   ls -lh $P/fxc_GGq_* $P/xq_dispersion* 2>/dev/null | awk '{n = split($NF, a, "/"); print "  " $5 "  prod/" a[n]}' ;; esac

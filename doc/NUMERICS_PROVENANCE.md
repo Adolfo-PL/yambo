@@ -448,7 +448,7 @@ chi_Casida = [chi0^-1 - vbar - f_xc]^-1 = [chi0^-1 - vbar - chi0^-1 + chib^-1 + 
 
 Classified at file level. "Detailed" means the sections above; "summary" means classified here only.
 
-### 7.1 New Fortran files (14)
+### 7.1 New Fortran files (15)
 
 | file | tier | what it is | depth |
 | --- | --- | --- | --- |
@@ -466,8 +466,9 @@ Classified at file level. "Detailed" means the sections above; "summary" means c
 | `src/io/io_W.F` | A10 | `ndb.W` I/O | summary: no numerics |
 | `src/modules/mod_Wpot.F` | D | data module for `ndb.W` | summary |
 | `src/qp/W_Sigma_check.F` | B, D | recomputes `Sigma_c` from `ndb.W` and compares it with `QP_ppa_cohsex`: a consistency check | summary |
+| `src/qp_control/QP_apply_keep_occupations.F` | A, D | `KfnQP_KeepOcc` (not part of the kernel path): calls `OCCUPATIONS_Fermi` on a copy of the BSE levels and reports the difference from the kept occupations; no numerics of its own | summary |
 
-### 7.2 Edited upstream files (36 source files)
+### 7.2 Edited upstream files (38 source files)
 
 | file | tier | change | depth |
 | --- | --- | --- | --- |
@@ -489,10 +490,11 @@ Classified at file level. "Detailed" means the sections above; "summary" means c
 | `src/coulomb/cutoff_driver.F` | D | two MPI barriers around writing `ndb.cutoff` (a race) | summary |
 | `src/interface/INIT_load.F`, `INIT_activate.F`, `INIT.F`, `INIT_barriers.F`, `INIT_read_command_line.F` | D | input variables, activation, runlevel `Wpot`, `-k chi` | summary: plumbing |
 | `src/driver/options_yambo.c`, `driver/yambo.F` | D | the `-W` option; saves the KS levels before the QP correction | summary |
+| `src/qp_control/QP_apply.F`, `src/interface/INIT_QP_ctl_load.F` | D | `KfnQP_KeepOcc`: the BSE skips the Fermi-Dirac refill of the QP levels and keeps the reference occupations (off by default; `doc/HANDOFF_doped_occupations.md`) | summary |
 | `src/Yio/io_fragment.F`, `io_fragment_disconnect.F` | A10 | fragments for `ndb.Chi` and `ndb.W` | summary |
 | `src/qp/QP_driver.F`, `QP_Green_Function.F`, `QP_ppa_cohsex.F`, `QP_newton.F`, `QP_descriptions.F`, `src/qp_control/QP_load_GFs.F`, `src/modules/mod_QP.F`, `src/io/io_QP_and_GF.F` | B, C, D | Green-function route (`GRetarded`, conventional retarded Dyson `G = 1/(z - eps - Delta Sigma)`); `Wpot` hook in `QP_newton` | summary |
 
-The six `.objects` files (`src/{bse,io,modules,pol_function,qp,tddft}/.objects`) only register the new sources; `.gitignore` un-ignores `tests/chi_green/*.F90`.
+The seven `.objects` files (`src/{bse,io,modules,pol_function,qp,qp_control,tddft}/.objects`) only register the new sources; `.gitignore` un-ignores `tests/chi_green/*.F90`.
 
 ### 7.3 Not source: scripts, documentation, tests
 

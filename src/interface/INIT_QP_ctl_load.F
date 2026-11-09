@@ -101,4 +101,9 @@ subroutine INIT_QP_ctl_load(defs,ID)
 &        '[EXTQP '//trim(description_ch(ID))//'] Interpolation shells (BOLTZ mode)',&
 &        QP_ctl_DB_user(ID)%INTERP_shell_factor,verb_level=V_qp)
  !
+ ! BSE only: QP energies with the occupations of the reference levels (QP_apply)
+ !
+ if (ID==2) call it('f',defs,'KfnQP_KeepOcc',&
+&        '[EXTQP BSK BSS] Keep the reference occupations: no Fermi refill of the QP levels',verb_level=V_qp)
+ !
 end subroutine

@@ -104,6 +104,7 @@ Run `git log --oneline 19c1241..HEAD` for the history. In total the fork changes
 | **BSEChiKoutW / BSEChiKoutB** | `bse/K_Chi_Kdump.F` | Dumps the Casida matrix as text. `sbin/chi_tools/ktt_casida.py` diagonalizes it. |
 | **BSEGinplane** | `K_exchange_collisions.F`, `K_Chi_export.F`, `K_kernel.F` | Keeps only G_z = 0 for layers in the xy plane. |
 | Spinors and SOC | `K_Chi_export.F`, `K_kernel.F`, ALDA collisions | Symmetry-safe with SOC. Use nosym only without SOC. |
+| **KfnQP_KeepOcc** (doped BSE: QP energies with the reference occupations) | `qp_control/QP_apply.F`, `qp_control/QP_apply_keep_occupations.F`, `interface/INIT_QP_ctl_load.F` | Skips the Fermi-Dirac refill of the QP levels (`OCCUPATIONS_Fermi "K+QP"`) and reports what it would have changed. Off by default. `exact_kernel.sh`: `KEEPOCC=1`, `PROD=`, `STAGE=occ`. See `doc/HANDOFF_doped_occupations.md`, "Answers". |
 | Coulomb cutoff race fix | `coulomb/cutoff_driver.F` | Adds `PP_wait` barriers after the ndb.cutoff read and after the master's write (`247d1c8`). Before the fix, ndb.cutoff was read while being written. |
 
 **Runlevel gate.** `src/interface/INIT_barriers.F`, also changed by the fork, decides which runlevels survive together. Upstream switches `rim_w` off for MPA (`gw0_mpa` list). Forcing it on gave inconsistent gaps. That change was reverted, so MPA plus RIM-W stays unsupported.
@@ -212,7 +213,7 @@ Monolayer WS2:
      - on a failed or ill-conditioned kernel warns, writes no `ndb.Chi`, and lets the diagonalization finish (z=0 is checked before the frequency loop).
      Tests and numbers: doc, "Kernel from the BSE and exciton binding energies: `BSEChiOut`".
    - Yambo's C driver aborts (exit 134, after the run has written everything) when the `-F` path is longer than about 90 characters (`src/driver/input_file.c`, 100-char buffer). The job scripts use short relative names.
-   - Not tested: the "exc" kernel with QP energies (QP corrections recompute the BSE occupations, `QP_apply.F:175-176`), low temperature, q beyond 2.
+   - Not tested: the "exc" kernel with QP energies (QP corrections recompute the BSE occupations, `QP_apply.F:183-185`, unless `KfnQP_KeepOcc` is set; the export and Casida with that flag are not tested either), low temperature, q beyond 2.
    - Upstream BSE, ground state: `src/bse/K_Transition_check.F`.
      - f_t = (f_v − f_c)/spin_occ (line 64).
      - f < 0 goes to the anti-resonant block (line 110). f = 0 is kept only on the E > 0 side, for the JDOS (line 116).

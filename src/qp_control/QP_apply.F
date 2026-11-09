@@ -37,6 +37,7 @@ subroutine QP_apply(bands,en,k,object,msg_fmt,qp_impose,QP_ctl_impose,main_secti
 &                        QP_ctl_ID,QP_ctl_t,QP_ctl_msg_fmt,QP_ctl_xc_STRING,QP_ctl_what,&
 &                        At_least_one_band_corrected
  use global_XC,     ONLY:correct_global_XC
+ use parser_m,      ONLY:parser
  !
 #include<y_memory.h>
  !
@@ -53,7 +54,7 @@ subroutine QP_apply(bands,en,k,object,msg_fmt,qp_impose,QP_ctl_impose,main_secti
  !
  integer          ::i_spin,nbf_SAVE(2),nbm_SAVE(2),nb_SAVE(2),i_a
  character(2)     ::sec_mode
- logical          ::main
+ logical          ::main,l_keep_occ
  !
  ! Resets
  !========
@@ -171,7 +172,15 @@ subroutine QP_apply(bands,en,k,object,msg_fmt,qp_impose,QP_ctl_impose,main_secti
    nbm_SAVE=en%nbm
  endif
  !
- if (.not.allocated(en%fo) .and. .not. l_sc_run) then
+ ! KfnQP_KeepOcc: the BSE keeps the occupations of the reference levels (the ones of the
+ ! screening and of the GW) and takes only the energies from the QP corrections
+ !
+ l_keep_occ=.FALSE.
+ if (QP_ctl_ID==2) call parser('KfnQP_KeepOcc',l_keep_occ)
+ if (allocated(en%fo) .or. l_sc_run) l_keep_occ=.FALSE.
+ if (l_keep_occ) call QP_apply_keep_occupations(en,k)
+ !
+ if (.not.allocated(en%fo) .and. .not. l_sc_run .and. .not. l_keep_occ) then
    if (QP_ctl_ID==1) call OCCUPATIONS_Fermi(en,k,"X+QP")
    if (QP_ctl_ID==2) call OCCUPATIONS_Fermi(en,k,"K+QP")
    if (QP_ctl_ID==3) then
