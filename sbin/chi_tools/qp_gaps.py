@@ -73,7 +73,8 @@ def main():
     a = ap.parse_args()
     kc_pw = None
     with open(a.qpfile, errors='replace') as f:
-        is_pw = 'Program PWSCF' in f.read(4000)
+        txt = f.read()
+        is_pw = 'Program PWSCF' in txt or 'number of Kohn-Sham states' in txt
     if is_pw:                       # KS only: E-Eo = 0, k numbered as pw.x lists them
         kc_pw, B = read_pw(a.qpfile)
         nk, nb = B.shape
