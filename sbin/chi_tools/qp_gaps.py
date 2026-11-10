@@ -13,11 +13,13 @@ The o-*.qp columns are k, band, Eo (KS), E-Eo (QP correction), ...; the QP energ
 Yambo's report prints the gaps of the KS and Hartree-Fock energies, not of the QP ones: this does.
 
   python qp_gaps.py o-gw.qp [--vb 13]
-  python qp_gaps.py nscf.out [--vb 13]     the DFT (KS) gaps only, before any GW run: the band energies
+  python qp_gaps.py nscf.out [--vb N]      the DFT (KS) gaps only, before any GW run: the band energies
                                            pw.x prints at each k (needs verbosity='high' when the run
                                            has more than 100 k-points, or pw.x does not print them)
 
---vb is the highest occupied band (13 for WS2/WSe2 without SOC); the next band is the conduction band.
+--vb is the highest occupied band; the next band is the conduction band. For a pw.x output the default is
+(number of electrons)/2 from the file (20 for WS2 with SG15, whose W includes 4f); for an o-*.qp file it
+is 13 (WS2/WSe2 with the PseudoDojo pseudopotentials, no SOC).
 Prints the VBM and CBM, the direct gap at K and the indirect gap K -> Q (VB at K to CB at Q), and the
 gap at each k (Yambo's k indices: match them to the "QP [eV] @ K [n] (iku)" lines of the r-file).
 K is the k of the smallest KS direct gap; Q the k of the lowest KS conduction band away from the K
@@ -67,7 +69,7 @@ def read_pw(path):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[1])
     ap.add_argument('qpfile')
-    ap.add_argument('--vb', type=int, default=13, help='highest occupied band')
+    ap.add_argument('--vb', type=int, help='highest occupied band (default: electrons/2 of a pw.x output, else 13)')
     ap.add_argument('--k', type=int, help='k index of K (default: the smallest KS direct gap)')
     ap.add_argument('--q', type=int, help='k index of Q (default: the lowest KS CB away from the K valley)')
     a = ap.parse_args()
@@ -77,11 +79,19 @@ def main():
         is_pw = 'Program PWSCF' in txt or 'number of Kohn-Sham states' in txt
     if is_pw:                       # KS only: E-Eo = 0, k numbered as pw.x lists them
         kc_pw, B = read_pw(a.qpfile)
+        if a.vb is None:
+            m = re.search(r'number of electrons\s*=\s*([\d.]+)', txt)
+            ne = float(m.group(1)) if m else 0.0
+            if not m or abs(ne / 2 - round(ne / 2)) > 1e-6:
+                sys.exit(f'{a.qpfile}: cannot take the VBM band from the electron count ({ne}); set --vb')
+            a.vb = int(round(ne / 2))
+            print(f'{ne:g} electrons: VBM = band {a.vb} (set --vb to override)')
         nk, nb = B.shape
         k = np.repeat(np.arange(1, nk + 1), nb)
         b = np.tile(np.arange(1, nb + 1), nk)
         e0, de = B.ravel(), np.zeros(B.size)
     else:
+        a.vb = 13 if a.vb is None else a.vb
         d = np.loadtxt(a.qpfile, comments='#', ndmin=2)
         k, b, e0, de = d[:, 0].astype(int), d[:, 1].astype(int), d[:, 2], d[:, 3]
     ks = sorted(set(k[b == a.vb]) & set(k[b == a.vb + 1]))
@@ -101,6 +111,9 @@ def main():
                 x = kc_pw[q - 1]
                 print(f'  {lab}: k = {x[0]:.4f} {x[1]:.4f} {x[2]:.4f} (2pi/alat), |k| = {np.linalg.norm(x):.4f}'
                       + ('  (K points have |k| = 2/3 = 0.6667)' if lab == 'K' else ''))
+                if lab == 'K' and abs(np.linalg.norm(x) - 2 / 3) > 1e-3:
+                    print('  !!! this is not K: wrong --vb (check the electron count), or a grid without K '
+                          '(its size must be a multiple of 3)')
     for lab, E in ((('KS',  e0),) if is_pw else (('KS', e0), ('QP', e0 + de))):
         v = {q: E[(k == q) & (b == a.vb)][0] for q in ks}
         c = {q: E[(k == q) & (b == a.vb + 1)][0] for q in ks}
