@@ -18,7 +18,7 @@ Yambo's report prints the gaps of the KS and Hartree-Fock energies, not of the Q
                                            has more than 100 k-points, or pw.x does not print them)
 
 --vb is the highest occupied band; the next band is the conduction band. For a pw.x output the default is
-(number of electrons)/2 from the file (20 for WS2 with SG15, whose W includes 4f); for an o-*.qp file it
+(number of electrons)/2 from the file (the number of electrons itself in a noncollinear/SOC run) (20 for WS2 with SG15, whose W includes 4f); for an o-*.qp file it
 is 13 (WS2/WSe2 with the PseudoDojo pseudopotentials, no SOC).
 Prints the VBM and CBM, the direct gap at K and the indirect gap K -> Q (VB at K to CB at Q), and the
 gap at each k (Yambo's k indices: match them to the "QP [eV] @ K [n] (iku)" lines of the r-file).
@@ -84,8 +84,13 @@ def main():
             ne = float(m.group(1)) if m else 0.0
             if not m or abs(ne / 2 - round(ne / 2)) > 1e-6:
                 sys.exit(f'{a.qpfile}: cannot take the VBM band from the electron count ({ne}); set --vb')
-            a.vb = int(round(ne / 2))
-            print(f'{ne:g} electrons: VBM = band {a.vb} (set --vb to override)')
+            nc = re.search(r'Noncollinear calculation', txt) is not None   # spinor bands: 1 electron each
+            if nc:
+                a.vb = int(round(ne))
+            else:
+                a.vb = int(round(ne / 2))
+            print(f'{ne:g} electrons{", noncollinear (one electron per band)" if nc else ""}: '
+                  f'VBM = band {a.vb} (set --vb to override)')
         nk, nb = B.shape
         k = np.repeat(np.arange(1, nk + 1), nb)
         b = np.tile(np.arange(1, nb + 1), nk)
