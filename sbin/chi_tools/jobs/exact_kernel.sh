@@ -957,12 +957,21 @@ print(f'{a[0]:.4f}', f'{np.interp(ex, w, a):.4f}' if w.min() <= ex <= w.max() el
 PY
 )
   echo "  exact kernel head: alpha(0) = $A0, alpha(E_A = $EX eV) = $AX"
+  # alpha = -fxc_00 q^2 is the LRC form (fxc ~ 1/q^2) of a bulk kernel; with a Coulomb cutoff the 2D head
+  # does not scale like 1/q^2 and this number depends on the optical q0 (WS2 slab: ~1e4). Such values
+  # are not run: the LRC scan LRC_ALPHAS stands alone then
+  AH=""
+  for v in $A0 $AX; do
+    [ "$v" = nan ] && continue
+    if python3 -c "import sys; sys.exit(0 if 0 < $v < 10 else 1)"; then AH="$AH $v"
+    else echo "  !!! alpha = $v from the exact head: not a bulk-like 1/q^2 head (Coulomb cutoff?), not used for LRC"; fi
+  done
   if ! ls $P/o-trpa.*_q1_* >/dev/null 2>&1; then    # the LRC baseline: RPA (Hartree) in G space
     fresh trpa; chi_in $P/trpa.in Hartree $SLO $SHI $SNS $SDM
     say "trpa: RPA in G space (LRC with alpha = 0)"
     launch trpa "trpa" "ls o-trpa.*_q1_* >/dev/null 2>&1" one && rm -rf $P/trpa
   fi
-  for a in $A0 $([ "$AX" != nan ] && echo $AX) ${LRC_ALPHAS:-1 1.5 2 2.5 3}; do
+  for a in $AH ${LRC_ALPHAS:-1 1.5 2 2.5 3}; do
     ls $P/o-tlr$a.*_q1_* >/dev/null 2>&1 && continue
     fresh tlr$a; chi_in $P/tlr$a.in LRC $SLO $SHI $SNS $SDM "LRC_alpha= $(python3 -c "print(-($a))")"
     say "tlr$a: LRC, alpha = $a"
