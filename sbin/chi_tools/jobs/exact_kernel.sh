@@ -54,7 +54,11 @@
 #                  LRC in the G-space Dyson equation (Chimod "LRC", fxc_00 = -alpha/|q|^2) with the alpha of
 #                  the exact kernel's head at w = 0 and at E_A, and with LRC_ALPHAS (default "1 1.5 2 2.5 3")
 #                  -> prod/o-tal.* (ALDA), prod/o-tlr<alpha>.* (LRC), prod/tddft_compare.dat (A peak of each,
-#                  next to the BSE). G-space ALDA is not run: in a slab it is a vacuum artifact
+#                  next to the BSE). ALDA: the matrix elements int rho_t*(r) fxc(r) rho_t'(r) dr are done on the
+#                  real-space FFT grid (FxcMode "R-def", ALDA_MODE= to change): no G cutoff to converge. LRC: the
+#                  local fields (Hartree) on NGsBlkXd = LRC_NG (default NG_X, the BSE exchange size); an RPA run in
+#                  G space (prod/o-trpa.*, LRC with alpha = 0) checks that this baseline matches the transition-
+#                  space RPA of STAGE=spectra (chi). G-space ALDA is not run: in a slab it is a vacuum artifact
 #                  (doc/greens_function_fxc.md). Not part of "all".
 #   STAGE=all    : all of them in a row (default). Every stage skips what is already done, so a job
 #                  that stops (time limit, error) is resubmitted with the same command.
@@ -391,7 +395,7 @@ bse_in () {   # file kind(ref|kx|cas|bcp|cas0|alda) q1 q2 [extra lines...]; XLO 
          lo=0; hi=$WHI; ns=$NW; dm=$ETA ;;           # the export's BSE, broadened, no export
     cas0) lines=$'BSKmod= "CHI"\nBSEmod= "coupling"\nBSENGexx= '$NG_X$'\nBSENGfxc= '$NG_X$'\nBSEGinplane'
          lo=0; hi=$WHI; ns=$NW; dm=$ETA ;;           # Casida with the static fxc(0) of the kernel
-    alda) lines=$'BSKmod= "ALDA"\nBSEmod= "coupling"\nBSENGexx= '$NG_X$'\nBSENGfxc= '$NG_X$'\nBSEGinplane'
+    alda) lines=$'BSKmod= "ALDA"\nBSEmod= "coupling"\nBSENGexx= '$NG_X$'\nBSENGfxc= '$NG_X$'\nBSEGinplane\nFxcMode= "'${ALDA_MODE:-R-def}$'"'
          lo=0; hi=$WHI; ns=$NW; dm=$ETA ;;           # TDDFT-ALDA in transition space (exchange + ALDA)
   esac
   lo=${XLO:-$lo}; hi=${XHI:-$hi}; ns=${XNS:-$ns}; dm=${XDM:-$dm}
@@ -446,7 +450,7 @@ ElecTemp= $TEL eV
 Chimod= "$k"
 X_Threads= $NT1
 DIP_Threads= $NT1
-NGsBlkXd= $NG_X
+NGsBlkXd= ${LRC_NG:-$NG_X}
 $CUT
 $RIM
 $FFTGL
@@ -953,6 +957,11 @@ print(f'{a[0]:.4f}', f'{np.interp(ex, w, a):.4f}' if w.min() <= ex <= w.max() el
 PY
 )
   echo "  exact kernel head: alpha(0) = $A0, alpha(E_A = $EX eV) = $AX"
+  if ! ls $P/o-trpa.*_q1_* >/dev/null 2>&1; then    # the LRC baseline: RPA (Hartree) in G space
+    fresh trpa; chi_in $P/trpa.in Hartree $SLO $SHI $SNS $SDM
+    say "trpa: RPA in G space (LRC with alpha = 0)"
+    launch trpa "trpa" "ls o-trpa.*_q1_* >/dev/null 2>&1" one && rm -rf $P/trpa
+  fi
   for a in $A0 $([ "$AX" != nan ] && echo $AX) ${LRC_ALPHAS:-1 1.5 2 2.5 3}; do
     ls $P/o-tlr$a.*_q1_* >/dev/null 2>&1 && continue
     fresh tlr$a; chi_in $P/tlr$a.in LRC $SLO $SHI $SNS $SDM "LRC_alpha= $(python3 -c "print(-($a))")"
@@ -975,7 +984,7 @@ def peak(x):
             return w[i], y[i]
     return w[np.argmax(y)], y.max()
 import re
-rows = [('bsp', 'BSE (coupled)'), ('tal', 'ALDA (transition space)')]
+rows = [('bsp', 'BSE (coupled)'), ('tal', 'ALDA (transition space)'), ('trpa', 'RPA, G space (LRC alpha = 0)')]
 lrc = sorted({m.group(1) for m in (re.match(r'o-tlr([-\d.]+)\.(alpha|eps)_q1', f) for f in glob.glob('o-tlr*'))
               if m}, key=float)
 for a in lrc:
