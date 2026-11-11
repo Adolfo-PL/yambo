@@ -978,6 +978,13 @@ PY
     launch tlr$a "tlr$a" "ls o-tlr$a.*_q1_* >/dev/null 2>&1" one || continue
     rm -rf $P/tlr$a
   done
+  # every run must have read the QP energies (a missing or unreadable gwqp/ndb.QP only warns in Yambo)
+  bad=$(grep -l "I/O problems in reading QP database" $P/r-tal_* $P/r-tlr*_* $P/r-trpa_* 2>/dev/null)
+  if [ -n "$bad" ]; then
+    echo "!!! QP database not read (DFT energies used) in: $(echo $bad | xargs -n1 basename | tr '\n' ' ')"
+    echo "    check prod/gwqp -> $(readlink $P/gwqp 2>/dev/null) and its ndb.QP; delete those runs (rm prod/[ro]-tal* ...) and rerun"
+    exit 1
+  fi
   # the A peak of each spectrum: the lowest maximum above 20% of the largest, below the gap + 0.3 eV
   ( cd $P && python3 - $EX ${GAPX:-$GDIR} $A0 $AX <<'PY'
 import glob, sys, numpy as np
