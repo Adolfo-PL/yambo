@@ -19,16 +19,26 @@ Run in the folder with the files of (all optional; what exists is drawn):
                                     (eigenvalues_SPN_dipoles.f90, 0.03 eV width), plain input: top row
   --his-dip-fold DIR                the same on the --fold input: top row
 
+  --bse-spec FILE                    the full BSE spectrum (Yambo o-*.alpha/eps file, e.g. prod/o-bsp.alpha_q1_*
+                                    of exact_kernel.sh STAGE=spectra): absorption panels, both rows
+  --alda FILE                       TDDFT-ALDA (prod/o-tal.* of STAGE=tddft): absorption panels, both rows
+  --lrc FILE[:LABEL]                TDDFT-LRC (prod/o-tlr<alpha>.* of STAGE=tddft), repeatable; the label
+                                    defaults to the alpha in the file name
+
   python plot_casida_compare.py [--his ../TEST_CAS] [--his-fold kq_fold] [--his-dip kq_dip]
                                 [--his-dip-fold kq_dip_fold] [--bse 2.3774] [--label WS2]
                                 [--emin 2.2 --emax 3.2] [--out casida_compare.png] [--common-scale]
+                                [--bse-spec o-bsp.alpha_q1_...] [--alda o-tal.alpha_q1_...]
+                                [--lrc o-tlr2.alpha_q1_... --lrc o-tlr0.6860.alpha_q1_...:"LRC, exact head"]
 
 Every curve is normalized to its maximum inside the plotted range; with --common-scale the Yambo TDA
 curves are divided by the Yambo coupled maximum instead (same formula and constant: real relative
 heights), his curves still by their own maximum (his units differ). Both rows show the two Yambo-kernel
 results (ktt_casida.py: oscillator strengths, eta = 0.03 eV, Boltzmann emission; solid = coupled,
 dashed = TDA); the upper row adds his program with the fixes (--his-dip, --his-dip-fold), the lower row
-his original program (--his, --his-fold).
+his original program (--his, --his-fold). The Yambo spectra (--bse-spec, --alda, --lrc: column 2, Im alpha
+or Im eps, same broadening as STAGE=spectra) go in both absorption panels, each normalized to its own maximum
+(their units differ from the Casida curves); they have no emission counterpart.
 """
 import argparse
 import os
@@ -61,6 +71,10 @@ def main():
     ap.add_argument('--common-scale', action='store_true',
                     help='scale the Yambo TDA curves by the Yambo coupled maximum (same formula and constant), '
                          'so their real relative heights show; his curves stay normalized to their own maximum')
+    ap.add_argument('--bse-spec', help='full BSE spectrum (Yambo o-*.alpha/eps file): absorption, both rows')
+    ap.add_argument('--alda', help='TDDFT-ALDA spectrum (Yambo o-tal.* file): absorption, both rows')
+    ap.add_argument('--lrc', action='append', default=[], metavar='FILE[:LABEL]',
+                    help='TDDFT-LRC spectrum (Yambo o-tlr<alpha>.* file), repeatable')
     a = ap.parse_args()
 
     C_COUP, C_TDA, C_HIS = '#2a78d6', '#eb6834', '#1baf7a'
@@ -88,6 +102,23 @@ def main():
                   'TDDFT:Volo + Yambo dipoles, (--fold input)'),
                  (0, 1, os.path.join(a.his_dip_fold, 'emission_0'), '#0d366b', ':', 2.6,
                   'TDDFT:Volo + Yambo dipoles, (--fold input)')]
+
+    # Yambo's own spectra (full BSE, ALDA, LRC): absorption panels of both rows, own normalization
+    import re
+    ref_curves = []
+    if a.bse_spec:
+        ref_curves.append((a.bse_spec, 'black', '-', 1.2, 'BSE (Yambo, full spectrum)'))
+    if a.alda:
+        ref_curves.append((a.alda, '#8a3ffc', '-.', 1.6, 'TDDFT:Yambo ALDA'))
+    lrc_cols = ['#a0522d', '#6b7280', '#c71e5d', '#4a7c59']
+    for i, item in enumerate(a.lrc):
+        f, _, lab = item.partition(':') if not os.path.exists(item) else (item, '', '')
+        if not lab:
+            m = re.search(r'tlr([-\d.]+?)\.(alpha|eps)', os.path.basename(f))
+            lab = f'TDDFT:Yambo LRC, α = {m.group(1)}' if m else 'TDDFT:Yambo LRC'
+        ref_curves.append((f, lrc_cols[i % len(lrc_cols)], (0, (1, 1.5)), 1.8, lab))
+    for r in (0, 1):
+        rows += [(r, 0, f, col, ls, lw, lab) for f, col, ls, lw, lab in ref_curves]
 
     # --common-scale: the Yambo curves of one quantity share the coupled curve's maximum as their scale
     ref = {'abs_coupled.dat': 'abs_coupled.dat', 'abs_tda.dat': 'abs_coupled.dat',

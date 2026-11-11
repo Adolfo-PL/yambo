@@ -49,6 +49,13 @@
 #                  w = 0 and at the A exciton, chi0 also on DFT energies, and with fxc(w) at every w (kernel exported on the same
 #                  broadened grid; lies on the BSE) -> prod/casida_spectra.dat/.png, and the two halves
 #                  casida_spectra_chi.png (chi0, chi) and casida_spectra_tddft.png (BSE, TDDFT) (LABEL= sets the title)
+#   STAGE=tddft  : Yambo's own TDDFT kernels at q1, after STAGE=spectra and on its grid, broadening, bands
+#                  and QP energies: ALDA in transition space (BSKmod "ALDA", coupled: exchange + ALDA) and
+#                  LRC in the G-space Dyson equation (Chimod "LRC", fxc_00 = -alpha/|q|^2) with the alpha of
+#                  the exact kernel's head at w = 0 and at E_A, and with LRC_ALPHAS (default "1 1.5 2 2.5 3")
+#                  -> prod/o-tal.* (ALDA), prod/o-tlr<alpha>.* (LRC), prod/tddft_compare.dat (A peak of each,
+#                  next to the BSE). G-space ALDA is not run: in a slab it is a vacuum artifact
+#                  (doc/greens_function_fxc.md). Not part of "all".
 #   STAGE=all    : all of them in a row (default). Every stage skips what is already done, so a job
 #                  that stops (time limit, error) is resubmitted with the same command.
 #
@@ -369,7 +376,7 @@ NGsBlkXs= $XBLK Ry
 EOF
 }
 
-bse_in () {   # file kind(ref|kx|cas|bcp|cas0) q1 q2 [extra lines...]; XLO XHI XNS XDM override the grid
+bse_in () {   # file kind(ref|kx|cas|bcp|cas0|alda) q1 q2 [extra lines...]; XLO XHI XNS XDM override the grid
   local f=$1 kind=$2 q1=$3 q2=$4 lines par="" lo hi ns dm; shift 4
   case $kind in
     ref) par=$(par_w | grep DIP; par_bs)
@@ -384,6 +391,8 @@ bse_in () {   # file kind(ref|kx|cas|bcp|cas0) q1 q2 [extra lines...]; XLO XHI X
          lo=0; hi=$WHI; ns=$NW; dm=$ETA ;;           # the export's BSE, broadened, no export
     cas0) lines=$'BSKmod= "CHI"\nBSEmod= "coupling"\nBSENGexx= '$NG_X$'\nBSENGfxc= '$NG_X$'\nBSEGinplane'
          lo=0; hi=$WHI; ns=$NW; dm=$ETA ;;           # Casida with the static fxc(0) of the kernel
+    alda) lines=$'BSKmod= "ALDA"\nBSEmod= "coupling"\nBSENGexx= '$NG_X$'\nBSENGfxc= '$NG_X$'\nBSEGinplane'
+         lo=0; hi=$WHI; ns=$NW; dm=$ETA ;;           # TDDFT-ALDA in transition space (exchange + ALDA)
   esac
   lo=${XLO:-$lo}; hi=${XHI:-$hi}; ns=${XNS:-$ns}; dm=${XDM:-$dm}
   cat > $f <<EOF
@@ -422,6 +431,42 @@ BEnSteps= $ns
 BSEprop= "abs"
 KfnQPdb= "E < $QPDB"
 $EXTRA_BSE
+EOF
+  for l in "$@"; do printf '%s\n' "$l" >> $f; done
+}
+chi_in () {   # file Chimod lo hi ns eta [extra lines...]: G-space Dyson equation at q1, one task
+  local f=$1 k=$2 lo=$3 hi=$4 ns=$5 dm=$6; shift 6
+  cat > $f <<EOF
+optics
+chi
+tddft
+dipoles
+rim_cut
+ElecTemp= $TEL eV
+Chimod= "$k"
+X_Threads= $NT1
+DIP_Threads= $NT1
+NGsBlkXd= $NG_X
+$CUT
+$RIM
+$FFTGL
+% QpntsRXd
+ 1 | 1 |
+%
+% BndsRnXd
+ $BLO | $BHI |
+%
+% EnRngeXd
+ $lo | $hi | eV
+%
+% DmRngeXd
+ $dm | $dm | eV
+%
+ETStpsXd= $ns
+% LongDrXd
+ 1.0 | 0.0 | 0.0 |
+%
+XfnQPdb= "E < $QPDB"
 EOF
   for l in "$@"; do printf '%s\n' "$l" >> $f; done
 }
@@ -879,6 +924,77 @@ print(best[1] if best else '')")
 ;; esac
 
 # ---------- summary ----------
+case $STAGE in tddft)   # Yambo's ALDA and LRC at q1, on the grid of STAGE=spectra
+  [ -s $P/kxs/ndb.Chi ] && [ -s $P/bsp.in ] && ls $P/o-bsp.*_q1_* >/dev/null 2>&1 \
+    || { echo "!!! run STAGE=spectra first (BSE spectrum prod/o-bsp.* and kernel prod/kxs)"; exit 1; }
+  EX=$(rep kx_bse 1 "$BRK"); [ -n "$EX" ] || { echo "!!! no A exciton in prod/r-kx_bse_*"; exit 1; }
+  # the same frequency grid and broadening as the BSE spectrum of STAGE=spectra
+  read SLO SHI <<< $(awk '/BEnRange/{getline; print $1, $3}' $P/bsp.in)
+  read SDM <<< $(awk '/BDmRange/{getline; print $1}' $P/bsp.in); SNS=$(awk -F= '/BEnSteps/{print $2+0}' $P/bsp.in)
+  echo "=== TDDFT kernels at q1 (ALDA, LRC) on the BSE grid $SLO..$SHI eV, $SNS points, broadening $SDM eV ($(date +%H:%M)) ==="
+  if ! ls $P/o-tal.*_q1_* >/dev/null 2>&1; then
+    fresh tal; ( XLO=$SLO XHI=$SHI XNS=$SNS XDM=$SDM; bse_in $P/tal.in alda 1 1 )
+    say "tal: ALDA in transition space"
+    launch tal "tal" "ls o-tal.*_q1_* >/dev/null 2>&1" one || exit 1
+    rm -rf $P/tal
+  fi
+  # alpha of the exact kernel: fxc_00(q1, w) = -alpha/|q1|^2 at w = 0 and at E_A (kernel of prod/kxs,
+  # on w + i eta; the real part). Yambo's LRC is fxc_00 = +LRC_alpha/|q|^2, so LRC_alpha = -alpha
+  read A0 AX <<< $(cd $P && python3 - $EX <<'PY'
+import sys, numpy as np, netCDF4
+d = netCDF4.Dataset('kxs/ndb.Chi_fragment_1')
+w = d.variables['CHI_FREQ_Q_1'][:][:, 0] * 27.211386
+f00 = d.variables['FXC_Q_1'][:][:, 0, 0, 0]
+qpg = netCDF4.Dataset('kxs/ndb.Chi').variables['CHI_QPG'][:]
+q = abs(complex(qpg[0, 0, 0], qpg[0, 0, 1]))
+a = -f00 * q ** 2
+ex = float(sys.argv[1])
+print(f'{a[0]:.4f}', f'{np.interp(ex, w, a):.4f}' if w.min() <= ex <= w.max() else 'nan')
+PY
+)
+  echo "  exact kernel head: alpha(0) = $A0, alpha(E_A = $EX eV) = $AX"
+  for a in $A0 $([ "$AX" != nan ] && echo $AX) ${LRC_ALPHAS:-1 1.5 2 2.5 3}; do
+    ls $P/o-tlr$a.*_q1_* >/dev/null 2>&1 && continue
+    fresh tlr$a; chi_in $P/tlr$a.in LRC $SLO $SHI $SNS $SDM "LRC_alpha= $(python3 -c "print(-($a))")"
+    say "tlr$a: LRC, alpha = $a"
+    launch tlr$a "tlr$a" "ls o-tlr$a.*_q1_* >/dev/null 2>&1" one || continue
+    rm -rf $P/tlr$a
+  done
+  # the A peak of each spectrum: the lowest maximum above 20% of the largest, below the gap + 0.3 eV
+  ( cd $P && python3 - $EX ${GAPX:-$GDIR} $A0 $AX <<'PY'
+import glob, sys, numpy as np
+ex, gap, a0, ax = float(sys.argv[1]), float(sys.argv[2]), sys.argv[3], sys.argv[4]
+def spec(job):
+    f = sorted(glob.glob(f'o-{job}.alpha_q1_*') or glob.glob(f'o-{job}.eps_q1_*'))
+    return (f[0], np.loadtxt(f[0], comments='#', ndmin=2)) if f else (None, None)
+def peak(x):
+    w, y = x[:, 0], x[:, 1]; m = w <= gap + 0.3
+    w, y = w[m], y[m]; thr = 0.2 * y.max()
+    for i in range(1, len(y) - 1):
+        if y[i] >= thr and y[i] >= y[i - 1] and y[i] >= y[i + 1]:
+            return w[i], y[i]
+    return w[np.argmax(y)], y.max()
+import re
+rows = [('bsp', 'BSE (coupled)'), ('tal', 'ALDA (transition space)')]
+lrc = sorted({m.group(1) for m in (re.match(r'o-tlr([-\d.]+)\.(alpha|eps)_q1', f) for f in glob.glob('o-tlr*'))
+              if m}, key=float)
+for a in lrc:
+    tag = ' (exact head, w = 0)' if a == a0 else (' (exact head, w = E_A)' if a == ax else '')
+    rows.append((f'tlr{a}', f'LRC alpha = {a}{tag}'))
+out = open('tddft_compare.dat', 'w')
+out.write(f'# q1, A exciton of the BSE export {ex} eV, QP gap {gap} eV\n# kernel  A peak (eV)  binding (eV)  file\n')
+print(f'  {"kernel":40s} {"A peak":>8s} {"binding":>8s}')
+for job, name in rows:
+    f, x = spec(job)
+    if x is None: continue
+    w, y = peak(x)
+    out.write(f'{name:40s} {w:9.4f} {gap - w:9.4f}  {f}\n')
+    print(f'  {name:40s} {w:8.4f} {gap - w:8.4f}   {f}')
+PY
+  ) || exit 1
+  echo "  -> prod/tddft_compare.dat; plot with plot_casida_compare.py --bse-spec prod/o-bsp.* --alda prod/o-tal.* --lrc prod/o-tlr<alpha>.*"
+;; esac
+
 case $STAGE in summary|all)
   [ -f $P/kx/ok ] || { echo "!!! no checked kernel: run STAGE=export"; exit 1; }
   cd $P
