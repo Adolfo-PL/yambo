@@ -7,179 +7,105 @@
 # Authors: Adolfo Partida, with AI assistance (Claude Code)
 #
 """
-plot_casida_compare.py -- absorption and emission of the two Casida solvers on the same exact kernel.
+plot_casida_compare.py -- absorption and emission of the two Casida solvers on the same exact kernel
+(ours, from Yambo's matrices, and Volodymyr's k-space program), with Yambo's own spectra for reference.
 
-Run in the folder with the files of (all optional; what exists is drawn):
-
-  abs_coupled.dat, em_coupled.dat   ktt_casida.py ...           --spectrum --emission   (ours, coupled)
-  abs_tda.dat, em_tda.dat           ktt_casida.py ... --tda     --spectrum --emission   (ours, TDA)
-  --his DIR                         his program's own output (absorption_0, emission_0), plain input
-  --his-fold DIR                    his program's own output on the ktt_to_kq.py --fold input
-  --his-dip DIR                     output of the copy of his program with dipole weights
-                                    (eigenvalues_SPN_dipoles.f90, 0.03 eV width), plain input: top row
-  --his-dip-fold DIR                the same on the --fold input: top row
-
-  --bse-spec FILE                    the full BSE spectrum (Yambo o-*.alpha/eps file, e.g. prod/o-bsp.alpha_q1_*
-                                    of exact_kernel.sh STAGE=spectra): absorption panels, both rows
-  --alda FILE                       TDDFT-ALDA (prod/o-tal.* of STAGE=tddft): absorption panels, both rows
-  --lrc FILE[:LABEL]                TDDFT-LRC (prod/o-tlr<alpha>.* of STAGE=tddft), repeatable; the label
-                                    defaults to the alpha in the file name
-  --curve FILE:LABEL                any other Yambo spectrum (column 2), repeatable, e.g. ALDA or RPA on DFT
-                                    energies: absorption panels, both rows
-
-  python plot_casida_compare.py [--his ../TEST_CAS] [--his-fold kq_fold] [--his-dip kq_dip]
-                                [--his-dip-fold kq_dip_fold] [--bse 2.3774] [--label WS2]
-                                [--emin 2.2 --emax 3.2] [--out casida_compare.png] [--common-scale]
-                                [--bse-spec o-bsp.alpha_q1_...] [--alda o-tal.alpha_q1_...]
-                                [--lrc o-tlr2.alpha_q1_... --lrc o-tlr0.6860.alpha_q1_...:"LRC, exact head"]
-
-Every curve is normalized to its maximum inside the plotted range; with --common-scale the Yambo TDA
-curves are divided by the Yambo coupled maximum instead (same formula and constant: real relative
-heights), his curves still by their own maximum (his units differ). Both rows show the two Yambo-kernel
-results (ktt_casida.py: oscillator strengths, eta = 0.03 eV, Boltzmann emission; solid = coupled,
-dashed = TDA); the upper row adds his program with the fixes (--his-dip, --his-dip-fold), the lower row
-his original program (--his, --his-fold). The Yambo spectra (--bse-spec, --alda, --lrc: column 2, Im alpha
-or Im eps, same broadening as STAGE=spectra) go in both absorption panels, each normalized to its own maximum
-(their units differ from the Casida curves); they have no emission counterpart.
+Run it in prod/:   python plot_casida_compare.py
+Everything you may want to change is in the SETTINGS block below.
 """
-import argparse
-import os
-
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
+# ======================= SETTINGS: edit here =======================
 
-def load(path):
+TITLE = 'WS2: Casida with the exact kernel, coupled (solid) vs TDA (dashed)'
+EMIN  = 2.2              # x axis from (eV), all panels
+EMAX  = 3.2              # x axis to (eV), all panels
+BSE_A = 2.3774           # grey line "BSE A" in every panel (None to hide it)
+OUT   = 'casida_compare.png'
+
+# Each curve is divided by its own maximum inside EMIN..EMAX (their units differ). To show the real
+# height of a curve relative to another one, put that other file in the last field ("scale by"):
+# e.g. 'abs_coupled.dat' on the TDA line shows the TDA peak relative to the coupled one.
+
+# The four panels: name -> title. LAYOUT places them (rows, columns).
+PANELS = {
+    'abs_fix':  'absorption: Yambo vs Volo with the fixes (dipoles)',
+    'em_fix':   'emission: Yambo vs Volo with the fixes',
+    'abs_orig': 'absorption: Yambo vs Volo, original program',
+    'em_orig':  'emission: Yambo vs Volo, original program',
+}
+LAYOUT = [['abs_fix',  'em_fix'],
+          ['abs_orig', 'em_orig']]
+
+# One line per curve: (panel, file, column, label, colour, line style, line width, scale by)
+#   column 1 for all these files (ours: abs_*.dat/em_*.dat; Volo: absorption_0/emission_0;
+#   Yambo o-* files: 1 = Im alpha)
+#   Put a # in front of a line to leave that curve out.
+CURVES = [
+    # --- top row: ours and Volo's program with the Yambo dipoles ---
+    ('abs_fix', 'abs_coupled.dat',                 1, 'TDDFT: Yambo, coupled',          '#2a78d6', '-',  1.8, None),
+    ('abs_fix', 'abs_tda.dat',                     1, 'TDDFT: Yambo, TDA',              '#eb6834', '--', 1.8, None),
+    ('abs_fix', 'kq_dip/absorption_0',             1, 'TDDFT: Volo + Yambo dipoles (TDA)', '#1baf7a', ':', 2.6, None),
+    ('abs_fix', 'o-bsp.alpha_q1_diago_bse',        1, 'BSE (Yambo)',                    'black',   '-',  1.2, None),
+#   ('abs_fix', 'o-tal.alpha_q1_diago_alda_bse',   1, 'TDDFT: ALDA (Yambo)',            '#8a3ffc', '-.', 1.6, None),
+    ('em_fix',  'em_coupled.dat',                  1, 'TDDFT: Yambo, coupled',          '#2a78d6', '-',  1.8, None),
+    ('em_fix',  'em_tda.dat',                      1, 'TDDFT: Yambo, TDA',              '#eb6834', '--', 1.8, None),
+    ('em_fix',  'kq_dip/emission_0',               1, 'TDDFT: Volo + Yambo dipoles (TDA)', '#1baf7a', ':', 2.6, None),
+    # --- bottom row: ours and Volo's original program ---
+    ('abs_orig', 'abs_coupled.dat',                1, 'TDDFT: Yambo, coupled',          '#2a78d6', '-',  1.8, None),
+    ('abs_orig', 'abs_tda.dat',                    1, 'TDDFT: Yambo, TDA',              '#eb6834', '--', 1.8, None),
+    ('abs_orig', '../VOLO/absorption_0',           1, 'TDDFT: Volo (TDA)',              '#1baf7a', ':',  2.6, None),
+    ('abs_orig', 'o-bsp.alpha_q1_diago_bse',       1, 'BSE (Yambo)',                    'black',   '-',  1.2, None),
+    ('em_orig',  'em_coupled.dat',                 1, 'TDDFT: Yambo, coupled',          '#2a78d6', '-',  1.8, None),
+    ('em_orig',  'em_tda.dat',                     1, 'TDDFT: Yambo, TDA',              '#eb6834', '--', 1.8, None),
+    ('em_orig',  '../VOLO/emission_0',             1, 'TDDFT: Volo (TDA)',              '#1baf7a', ':',  2.6, None),
+]
+
+# ===================================================================
+
+
+def load(file, col):
+    """x and the chosen column inside EMIN..EMAX, or None if the file is missing."""
     try:
-        x = np.loadtxt(path, comments='#', ndmin=2)
-        return x[:, 0], x[:, 1]
-    except Exception:
+        data = np.loadtxt(file, comments='#')
+    except OSError:
         return None
+    keep = (data[:, 0] >= EMIN) & (data[:, 0] <= EMAX)
+    return data[keep, 0], data[keep, col]
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__.split('\n')[1])
-    ap.add_argument('--his', help="folder with his program's absorption_0 and emission_0 (plain, TDA input)")
-    ap.add_argument('--his-fold', help="folder with his program's output on the --fold input")
-    ap.add_argument('--his-dip', help="folder with the dipole-weighted copy of his program's output (plain input)")
-    ap.add_argument('--his-dip-fold', help="folder with the dipole-weighted copy's output on the --fold input")
-    ap.add_argument('--bse', type=float, default=None, help='BSE A exciton (eV), marked')
-    ap.add_argument('--label', default='')
-    ap.add_argument('--emin', type=float, default=2.2)
-    ap.add_argument('--emax', type=float, default=3.2)
-    ap.add_argument('--out', default='casida_compare.png')
-    ap.add_argument('--common-scale', action='store_true',
-                    help='scale the Yambo TDA curves by the Yambo coupled maximum (same formula and constant), '
-                         'so their real relative heights show; his curves stay normalized to their own maximum')
-    ap.add_argument('--bse-spec', help='full BSE spectrum (Yambo o-*.alpha/eps file): absorption, both rows')
-    ap.add_argument('--alda', help='TDDFT-ALDA spectrum (Yambo o-tal.* file): absorption, both rows')
-    ap.add_argument('--lrc', action='append', default=[], metavar='FILE[:LABEL]',
-                    help='TDDFT-LRC spectrum (Yambo o-tlr<alpha>.* file), repeatable')
-    ap.add_argument('--curve', action='append', default=[], metavar='FILE:LABEL',
-                    help='any other Yambo spectrum (column 2), repeatable')
-    a = ap.parse_args()
+nrow, ncol = len(LAYOUT), len(LAYOUT[0])
+fig, axes = plt.subplots(nrow, ncol, figsize=(6 * ncol, 3.6 * nrow), sharex=True, squeeze=False)
+where = {name: axes[r][c] for r, row in enumerate(LAYOUT) for c, name in enumerate(row)}
 
-    C_COUP, C_TDA, C_HIS = '#2a78d6', '#eb6834', '#1baf7a'
-    rows = []  # (row, column, file, colour, style, width, label)
-    # both rows: the two Yambo-kernel results with the oscillator strengths (ktt_casida.py)
-    for r in (0, 1):
-        rows += [(r, 0, 'abs_coupled.dat', C_COUP, '-', 1.8, 'TDDFT:Yambo, coupled'),
-                 (r, 0, 'abs_tda.dat', C_TDA, '--', 1.8, 'TDDFT:Yambo, TDA'),
-                 (r, 1, 'em_coupled.dat', C_COUP, '-', 1.8, 'TDDFT:Yambo, coupled'),
-                 (r, 1, 'em_tda.dat', C_TDA, '--', 1.8, 'TDDFT:Yambo, TDA')]
-    if a.his:
-        rows += [(1, 0, os.path.join(a.his, 'absorption_0'), C_HIS, ':', 2.6, 'TDDFT:Volo, (TDA)'),
-                 (1, 1, os.path.join(a.his, 'emission_0'), C_HIS, ':', 2.6, 'TDDFT:Volo, (TDA)')]
-    if a.his_fold:
-        rows += [(1, 0, os.path.join(a.his_fold, 'absorption_0'), '#0d366b', ':', 2.6, 'TDDFT:Volo, (--fold input)'),
-                 (1, 1, os.path.join(a.his_fold, 'emission_0'), '#0d366b', ':', 2.6, 'TDDFT:Volo, (--fold input)')]
+for panel, file, col, label, colour, style, width, scale_by in CURVES:
+    d = load(file, col)
+    if d is None:
+        print(f'  not found, skipped: {file}')
+        continue
+    x, y = d
+    ref = load(scale_by, 1) if scale_by else d
+    height = ref[1].max()
+    if scale_by:
+        print(f'  {file}: maximum {y.max() / height:.3f} of {scale_by}')
+    where[panel].plot(x, y / height, label=label, color=colour, ls=style, lw=width)
 
-    # the dipole-weighted copy of his program has our absorption formula: top row (its emission keeps
-    # his Bose factor)
-    if a.his_dip:
-        rows += [(0, 0, os.path.join(a.his_dip, 'absorption_0'), C_HIS, ':', 2.6, 'TDDFT:Volo + Yambo dipoles, (TDA)'),
-                 (0, 1, os.path.join(a.his_dip, 'emission_0'), C_HIS, ':', 2.6, 'TDDFT:Volo + Yambo dipoles, (TDA)')]
-    if a.his_dip_fold:
-        rows += [(0, 0, os.path.join(a.his_dip_fold, 'absorption_0'), '#0d366b', ':', 2.6,
-                  'TDDFT:Volo + Yambo dipoles, (--fold input)'),
-                 (0, 1, os.path.join(a.his_dip_fold, 'emission_0'), '#0d366b', ':', 2.6,
-                  'TDDFT:Volo + Yambo dipoles, (--fold input)')]
-
-    # Yambo's own spectra (full BSE, ALDA, LRC): absorption panels of both rows, own normalization
-    import re
-    ref_curves = []
-    if a.bse_spec:
-        ref_curves.append((a.bse_spec, 'black', '-', 1.2, 'BSE (Yambo, full spectrum)'))
-    if a.alda:
-        ref_curves.append((a.alda, '#8a3ffc', '-.', 1.6, 'TDDFT:Yambo ALDA'))
-    lrc_cols = ['#a0522d', '#6b7280', '#c71e5d', '#4a7c59']
-    for i, item in enumerate(a.lrc):
-        f, _, lab = item.partition(':') if not os.path.exists(item) else (item, '', '')
-        if not lab:
-            m = re.search(r'tlr([-\d.]+?)\.(alpha|eps)', os.path.basename(f))
-            lab = f'TDDFT:Yambo LRC, α = {m.group(1)}' if m else 'TDDFT:Yambo LRC'
-        ref_curves.append((f, lrc_cols[i % len(lrc_cols)], (0, (1, 1.5)), 1.8, lab))
-    extra_cols = ['#5c5c5c', '#b8860b', '#008b8b', '#9a3412']
-    for i, item in enumerate(a.curve):
-        f, _, lab = item.rpartition(':') if ':' in item and not os.path.exists(item) else (item, '', '')
-        ref_curves.append((f, extra_cols[i % len(extra_cols)], (0, (5, 2)), 1.4, lab or os.path.basename(f)))
-    for r in (0, 1):
-        rows += [(r, 0, f, col, ls, lw, lab) for f, col, ls, lw, lab in ref_curves]
-
-    # --common-scale: the Yambo curves of one quantity share the coupled curve's maximum as their scale
-    ref = {'abs_coupled.dat': 'abs_coupled.dat', 'abs_tda.dat': 'abs_coupled.dat',
-           'em_coupled.dat': 'em_coupled.dat', 'em_tda.dat': 'em_coupled.dat'}
-
-    def peak(f):
-        d = load(f)
-        if d is None:
-            return None
-        m = (d[0] >= a.emin) & (d[0] <= a.emax)
-        return d[1][m].max() if m.any() and d[1][m].max() > 0 else None
-
-    fig, ax = plt.subplots(2, 2, figsize=(12, 7.2), sharex=True)
-    top = np.ones((2, 2))
-    drawn = 0
-    for r, c, f, col, ls, lw, lab in rows:
-        d = load(f)
-        if d is None:
-            print(f'  (no {f}: skipped)')
-            continue
-        w, y = d
-        m = (w >= a.emin) & (w <= a.emax)
-        if not m.any() or y[m].max() <= 0:
-            continue
-        scale = y[m].max()
-        if a.common_scale and f in ref and peak(ref[f]):
-            scale = peak(ref[f])
-        ax[r, c].plot(w[m], y[m] / scale, ls=ls, color=col, lw=lw, label=lab)
-        top[r, c] = max(top[r, c], (y[m] / scale).max())
-        drawn += 1
-        if a.common_scale and f in ref and f != ref[f]:
-            print(f'  {f}: maximum {(y[m] / scale).max():.3f} of the coupled one ({ref[f]})')
-    titles = [['absorption: Yambo vs Volo with the fixes (dipoles)', 'emission: Yambo vs Volo with the fixes'],
-              ['absorption: Yambo vs Volo, original program', 'emission: Yambo vs Volo, original program']]
-    for r in range(2):
-        for c in range(2):
-            x = ax[r, c]
-            if a.bse:
-                x.axvline(a.bse, color='grey', lw=0.8)
-                x.text(a.bse + 0.005, 0.92, 'BSE A', color='grey', fontsize=8)
-            x.set_title(titles[r][c], fontsize=10)
-            x.set_xlim(a.emin, a.emax)
-            x.set_ylim(0, 1.08 * top[r, c])
-            x.set_ylabel('normalized' if not a.common_scale else 'relative height')
-            if x.lines:
-                x.legend(fontsize=7, loc='upper right')
-        ax[1, c].set_xlabel('ω (eV)')
-    if a.label:
-        fig.suptitle(f'{a.label}: Casida with the exact kernel, coupled (solid) vs TDA (dashed)', fontsize=12)
-    fig.tight_layout()
-    fig.savefig(a.out, dpi=170)
-    print(f'wrote {a.out} ({drawn} curves)')
-
-
-if __name__ == '__main__':
-    main()
+for name, ax in where.items():
+    if BSE_A is not None:
+        ax.axvline(BSE_A, color='grey', lw=0.8)
+        ax.text(BSE_A + 0.005, 0.95, 'BSE A', color='grey', fontsize=8, transform=ax.get_xaxis_transform())
+    ax.set_title(PANELS[name], fontsize=10)
+    ax.set_xlim(EMIN, EMAX)
+    ax.set_ylim(bottom=0)
+    ax.set_ylabel('normalized')
+    if ax.lines:
+        ax.legend(fontsize=7, loc='upper right')
+for ax in axes[-1]:
+    ax.set_xlabel(r'$\omega$ (eV)')
+fig.suptitle(TITLE, fontsize=12)
+fig.tight_layout()
+fig.savefig(OUT, dpi=170)
+print('wrote', OUT)

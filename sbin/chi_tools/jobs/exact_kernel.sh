@@ -1017,7 +1017,7 @@ for job, name in rows:
     print(f'  {name:40s} {w:8.4f} {gap - w:8.4f}   {f}')
 PY
   ) || exit 1
-  echo "  -> prod/tddft_compare.dat; plot with plot_casida_compare.py --bse-spec prod/o-bsp.* --alda prod/o-tal.* --lrc prod/o-tlr<alpha>.*"
+  echo "  -> prod/tddft_compare.dat; plot in prod/ with plot_tddft_kernels.py (edit its SETTINGS block)"
 ;; esac
 
 case $STAGE in summary|all)
