@@ -40,6 +40,11 @@ chain is `exact_kernel.sh`, with `STAGE=` options; GW: `gw_converge.sh`, `gw_run
   #SBATCH --mail-user=ad531114@ucf.edu
   ```
 - Cluster time is expensive: job scripts must check their inputs and fail fast before the expensive step.
+- Plotting scripts are written for the user to edit by hand: a SETTINGS block at the top (title, axis range,
+  output name) and one plain line per curve (file, column, label, colour, line style, width; a `#` in front
+  leaves it out), then a short plotting loop. No command-line options, file searching or branching logic
+  (see `sbin/chi_tools/plot_tddft_kernels.py`). Analysis tools that job scripts call keep their arguments;
+  their figures go in a separate script of this kind that reads the tool's .dat file.
 
 ## Cluster (UCF Stokes)
 
