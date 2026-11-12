@@ -37,6 +37,7 @@ TICKS = [(0.0000, r'$\Gamma$'), (0.6029, 'M'), (0.9509, 'K'), (1.6470, r'$\Gamma
 #            its gap centred on 0 and you see how GW opens it on both sides.
 #            Yambo: VBM and CBM from ypp's report ("Valence Band Max", "Conduction Band Min"; GW: "[G+QP] ...")
 #            exciting GW: VBM -1.3690 eV (K), CBM 1.3592 eV (Q, on K-Gamma), from its BAND file
+#            exciting PBE: VBM -0.8975, CBM 0.8975 eV (both at K): already centred, shift 0
 #   Put a # in front of a line to leave that set out; a figure with no lines left is not written.
 FIGURES = {
     'bands_gw.png': ('WS2 monolayer: GW, Yambo vs exciting (no SOC)', [
@@ -45,7 +46,7 @@ FIGURES = {
     ]),
     'bands_dft.png': ('WS2 monolayer: DFT (PBE), Yambo vs exciting (no SOC)', [
         ('o-bands_dft.bands_interpolated', 'ypp',      1, 14, -0.067823, 'Yambo DFT (PBE)',       'tab:blue', '-',  1.6),
-#       ('BAND_PBE.OUT',                   'exciting', 0,  0,  0.0,      'exciting DFT (PBE)',    'tab:red',  ':',  1.8),   # file name and mid-gap shift to fill in
+        ('BAND_WANNIER.OUT',               'exciting', 0,  0,  0.0,      'exciting DFT (PBE, Wannier)', 'tab:red', ':', 1.8),
     ]),
 }
 
