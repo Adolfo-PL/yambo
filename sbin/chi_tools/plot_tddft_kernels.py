@@ -41,6 +41,7 @@ CURVES = [
     ('casida_spectra.dat',               5, 'TDDFT, exact $f_{xc}$ at $E_A$',   'tab:blue',   '-',  1.8),
     ('o-tal.alpha_q1_diago_alda_bse',    1, 'TDDFT, ALDA',                      'tab:purple', '-.', 1.6),
     ('o-thr.alpha_q1_diago_bse',         1, 'RPA (no kernel)',                  'gray',       '--', 1.4),
+    ('o-tlr3.alpha_q1_inv_LRC_dyson',    1, r'TDDFT, LRC $\alpha$ = 3 (Yambo)',  'tab:orange', ':',  2.2),
 #   ('casida_spectra.dat',               6, r'TDDFT, exact $f_{xc}(\omega)$',   'navy',       '--', 1.2),
 #   ('o-tal_ks.alpha_q1_diago_alda_bse', 1, 'TDDFT, ALDA (DFT energies)',       'plum',       '-.', 1.3),
 #   ('o-thr_ks.alpha_q1_diago_bse',      1, 'RPA (DFT energies)',               'silver',     '--', 1.3),
