@@ -24,6 +24,8 @@ Run in the folder with the files of (all optional; what exists is drawn):
   --alda FILE                       TDDFT-ALDA (prod/o-tal.* of STAGE=tddft): absorption panels, both rows
   --lrc FILE[:LABEL]                TDDFT-LRC (prod/o-tlr<alpha>.* of STAGE=tddft), repeatable; the label
                                     defaults to the alpha in the file name
+  --curve FILE:LABEL                any other Yambo spectrum (column 2), repeatable, e.g. ALDA or RPA on DFT
+                                    energies: absorption panels, both rows
 
   python plot_casida_compare.py [--his ../TEST_CAS] [--his-fold kq_fold] [--his-dip kq_dip]
                                 [--his-dip-fold kq_dip_fold] [--bse 2.3774] [--label WS2]
@@ -75,6 +77,8 @@ def main():
     ap.add_argument('--alda', help='TDDFT-ALDA spectrum (Yambo o-tal.* file): absorption, both rows')
     ap.add_argument('--lrc', action='append', default=[], metavar='FILE[:LABEL]',
                     help='TDDFT-LRC spectrum (Yambo o-tlr<alpha>.* file), repeatable')
+    ap.add_argument('--curve', action='append', default=[], metavar='FILE:LABEL',
+                    help='any other Yambo spectrum (column 2), repeatable')
     a = ap.parse_args()
 
     C_COUP, C_TDA, C_HIS = '#2a78d6', '#eb6834', '#1baf7a'
@@ -117,6 +121,10 @@ def main():
             m = re.search(r'tlr([-\d.]+?)\.(alpha|eps)', os.path.basename(f))
             lab = f'TDDFT:Yambo LRC, α = {m.group(1)}' if m else 'TDDFT:Yambo LRC'
         ref_curves.append((f, lrc_cols[i % len(lrc_cols)], (0, (1, 1.5)), 1.8, lab))
+    extra_cols = ['#5c5c5c', '#b8860b', '#008b8b', '#9a3412']
+    for i, item in enumerate(a.curve):
+        f, _, lab = item.rpartition(':') if ':' in item and not os.path.exists(item) else (item, '', '')
+        ref_curves.append((f, extra_cols[i % len(extra_cols)], (0, (5, 2)), 1.4, lab or os.path.basename(f)))
     for r in (0, 1):
         rows += [(r, 0, f, col, ls, lw, lab) for f, col, ls, lw, lab in ref_curves]
 
