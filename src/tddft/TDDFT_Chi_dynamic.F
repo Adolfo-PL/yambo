@@ -42,6 +42,7 @@ module TDDFT_Chi_dynamic_m
  public :: TDDFT_Chi_dynamic_kernel,TDDFT_Chi_dynamic_response
  public :: TDDFT_Chi_pair_response,TDDFT_Chi_pair_bubble,TDDFT_Chi_kernel_from_response
  public :: TDDFT_Chi_full_response,TDDFT_Chi_full_bubble,TDDFT_Chi_full_dynamic_response
+ public :: TDDFT_Chi_spectral_setup,TDDFT_Chi_spectral_response
  public :: TDDFT_Chi_mdr_response,TDDFT_Chi_kernel_mdr
  public :: TDDFT_Chi_exchange_free_split,TDDFT_Chi_first_order_kernel
  complex(DP), parameter :: zero=(0._DP,0._DP),one=(1._DP,0._DP),ci=(0._DP,1._DP)
@@ -271,6 +272,89 @@ contains
    call zgemm('N','C',ng,ng,nh,cmplx(c,0._DP,kind=DP),Y,ng,v,ng,zero,chi,ng)
    deallocate(Y)
  end subroutine TDDFT_Chi_full_bubble
+ !
+ ! BSEChiSolver= "diago": the chi of TDDFT_Chi_full_response from one diagonalization of M
+ ! (right eigenvectors R, LAPACK zgeev), M = R diag(E) R^-1, so that
+ !
+ !   [z - M]^-1 = R diag(1/(z - E_l)) R^-1
+ !   chi(G,G') = c sum_l Pv(G,l) Qv(l,G')/(z - E_l),  Pv = B R,  Qv = R^-1 X,
+ !   B(G,A) = s_A v(G,A),  X(A,G') = s_A conj(v(G',A))   (B and X of TDDFT_Chi_full_response)
+ !
+ ! Pv and Qv are built once (TDDFT_Chi_spectral_setup); each frequency is then a sum over the
+ ! eigenvalues (TDDFT_Chi_spectral_response), with no linear solve. Valid for any
+ ! diagonalizable M (complex E_l allowed); rcond_R, the reciprocal condition number of R
+ ! (columns of unit norm), is small when M is close to defective. For real E_l grouped in
+ ! +-E pairs this is the sum over excitons of the BSE response.
+ !
+ recursive subroutine TDDFT_Chi_spectral_setup(M,v,s,E,Pv,Qv,rcond_R,ierr)
+   complex(DP), intent(in)  :: M(:,:),v(:,:),s(:)
+   complex(DP), intent(out) :: E(:),Pv(:,:),Qv(:,:)
+   real(DP),    intent(out) :: rcond_R
+   integer,     intent(out) :: ierr
+   complex(DP), allocatable :: A(:,:),R(:,:),B(:,:),wk(:),cwk(:)
+   real(DP),    allocatable :: rwk(:)
+   integer,     allocatable :: ipiv(:)
+   complex(DP) :: vl(1,1),wq(1)
+   real(DP)    :: anorm
+   integer     :: nh,ng,ig,info,lw
+   ! ierr: 20 sizes, 30 singular eigenvector matrix, 40 LAPACK argument, 41 zgeev not converged
+   E=zero; Pv=zero; Qv=zero; rcond_R=0._DP
+   nh=size(s); ng=size(v,1)
+   ierr=20
+   if (size(M,1)/=nh.or.size(M,2)/=nh.or.size(v,2)/=nh.or.size(E)/=nh) return
+   if (any(shape(Pv)/=(/ng,nh/)).or.any(shape(Qv)/=(/nh,ng/))) return
+   allocate(A(nh,nh),R(nh,nh),B(ng,nh),rwk(2*nh),cwk(2*nh),ipiv(nh))
+   A=M
+   call zgeev('N','V',nh,A,nh,E,vl,1,R,nh,wq,-1,rwk,info)
+   lw=max(1,int(real(wq(1))))
+   allocate(wk(lw))
+   call zgeev('N','V',nh,A,nh,E,vl,1,R,nh,wk,lw,rwk,info)
+   deallocate(wk)
+   if (info<0) then; ierr=40; goto 1; endif
+   if (info>0) then; ierr=41; goto 1; endif
+   do ig=1,ng
+     B(ig,:)=s*v(ig,:)
+     Qv(:,ig)=s*conjg(v(ig,:))
+   enddo
+   call zgemm('N','N',ng,nh,nh,one,B,ng,R,nh,zero,Pv,ng)
+   ! Qv = R^-1 X from the LU factors of R (no explicit inverse)
+   anorm=maxval(sum(abs(R),dim=1))
+   call zgetrf(nh,nh,R,nh,ipiv,info)
+   if (info<0) then; ierr=40; goto 1; endif
+   if (info>0) then; ierr=30; goto 1; endif
+   call zgecon('1',nh,R,nh,anorm,rcond_R,cwk,rwk,info)
+   call zgetrs('N',nh,ng,R,nh,ipiv,Qv,nh,info)
+   if (info/=0) then; ierr=40; goto 1; endif
+   ierr=0
+1  if (ierr/=0) then
+     Pv=zero; Qv=zero
+   endif
+   deallocate(A,R,B,rwk,cwk,ipiv)
+ end subroutine TDDFT_Chi_spectral_setup
+ !
+ recursive subroutine TDDFT_Chi_spectral_response(z,E,Pv,Qv,c,chi,ierr)
+   ! chi(G,G') = c sum_l Pv(G,l) Qv(l,G')/(z - E_l)
+   complex(DP), intent(in)  :: z,E(:),Pv(:,:),Qv(:,:)
+   real(DP),    intent(in)  :: c
+   complex(DP), intent(out) :: chi(:,:)
+   integer,     intent(out) :: ierr
+   complex(DP), allocatable :: Y(:,:)
+   integer :: nh,ng,l
+   ! ierr: 20 sizes, 30 z on an eigenvalue (z - M singular)
+   chi=zero
+   nh=size(E); ng=size(Pv,1)
+   ierr=20
+   if (size(Pv,2)/=nh.or.any(shape(Qv)/=(/nh,ng/)).or.any(shape(chi)/=(/ng,ng/))) return
+   ierr=30
+   if (minval(abs(z-E))<=tiny(1._DP)) return
+   allocate(Y(ng,nh))
+   do l=1,nh
+     Y(:,l)=Pv(:,l)/(z-E(l))
+   enddo
+   call zgemm('N','N',ng,ng,nh,cmplx(c,0._DP,kind=DP),Y,ng,Qv,nh,zero,chi,ng)
+   deallocate(Y)
+   ierr=0
+ end subroutine TDDFT_Chi_spectral_response
  !
  recursive subroutine TDDFT_Chi_full_dynamic_response(z,H0,fxc,v,s,c,d,resp,ierr)
    ! resp = sum_AB s_A conj(d_A) [z - H0 - Kf(z)]^-1_AB s_B d_B,

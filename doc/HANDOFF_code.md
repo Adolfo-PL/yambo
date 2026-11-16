@@ -100,6 +100,7 @@ Run `git log --oneline 19c1241..HEAD` for the history. In total the fork changes
 | **BSKmod="CHI"** (projects ndb.Chi onto transitions) | `bse/K_kernel.F`, `tddft/TDDFT_Chi_Fourier.F`, `TDDFT_ALDA_eh_space_G_collisions_{L,R}.F` | Uses the optical q→0 limit with the head and wings. Uses the de-excitation vertex in the coupling block. |
 | **BSEChiDyn** (frequency-dependent Casida) | `bse/K_Chi_dynamic.F`, `tddft/TDDFT_Chi_dynamic.F`, `K_solvers.F` | Does one solve per ndb.Chi frequency. Accepts undamped real frequencies for kernels exported from a BSE. |
 | **BSEChiOut** = none/exc/full/mdr/nq | `bse/K_Chi_export.F`, `K_diago_driver.F` (`binding_report`) | Builds P from the coupled BSE and writes ndb.Chi. Prints the `[BSE]` binding-energy report lines. |
+| **BSEChiSolver** = solve (default)/diago | `bse/K_Chi_export.F`, `tddft/TDDFT_Chi_dynamic.F` (`TDDFT_Chi_spectral_*`) | How the export computes the BSE response: one linear solve per frequency, or one diagonalization for all frequencies. "diago" is checked against "solve" at two frequencies and falls back to it on a failure or a difference above 1e-8. |
 | Finite q (`BSEQptR`) | `K_Chi_export.F`, `K_kernel.F`, `K_driver_init.F` | Adds explicit anti-resonant transitions and exports over all rows for each BSE q. |
 | **BSEChiKoutW / BSEChiKoutB** | `bse/K_Chi_Kdump.F` | Dumps the Casida matrix as text. `sbin/chi_tools/ktt_casida.py` diagonalizes it. |
 | **BSEGinplane** | `K_exchange_collisions.F`, `K_Chi_export.F`, `K_kernel.F` | Keeps only G_z = 0 for layers in the xy plane. |
@@ -181,7 +182,7 @@ python tests/chi_green/run_tests.py --fc gfortran [--lapack-source DIR] [--mpifc
 python tests/chi_fxc_fourier/run_tests.py --fc gfortran
 python tests/chi_dynamic/run_tests.py --fc gfortran [--openmp]
 ```
-- `tests/chi_dynamic` covers the pair-space identity, the static limit against `K_stored_in_a_big_matrix`, BSEChiOut exc/full against a random coupled BSE, finite-q anti-resonant rows, BSEGinplane, and the MDR checks.
+- `tests/chi_dynamic` covers the pair-space identity, the static limit against `K_stored_in_a_big_matrix`, BSEChiOut exc/full against a random coupled BSE, finite-q anti-resonant rows, BSEGinplane, the MDR checks, and BSEChiSolver "diago" against "solve".
 - These tests use mock I/O. They do not replace a material run.
 
 ## 6. Physics numbers the code work relies on

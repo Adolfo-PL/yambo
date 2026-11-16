@@ -27,7 +27,7 @@ equation number can be compared with the code directly. Look up a not-checked on
 | $s_t=\sqrt{f_t}$ | $i\sqrt{\lvert f_t\rvert}$ when $f_t<0$ | `K_kernel.F:1000-1001`, `Chi_dyn_s` |
 | $\rho_t(\mathbf G)$ | plane-wave transition density (vertex) of $t$ | `O_x` (exchange), `O_tddft_L`, `chi_R_res`/`chi_R_cpl`, `Chi_dyn_V` |
 | $v_{\mathbf G}=4\pi/\lvert\mathbf q+\mathbf G\rvert^2$ | Coulomb; $\bar v$ drops $\mathbf G=0$ (`Lkind="bar"`) | `bare_qpg` |
-| $D_{\mathbf G}=\sqrt{4\pi}/\lvert\mathbf q+\mathbf G\rvert$ | so that $v_{\mathbf G}=D_{\mathbf G}^2$ | `K_Chi_export.F:170` |
+| $D_{\mathbf G}=\sqrt{4\pi}/\lvert\mathbf q+\mathbf G\rvert$ | so that $v_{\mathbf G}=D_{\mathbf G}^2$ | `K_Chi_export.F:179` |
 | $f(\mathbf G,\mathbf G';z)$ | the kernel f_xc read from `ndb.Chi` | `Chi_fxc(:,:,iw)` |
 | $C_o=4\pi\,\text{spin\_occ}/(\Omega N_k)$ | Yambo's kernel prefactor | `K_kernel.F:134` |
 | $c=C_o/4\pi=\text{spin\_occ}/(\Omega N_k)$ | prefactor of the f_xc projection | `K_kernel.F:460, 506` (`Chi_dyn_c`) |
@@ -172,7 +172,7 @@ every frequency of the grid, which needs one linear solve per frequency.
 
 ### 4.2 Kernel block at one frequency
 
-`TDDFT_Chi_full_dynamic_response`, `src/tddft/TDDFT_Chi_dynamic.F:295-300` (two `zgemm` calls,
+`TDDFT_Chi_full_dynamic_response`, `src/tddft/TDDFT_Chi_dynamic.F:379-384` (two `zgemm` calls,
 then the $s$ scaling):
 
 ```math
@@ -185,15 +185,15 @@ matrix (`TDDFT_Chi_dynamic.F:16-20`).
 
 ### 4.3 The solve
 
-Same routine, `TDDFT_Chi_dynamic.F:275-312`:
+Same routine, `TDDFT_Chi_dynamic.F:359-396`:
 
 ```math
 \mathrm{Resp}(\omega) = -C_o \sum_{AB} s_A\,d^{*}_A\,\Big[\,z - H_0 - K^{f}(z)\Big]^{-1}_{AB}\, s_B\,d_B .
 ```
 
-- `:295-304` form the matrix $z-H_0-K^{f}(z)$ (`:301` subtracts $H_0$, `:302-304` add $z$).
-- `:305-306` solve $[z-H_0-K^f]\,x = s\,d$ with LAPACK `zgesv` (an LU factorization; no inverse is formed).
-- `:310` takes $\sum_A s_A d_A^* x_A$.
+- `:379-388` form the matrix $z-H_0-K^{f}(z)$ (`:385` subtracts $H_0$, `:386-388` add $z$).
+- `:389-390` solve $[z-H_0-K^f]\,x = s\,d$ with LAPACK `zgesv` (an LU factorization; no inverse is formed).
+- `:394` takes $\sum_A s_A d_A^* x_A$.
 - The $-C_o$ is applied at `K_Chi_dynamic.F:228`.
 
 The frequency loop is `K_Chi_dynamic.F:201-217`: the frequencies are shared across OpenMP threads,
@@ -224,23 +224,32 @@ verifies this numerically, for both TDA and coupling (`tests/chi_dynamic/README.
 
 ## 5. Why the dynamic solve reproduces the BSE (Woodbury identity)
 
-### 5.1 The export (`K_Chi_export.F:252-265`)
+### 5.1 The export (`K_Chi_export.F:296-315`)
 
-- **BSE response in G space.** `TDDFT_Chi_full_response`, `TDDFT_Chi_dynamic.F:227-257`:
+- **BSE response in G space.** `TDDFT_Chi_full_response`, `TDDFT_Chi_dynamic.F:228-258`:
   ```math
   \bar\chi(\mathbf G,\mathbf G';z)=c\sum_{AB} s_A\,\rho_A(\mathbf G)\,\big[z-M\big]^{-1}_{AB}\,s_B\,\rho^{*}_B(\mathbf G') .
   ```
   Here $M$ is the BSE matrix: energies, $\bar v$ and $-W$.
-- **Reference bubble.** `TDDFT_Chi_full_bubble`, `TDDFT_Chi_dynamic.F:259-273`:
+  This is computed by one LU solve with $z-M$ per frequency (`zgesv`). With `BSEChiSolver= "diago"` (opt-in; default `"solve"`)
+  the export instead diagonalizes $M=R\,{\rm diag}(E_\lambda)\,R^{-1}$ once (`TDDFT_Chi_spectral_setup`) and sums over the
+  eigenvalues at each frequency (`TDDFT_Chi_spectral_response`, `TDDFT_Chi_dynamic.F:289-357`):
+  ```math
+  \bar\chi(\mathbf G,\mathbf G';z)=c\sum_{\lambda}\frac{P_{\mathbf G\lambda}\,Q_{\lambda\mathbf G'}}{z-E_\lambda},\qquad
+  P=B\,R,\quad Q=R^{-1}X ,
+  ```
+  with $B_{\mathbf G A}=s_A\rho_A(\mathbf G)$ and $X_{A\mathbf G'}=s_A\rho^*_A(\mathbf G')$, the same quantity. The export compares the two at
+  $z=0$ and mid-grid and falls back to the solve if they differ by more than $10^{-8}$ or the diagonalization fails.
+- **Reference bubble.** `TDDFT_Chi_full_bubble`, `TDDFT_Chi_dynamic.F:260-274`:
   ```math
   \chi_0(\mathbf G,\mathbf G';z)=c\sum_A s_A^2\,\frac{\rho_A(\mathbf G)\rho_A^{*}(\mathbf G')}{z-E_A}
   ```
   For `BSEChiOut= "exc"` the energies are those of the BSE (QP). For `"full"` they are KS.
-- **Kernel.** `TDDFT_Chi_kernel_from_response`, `TDDFT_Chi_dynamic.F:532-600`:
+- **Kernel.** `TDDFT_Chi_kernel_from_response`, `TDDFT_Chi_dynamic.F:616-684`:
   ```math
   P^{-1}=\bar\chi^{-1}+\bar v,\qquad f=\chi_0^{-1}-P^{-1}
   ```
-  The inversions are done on the symmetrized matrices $D\chi D$ (`:561-570`). $\bar v$ is added as $+1$ on the diagonal for $\mathbf G\neq 0$, and also for $\mathbf G=0$ with `Lkind="full"` (`:571-578`). The result is $f=D(\tilde\chi_0^{-1}-\tilde P^{-1})D$ (`:579-583`), and $P$ is inverted back (`:584-591`).
+  The inversions are done on the symmetrized matrices $D\chi D$ (`:645-654`). $\bar v$ is added as $+1$ on the diagonal for $\mathbf G\neq 0$, and also for $\mathbf G=0$ with `Lkind="full"` (`:655-662`). The result is $f=D(\tilde\chi_0^{-1}-\tilde P^{-1})D$ (`:663-667`), and $P$ is inverted back (`:668-675`).
 
 ### 5.2 The identity
 

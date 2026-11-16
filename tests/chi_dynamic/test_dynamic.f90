@@ -16,7 +16,8 @@ program test_chi_dynamic
   use TDDFT_Chi_dynamic_m, only: TDDFT_Chi_dynamic_kernel,TDDFT_Chi_dynamic_response,&
 &   TDDFT_Chi_pair_response,TDDFT_Chi_pair_bubble,TDDFT_Chi_kernel_from_response,&
 &   TDDFT_Chi_full_response,TDDFT_Chi_full_bubble,TDDFT_Chi_full_dynamic_response,&
-&   TDDFT_Chi_mdr_response,TDDFT_Chi_kernel_mdr,TDDFT_Chi_exchange_free_split,TDDFT_Chi_first_order_kernel
+&   TDDFT_Chi_mdr_response,TDDFT_Chi_kernel_mdr,TDDFT_Chi_exchange_free_split,TDDFT_Chi_first_order_kernel,&
+&   TDDFT_Chi_spectral_setup,TDDFT_Chi_spectral_response
   implicit none
   integer, parameter :: m=3,ng=2*m+1,nt=5
   complex(DP), parameter :: ci=(0._DP,1._DP),zero=(0._DP,0._DP)
@@ -102,6 +103,8 @@ program test_chi_dynamic
 
   call nq_checks(.TRUE.)
   call nq_checks(.FALSE.)
+
+  call spectral_checks()
 
   if (failures>0) then
     print *,failures,' check(s) failed'
@@ -960,6 +963,129 @@ contains
     n=size(mat,1)
     call zgetrf(n,n,mat,n,ip,info)
     call zgetri(n,mat,n,ip,lw,size(lw),info)
+  end subroutine
+
+  subroutine spectral_checks()
+    ! BSEChiSolver= "diago": TDDFT_Chi_spectral_setup/_response against TDDFT_Chi_full_response
+    ! (the "solve" route), G-resolved, on
+    !  1. a coupled BSE matrix in yambo's storage, anti-resonant rows derived from the resonant
+    !     ones: [[R, i B], [i B*, -R*]] with R Hermitian, B symmetric, s = (s, i s), stable
+    !     (real +-E pairs), at z = 0 and on the real axis with a broadening;
+    !  2. a general non-Hermitian matrix with complex eigenvalues (explicit rows, f < 0);
+    !  3. error codes: sizes, z on an eigenvalue;
+    !  4. a control that must fail: the "diago" response of a matrix compared with the "solve"
+    !     response of the same matrix with the coupling block's i dropped.
+    integer, parameter :: nh=2*nt
+    complex(DP) :: M(nh,nh),Rb(nt,nt),Bb(nt,nt),V(ng,nh),sf(nh),Ex(nh),Pv(ng,nh),Qv(nh,ng)
+    complex(DP) :: chib(ng,ng),chis(ng,ng),zz,zs(4),Pbad(ng,nh+1)
+    real(DP) :: E(nt),fo(nh),c_fac,rcR,worst,worst_im
+    integer :: t,i,iz,info
+    c_fac=0.37_DP
+    zs=[(0._DP,0._DP),cmplx(0.9_DP,0.02_DP,kind=DP),cmplx(1.6_DP,0.05_DP,kind=DP),cmplx(-1.2_DP,0.01_DP,kind=DP)]
+    ! 1. derived rows, yambo storage
+    call random_vertices(V)
+    call random_matrix(Rb)
+    Rb=0.1_DP*(Rb+conjg(transpose(Rb)))
+    call random_matrix(Bb)
+    Bb=0.1_DP*(Bb+transpose(Bb))
+    do t=1,nt
+      E(t)=0.8_DP+0.35_DP*t
+      Rb(t,t)=Rb(t,t)+E(t)
+      sf(t)=sqrt(0.6_DP+0.2_DP*t)
+      sf(nt+t)=ci*sf(t)
+    enddo
+    M(:nt,:nt)=Rb
+    M(:nt,nt+1:)=ci*Bb
+    M(nt+1:,:nt)=-conjg(ci*Bb)
+    M(nt+1:,nt+1:)=-conjg(Rb)
+    call TDDFT_Chi_spectral_setup(M,V,sf,Ex,Pv,Qv,rcR,info)
+    worst_im=maxval(abs(aimag(Ex)))/maxval(abs(Ex))
+    if (info/=0.or.worst_im>1.E-12_DP.or.count(real(Ex)>0._DP)/=nt) then
+      print *,'FAIL: spectral setup on a stable coupled matrix: ierr, max|Im E|/max|E|, E>0 count',&
+&             info,worst_im,count(real(Ex)>0._DP)
+      failures=failures+1
+    else
+      print '(a,es9.2,a,es9.2)','PASS: spectral setup on a stable coupled matrix: real +-E pairs, max|Im E|/|E|=',&
+&             worst_im,'  rcond(R)=',rcR
+    endif
+    worst=0._DP
+    do iz=1,size(zs)
+      call TDDFT_Chi_full_response(zs(iz),M,V,sf,c_fac,chib,info)
+      call TDDFT_Chi_spectral_response(zs(iz),Ex,Pv,Qv,c_fac,chis,i)
+      if (info/=0.or.i/=0) worst=huge(1._DP)
+      worst=max(worst,maxval(abs(chis-chib))/maxval(abs(chib)))
+    enddo
+    call check('diago = solve, derived rows, z=0 and real axis (max rel. dev.)',0,&
+&              cmplx(1._DP+worst,0._DP,kind=DP),(1._DP,0._DP))
+    ! 2. general non-Hermitian matrix, explicit rows with negative occupations
+    call random_vertices(V)
+    call random_matrix(M)
+    M=0.3_DP*M
+    do t=1,nt
+      fo(t)=0.6_DP+0.2_DP*t
+      fo(nt+t)=-(0.5_DP+0.3_DP*t)
+      M(t,t)=M(t,t)+0.8_DP+0.35_DP*t
+      M(nt+t,nt+t)=M(nt+t,nt+t)-(0.9_DP+0.3_DP*t)
+    enddo
+    do i=1,nh
+      sf(i)=sqrt(cmplx(fo(i),kind=DP))
+    enddo
+    call TDDFT_Chi_spectral_setup(M,V,sf,Ex,Pv,Qv,rcR,info)
+    worst=0._DP
+    do iz=1,size(zs)
+      call TDDFT_Chi_full_response(zs(iz),M,V,sf,c_fac,chib,info)
+      call TDDFT_Chi_spectral_response(zs(iz),Ex,Pv,Qv,c_fac,chis,i)
+      if (info/=0.or.i/=0) worst=huge(1._DP)
+      worst=max(worst,maxval(abs(chis-chib))/maxval(abs(chib)))
+    enddo
+    print '(a,es9.2)','      general matrix: max |Im E| =',maxval(abs(aimag(Ex)))
+    call check('diago = solve, non-Hermitian matrix, complex eigenvalues (max rel. dev.)',0,&
+&              cmplx(1._DP+worst,0._DP,kind=DP),(1._DP,0._DP))
+    ! 3. error codes
+    call TDDFT_Chi_spectral_setup(M(:nh-1,:nh-1),V,sf,Ex,Pv,Qv,rcR,info)
+    if (info/=20) then
+      print *,'FAIL: spectral setup size mismatch not reported, ierr=',info
+      failures=failures+1
+    else
+      print *,'PASS: spectral setup size mismatch reported'
+    endif
+    call TDDFT_Chi_spectral_setup(M,V,sf,Ex,Pv,Qv,rcR,info)
+    call TDDFT_Chi_spectral_response(zs(2),Ex,Pbad,Qv,c_fac,chis,info)
+    if (info/=20) then
+      print *,'FAIL: spectral response size mismatch not reported, ierr=',info
+      failures=failures+1
+    else
+      print *,'PASS: spectral response size mismatch reported'
+    endif
+    zz=Ex(3)
+    call TDDFT_Chi_spectral_response(zz,Ex,Pv,Qv,c_fac,chis,info)
+    if (info/=30) then
+      print *,'FAIL: z on an eigenvalue not reported, ierr=',info
+      failures=failures+1
+    else
+      print *,'PASS: z on an eigenvalue reported'
+    endif
+    ! 4. control: dropping the i of the coupling block must be detected
+    M(:nt,:nt)=Rb
+    M(:nt,nt+1:)=ci*Bb
+    M(nt+1:,:nt)=-conjg(ci*Bb)
+    M(nt+1:,nt+1:)=-conjg(Rb)
+    do t=1,nt
+      sf(t)=sqrt(0.6_DP+0.2_DP*t)
+      sf(nt+t)=ci*sf(t)
+    enddo
+    call TDDFT_Chi_spectral_setup(M,V,sf,Ex,Pv,Qv,rcR,info)
+    M(:nt,nt+1:)=Bb
+    M(nt+1:,:nt)=-conjg(Bb)
+    call TDDFT_Chi_full_response(zs(3),M,V,sf,c_fac,chib,info)
+    call TDDFT_Chi_spectral_response(zs(3),Ex,Pv,Qv,c_fac,chis,i)
+    worst=maxval(abs(chis-chib))/maxval(abs(chib))
+    if (worst<1.E-6_DP) then
+      print '(a,es9.2)','FAIL: control (coupling block without i) not detected, rel. dev. ',worst
+      failures=failures+1
+    else
+      print '(a,es9.2)','PASS: control (coupling block without i) detected, rel. dev. ',worst
+    endif
   end subroutine
 
   subroutine check(what,err,got,expected)

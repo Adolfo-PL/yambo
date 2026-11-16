@@ -42,6 +42,11 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  ! or "default" with a Coulomb cutoff at q>1), and P^-1 = chib^-1 + vbar or chib^-1 + v
  ! accordingly. The header of ndb.Chi is written once per run; each q adds its fragment.
  !
+ ! BSEChiSolver= "diago" computes chib from one diagonalization of M (TDDFT_Chi_spectral_setup)
+ ! instead of one linear solve per frequency ("solve", the default). It is checked against the
+ ! solve at z=0 and in the middle of the grid; if the setup fails or the two differ by more than
+ ! diago_tol, the solve is used. The rest (bubble, kernel, checks, I/O) is the same.
+ !
  use pars,           ONLY:SP,DP,pi,schlen,cZERO
  use units,          ONLY:HA2EV
  use frequency,      ONLY:w_samp,W_reset,W_duplicate
@@ -53,7 +58,7 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  use parallel_m,     ONLY:ncpu
  use X_m,            ONLY:X_t,X_reset,global_gauge
  use BS,             ONLY:BS_K_coupling,BS_K_dim,BS_H_dim,BS_res_ares_n_mat,BS_n_g_fxc,BS_bands,BS_K_Chi_out,&
-&                         BSE_L_kind,l_BS_ares_from_res,BS_G_inplane
+&                         BSE_L_kind,l_BS_ares_from_res,BS_G_inplane,BS_K_Chi_solver
  use BS_solvers,     ONLY:BS_mat,BSS_eh_E,BSS_eh_W,BSS_eh_Z,BSS_eh_table,BSS_q0,BSS_dipoles_opt,BSS_eh_f
  use Chi_m,          ONLY:Chi_ng,Chi_n_freqs,Chi_alloc,Chi_free,Chi_freqs,Chi_0,Chi_P,Chi_fxc,Chi_rcond,&
 &                         Chi_QP_applied,Chi_QP_action,Chi_convention,Chi_G_mode,Chi_G_axis,Chi_G_db,&
@@ -65,7 +70,8 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  use IO_m,           ONLY:OP_WR_CL,OP_APP_CL,REP
  use TDDFT_Chi_dynamic_m, ONLY:TDDFT_Chi_full_response,TDDFT_Chi_full_bubble,TDDFT_Chi_kernel_from_response,&
 &                              TDDFT_Chi_full_dynamic_response,TDDFT_Chi_mdr_response,&
-&                              TDDFT_Chi_exchange_free_split,TDDFT_Chi_first_order_kernel
+&                              TDDFT_Chi_exchange_free_split,TDDFT_Chi_first_order_kernel,&
+&                              TDDFT_Chi_spectral_setup,TDDFT_Chi_spectral_response
  use timing_m,       ONLY:timing
  !
  implicit none
@@ -78,7 +84,7 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  ! Work Space
  !
  character(1)             :: sec
- logical                  :: l_exc,l_qp,l_full_L,l_mdr,l_nq,l_chi_ok
+ logical                  :: l_exc,l_qp,l_full_L,l_mdr,l_nq,l_chi_ok,l_diago
  character(3)             :: lab
  logical, save            :: header_done=.FALSE.
  integer                  :: n,nh,ng,nw,iw,it,ig,jg,ik,ikv,ierr,n_bad,ID,io_err
@@ -101,6 +107,9 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  complex(DP)              :: rr(9),lam
  real(DP)                 :: head_err
  integer                  :: is,iws(9),ipass,iw_range(2)
+ complex(DP), allocatable :: Ex(:),Pv(:,:),Qv(:,:)
+ real(DP)                 :: rc_R,diago_err
+ real(DP),    parameter   :: diago_tol=1.E-8_DP
  type(X_t)                :: X_io
  type(w_samp)             :: W_io
  !
@@ -211,6 +220,42 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  allocate(H0(nh,nh),head(nw))
  H0=cmplx(BS_mat,kind=DP)
  !
+ ! BSEChiSolver= "diago": H0 = R diag(Ex) R^-1 once; chib(z) is then a sum over the eigenvalues
+ l_diago=trim(BS_K_Chi_solver)=='diago'
+ call msg('r','[Chi/BSK] BSEChiSolver (BSE response chib)',trim(BS_K_Chi_solver))
+ if (l_diago) then
+   call timing('ChiExport diago',OPR='start')
+   allocate(Ex(nh),Pv(ng,nh),Qv(nh,ng))
+   call TDDFT_Chi_spectral_setup(H0,Vf,sf,Ex,Pv,Qv,rc_R,ierr)
+   diago_err=0._DP
+   if (ierr==0) then
+     call msg('r','[Chi/BSK] diago: max |Im E| [eV], reciprocal condition number of the eigenvectors',&
+&             (/real(maxval(abs(aimag(Ex)))*HA2EV,SP),real(rc_R,SP)/))
+     allocate(chib(ng,ng),chi0(ng,ng))
+     do is=1,2
+       iw=1
+       if (is==2) iw=1+nw/2
+       call TDDFT_Chi_full_response(zz(iw),H0,Vf,sf,Chi_dyn_c,chib,ierr)
+       if (ierr/=0) exit
+       call TDDFT_Chi_spectral_response(zz(iw),Ex,Pv,Qv,Chi_dyn_c,chi0,ierr)
+       if (ierr/=0) exit
+       diago_err=max(diago_err,maxval(abs(chi0-chib))/max(maxval(abs(chib)),tiny(1._DP)))
+     enddo
+     deallocate(chib,chi0)
+   endif
+   call timing('ChiExport diago',OPR='stop')
+   if (ierr/=0.or.diago_err>diago_tol) then
+     if (ierr/=0) call warning('[Chi/BSK] BSEChiSolver= "diago": diagonalization or its check failed with code '//&
+&      trim(intc(ierr))//'; using "solve"')
+     if (ierr==0) call warning('[Chi/BSK] BSEChiSolver= "diago" differs from "solve" by '//&
+&      trim(real2ch(real(diago_err,SP)))//' (relative); using "solve"')
+     l_diago=.FALSE.
+     deallocate(Ex,Pv,Qv)
+   else
+     call msg('r','[Chi/BSK] diago vs solve at z=0 and mid-grid (max relative difference)',real(diago_err,SP))
+   endif
+ endif
+ !
  ! MDR and NQ: the exchange-free matrix M_W = M - X over the G of the exchange (S, without G=0
  ! unless Lkind full), split by TDDFT_Chi_exchange_free_split into Ed and Hw (Koff): MDR moves
  ! the W-part diagonal Wd into the energies, NQ keeps Ed = E and the whole W part in Hw.
@@ -249,7 +294,11 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
    allocate(chs(ns,ns),c0s(ns,ns),fs(ns,ns),Ps(ns,ns))
    !$omp do schedule(dynamic)
    do iw=iw_range(1),iw_range(2)
-     call TDDFT_Chi_full_response(zz(iw),H0,Vf,sf,Chi_dyn_c,chib,ierr)
+     if (l_diago) then
+       call TDDFT_Chi_spectral_response(zz(iw),Ex,Pv,Qv,Chi_dyn_c,chib,ierr)
+     else
+       call TDDFT_Chi_full_response(zz(iw),H0,Vf,sf,Chi_dyn_c,chib,ierr)
+     endif
      if (ierr==0) then
        head(iw)=chib(1,1)
        call TDDFT_Chi_full_bubble(zz(iw),E_ref,Vf,sf,Chi_dyn_c,chi0)
@@ -311,6 +360,7 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
 &      'for this band window. No ndb.Chi is written; the BSE solver continues')
    endif
  endif
+ if (allocated(Ex)) deallocate(Ex,Pv,Qv)
  if (.not.l_chi_ok) then
    if (l_mdr.or.l_nq) deallocate(Hw,Ed,Wd,Kd)
    call Chi_free()

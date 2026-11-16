@@ -24,7 +24,7 @@ scripts, documentation and tests.
 | | |
 | --- | --- |
 | upstream | Yambo 5.3.0, revision 23959, commit `19c1241` |
-| fork | branch `claude/nbd-file-generation-path-yidcr2`; no source file cited here changed after commit `260ecff` |
+| fork | branch `claude/nbd-file-generation-path-yidcr2`; line numbers updated for the `BSEChiSolver` commit (B16) |
 | `path:line` | a line of the fork |
 | `U:path:line` | a line of upstream Yambo 5.3.0 |
 
@@ -94,7 +94,7 @@ The mathematics of each arrow is derived in the LaTeX notes (`bse_to_casida`) an
 | A4 | exchange `Vbar`, with the `G=0` term set by `Lkind` | `U:src/bse/K_exchange_kernel.F`, `U:src/bse/K_exchange_collisions.F:102-103` | the BSE run |
 | A5 | screened interaction `W` from `ndb.em1s` | `U:src/bse/K_screened_interaction.F`, `U:src/bse/K_correlation_kernel_std.F` | the BSE run |
 | A6 | the matrix element `sqrt(f) (H_x Co - H_c) sqrt(f)`, `Co`, the factor `i` on coupling blocks | `U:src/bse/K_kernel.F:114` (`Co`), `U:src/bse/K_kernel.F:755` (`BS_mat_tmp = sqrt_f (H_x Co - H_c) sqrt_f`) | `src/bse/K_kernel.F:134, 1003-1004` |
-| A7 | assembly of the `2N x 2N` matrix: energies on the diagonal, blocks `R`, `iB`, `-R*`, `-(iB)*` | `U:src/bse/K_components_folded_in_serial_arrays`, `U:src/bse/K_stored_in_a_big_matrix.F:71, 79-109` | `src/bse/K_Chi_export.F:130, 133`; `src/bse/K_Chi_dynamic.F:128-129` |
+| A7 | assembly of the `2N x 2N` matrix: energies on the diagonal, blocks `R`, `iB`, `-R*`, `-(iB)*` | `U:src/bse/K_components_folded_in_serial_arrays`, `U:src/bse/K_stored_in_a_big_matrix.F:71, 79-109` | `src/bse/K_Chi_export.F:139, 142`; `src/bse/K_Chi_dynamic.F:128-129` |
 | A8 | diagonalization, residues, overlap, sum over poles, `eps_M` | `U:src/bse/K_diago_driver.F`, `U:src/bse/K_diago_left_residuals.F`, `K_diago_right_residuals.F`, `K_diago_response_functions.F`, `U:src/output/K_OUTPUT.F` | static Casida (unchanged); `K_OUTPUT` in `src/bse/K_Chi_dynamic.F:236` |
 | A9 | the output-file machinery of a solver (`X_OUTPUT_driver`, `Resp_ii`, `para_term_w0`) | `U:src/pol_function/X_OUTPUT_driver.F` | `src/bse/K_Chi_dynamic.F:68, 228, 232` |
 | A10 | the `ndb` database mechanism (`io_control`, `io_elemental`, fragments) | `U:src/io/`, `U:src/Yio/` | `src/io/io_Chi.F` follows the pattern |
@@ -152,7 +152,7 @@ The mathematics of each arrow is derived in the LaTeX notes (`bse_to_casida`) an
   At finite `q` the explicit anti-resonant transitions are groups of their own: their `"R"` vertex goes to `Chi_dyn_V(:,t,i_ra)` with
   `i_ra = BS_T_grp%i_res_ares` (lines 733-737).
 - **Why:** the ALDA cache is overwritten group by group and holds one vertex type; the export and the dynamic solver need every transition's vertices
-  at once, for both vertex types, after the kernel loop. The mask lets the export stop if a transition was missed (guard at `K_Chi_export.F:128`).
+  at once, for both vertex types, after the kernel loop. The mask lets the export stop if a transition was missed (guard at `K_Chi_export.F:137`).
 - **Evidence:** tested at `q = 0` (derived anti-resonant rows) and finite `q` (explicit rows) in `tests/chi_dynamic` and the hBN and WS2 runs
   (`doc/greens_function_fxc.md`, "Finite momentum").
 
@@ -168,7 +168,7 @@ The mathematics of each arrow is derived in the LaTeX notes (`bse_to_casida`) an
 
 ### B5. The reference bubble `chi0`
 
-- **Fork:** `src/tddft/TDDFT_Chi_dynamic.F:259-273` (`TDDFT_Chi_full_bubble`), called at `src/bse/K_Chi_export.F:255`.
+- **Fork:** `src/tddft/TDDFT_Chi_dynamic.F:260-274` (`TDDFT_Chi_full_bubble`), called at `src/bse/K_Chi_export.F:304`.
 - **Upstream origin:** the free electron-hole propagator `Lo` of the inversion solver (`U:src/bse/K_inversion_Lo.F:150-151`, via `X_GreenF_analytical`, retarded `"r"` for resonant and `"Ra"` for anti-resonant rows),
   whose residue is `dipole * conjg(dipole)` (`U:src/bse/K_inversion_Lo.F:177`); and the Adler-Wiser bubble of `X_irredux`.
 - **Change:** `chi0(G,G') = c sum_A s_A^2 rho_A(G) conj(rho_A(G')) / (z - E_A)` on the BSE's own rows (resonant and anti-resonant), with the BSE's vertices and the reference energies of B11.
@@ -180,7 +180,7 @@ The mathematics of each arrow is derived in the LaTeX notes (`bse_to_casida`) an
 
 ### B6. The `G`-resolved BSE response `chib = U (z - H)^-1 U^H`
 
-- **Fork:** `src/tddft/TDDFT_Chi_dynamic.F:227-257` (`TDDFT_Chi_full_response`), called at `src/bse/K_Chi_export.F:252`.
+- **Fork:** `src/tddft/TDDFT_Chi_dynamic.F:228-258` (`TDDFT_Chi_full_response`), called at `src/bse/K_Chi_export.F:300` (with `BSEChiSolver= "diago"`, B16, the frequency loop calls `TDDFT_Chi_spectral_response` instead, line 298).
 - **Upstream origin:** the BSE inversion solver. `U:src/bse/K_inversion_do_it_full.F:31-38` builds `Lo^-1 - M` and inverts it;
   `U:src/bse/K_inversion_engine.F:139-141` contracts the inverse with `BSS_dipoles_opt(1,:)` on both sides and multiplies by `-Co_factor`.
 - **Change:** the contraction is with the `N_G` vertex vectors instead of the dipole vector, giving the whole `G G'` matrix. The linear algebra is an LU solve with
@@ -192,10 +192,10 @@ The mathematics of each arrow is derived in the LaTeX notes (`bse_to_casida`) an
 
 ### B7. Removing the exchange: `P^-1 = chib^-1 + vbar`, in symmetrized form
 
-- **Fork:** `src/tddft/TDDFT_Chi_dynamic.F:532-591` (`TDDFT_Chi_kernel_from_response`).
+- **Fork:** `src/tddft/TDDFT_Chi_dynamic.F:616-675` (`TDDFT_Chi_kernel_from_response`).
 - **Upstream origin:** `U:src/pol_function/X_redux.F`. The Dyson step builds `KERNEL = 1 - chi0 v` (`U:src/pol_function/X_redux.F:418-419`: `KERNEL - Xo*4pi/bare_qpg(iq,ig2)**2`, `+ cONE` on the diagonal),
   solves `KERNEL X = Xo` (`U:...X_redux.F:253`), and symmetrizes with `4 pi / (bare_qpg(ig1) bare_qpg(ig2))` (`U:...X_redux.F:280, 295`), i.e. `D X D` with `D = sqrt(4 pi)/|q+G|`. Verified in source.
-- **Change:** the same `D` (`src/bse/K_Chi_export.F:170`, complex with a Coulomb cutoff, like the exchange) and the same `G = 0` convention (`Lbar`:
+- **Change:** the same `D` (`src/bse/K_Chi_export.F:179`, complex with a Coulomb cutoff, like the exchange) and the same `G = 0` convention (`Lbar`:
   `O_x(1) = 0`, `U:src/bse/K_exchange_collisions.F:103`), but the Dyson step is **reversed**. Yambo adds `v` to go from `chi0` to `chi`; here `v` is subtracted to go from the BSE response to `P`:
   `P~^-1 = chib~^-1 + J`, `J = diag(0,1,...,1)`, with `J(1,1) = 1` for `Lkind = "full"` (lines 571-578).
 - **Why symmetrized:** in `D chi D` every block is `O(1)`, while the raw head of `chib` is `O(q^2)`. Inverting the raw matrix would mix magnitudes about `1e6` apart.
@@ -203,16 +203,16 @@ The mathematics of each arrow is derived in the LaTeX notes (`bse_to_casida`) an
 
 ### B8. The LU inversion
 
-- **Fork:** `src/tddft/TDDFT_Chi_dynamic.F:599-620` (`invert`, internal to `TDDFT_Chi_kernel_from_response`): `zgetrf`, `zgecon`, `zgetri`.
+- **Fork:** `src/tddft/TDDFT_Chi_dynamic.F:683-704` (`invert`, internal to `TDDFT_Chi_kernel_from_response`): `zgetrf`, `zgecon`, `zgetri`.
 - **Upstream origin:** `U:src/modules/mod_linear_algebra.F:144-172` (`LU_factorization`, `LU_inversion`): the same pair, `getrf` then `getri`.
 - **Change:** double precision called directly, plus `zgecon` for the reciprocal condition number (D2).
   Yambo's wrapper works on `complex(SP)` and selects `zgetrf` only if built with `_DOUBLE` (`U:src/modules/mod_linear_algebra.F:152-156, 167-171`).
 - **Why not the wrapper:** the kernel is the difference of two nearly cancelling inverses, so single precision is not acceptable (D9); and the export calls these routines from OpenMP threads
-  over frequencies (`!$omp` at `src/bse/K_Chi_export.F:247`), so they are `recursive` and use only local arrays. **Whether Yambo's wrapper is thread-safe was not tested.**
+  over frequencies (`!$omp` at `src/bse/K_Chi_export.F:292`), so they are `recursive` and use only local arrays. **Whether Yambo's wrapper is thread-safe was not tested.**
 
 ### B9. The per-frequency Casida solve
 
-- **Fork:** `src/tddft/TDDFT_Chi_dynamic.F:275-312` (`TDDFT_Chi_full_dynamic_response`); driver `src/bse/K_Chi_dynamic.F:201-228`.
+- **Fork:** `src/tddft/TDDFT_Chi_dynamic.F:359-396` (`TDDFT_Chi_full_dynamic_response`); driver `src/bse/K_Chi_dynamic.F:201-228`.
 - **Upstream origin:** the inversion solver again: one linear-algebra step per frequency (`U:src/bse/K_inversion_engine.F:78-80, 139-141`); the residual vectors of `K_diago_*_residuals`
   (`a = d sqrt(f)`, `b = conj(d) sqrt(f)`); the scaling `Resp_ii = -Co_factor * resp` and `eps_M` from `K_OUTPUT`.
 - **Change:** a frequency-dependent block `Kf(z) = c s_A s_B rho^H f_xc(z) rho` (two `zgemm` calls and the `s` scaling, lines 295-300) is added to `H0` at every `z`,
@@ -223,14 +223,14 @@ The mathematics of each arrow is derived in the LaTeX notes (`bse_to_casida`) an
 
 ### B10. Reading the BSE matrix, and the shape of the two drivers
 
-- **Fork:** `src/bse/K_Chi_export.F:130-133, 212` and `src/bse/K_Chi_dynamic.F:128-129, 137`: `K_components_folded_in_serial_arrays(iq)`, `K_stored_in_a_big_matrix(1,iq,"DIAGO")`, `H0 = cmplx(BS_mat, kind=DP)`.
+- **Fork:** `src/bse/K_Chi_export.F:139-142, 221` and `src/bse/K_Chi_dynamic.F:128-129, 137`: `K_components_folded_in_serial_arrays(iq)`, `K_stored_in_a_big_matrix(1,iq,"DIAGO")`, `H0 = cmplx(BS_mat, kind=DP)`.
 - **Upstream origin:** the same two calls in `U:src/bse/K_diago_driver.F:162, 171` and `U:src/bse/K_inversion_driver.F:121, 144`.
 - **Change:** the matrix is read in the way the diagonalization solver does, and copied to double precision.
-- **Why serial:** `BS_mat` is assembled serially by this path; the drivers refuse an MPI run (guards `K_Chi_export.F:121`, `K_Chi_dynamic.F:72`).
+- **Why serial:** `BS_mat` is assembled serially by this path; the drivers refuse an MPI run (guards `K_Chi_export.F:130`, `K_Chi_dynamic.F:72`).
 
 ### B11. The reference energies `E_ref`
 
-- **Fork:** `src/bse/K_Chi_export.F:151-165`.
+- **Fork:** `src/bse/K_Chi_export.F:160-174`.
 - **Upstream origin:** the Yambo energy structure `levels`: `Ken%E` (the energies the BSE uses) and `Ken%Eo` (the uncorrected ones, kept when QP corrections are applied).
 - **Change:** `"exc"` takes the BSE transition energies `BSS_eh_E` (line 154). `"full"` with QP corrections rebuilds `E_c(k) - E_v(k-q)` from `Ken%Eo` (lines 164-165);
   anti-resonant rows derived from the resonant ones are `-E` (lines 160-163).
@@ -271,13 +271,34 @@ The mathematics of each arrow is derived in the LaTeX notes (`bse_to_casida`) an
 `tddft_BSK_disk_2_FXC`, whose single call is commented out at `U:src/bse/K_solvers.F:43`; the matching branch of `X_redux` is empty (`U:src/pol_function/X_redux.F:196-197`). **Verified in source.**
 It is therefore disabled in 5.3, and it is a different construction from the exact kernel.
 
+### B16. The BSE response from one diagonalization (`BSEChiSolver= "diago"`, opt-in)
+
+- **Fork:** `src/tddft/TDDFT_Chi_dynamic.F:289-333` (`TDDFT_Chi_spectral_setup`) and `335-357` (`TDDFT_Chi_spectral_response`); selected in
+  `src/bse/K_Chi_export.F:223-257` (setup, check, fallback) and `297-301` (frequency loop). Default `"solve"` (B6) is unchanged.
+- **Upstream origin:** the diagonalization solver. `U:src/bse/K_diago_driver.F:224` diagonalizes `BS_mat` into eigenvalues and left and right
+  eigenvectors; `U:src/bse/K_diago_overlap_matrix.F`, `U:src/bse/K_diago_left_residuals.F` and `U:src/bse/K_diago_right_residuals.F` turn them into
+  residuals; `U:src/bse/K_diago_response_functions.F:89` sums `R_left R_right / (w - E)` over the eigenvalues.
+- **Change:** the same spectral sum, with the `N_G` vertex vectors in place of the dipoles: `M = R diag(E) R^-1` (LAPACK `zgeev`, right
+  eigenvectors only), `Pv = B R` and `Qv = R^-1 X` with the `B` and `X` of B6 (`R^-1 X` from the LU factors of `R`, `zgetrf`/`zgetrs`, no
+  left eigenvectors or overlap matrix), then `chib(z) = c Pv diag(1/(z - E)) Qv` at each frequency. Double precision throughout.
+- **Why:** one `O((2N)^3)` diagonalization replaces one `O((2N)^3)` solve per frequency. On the WS2 test size (2N = 1152, 322 frequencies)
+  the solves take about 24 s on 4 threads and one diagonalization about 3 s (numpy timing, not the Fortran run).
+- **Guard:** the result is compared with B6 at `z = 0` and in the middle of the grid; if the setup fails or the two differ by more than `1e-8`
+  (relative), the export warns and uses B6. The routine needs `M` diagonalizable, not real eigenvalues.
+- **Evidence:** tested (`tests/chi_dynamic`, `spectral_checks`: equal to B6 to `2e-14` on a stable coupled matrix in yambo's storage and to
+  `1e-14` on a non-Hermitian matrix with complex eigenvalues; a matrix with the coupling factor `i` dropped is detected). WS2 export
+  (2N = 1152, 21 G, 322 frequencies, 4 threads): the in-run check gives `6e-14` between the two routes; `P` and `f_xc` of `ndb.Chi` differ from
+  the `"solve"` export by at most `1.2e-15` (relative to their largest element), `chi0` and the BSE, static Casida and dynamic Casida
+  spectra are bit-identical; the export takes 35 s instead of 95 s (Yambo's `ChiExport` timer). A forced failure of the check falls
+  back to `"solve"` with a warning and gives the `"solve"` `ndb.Chi` bit for bit.
+
 ---
 
 ## 4. Tier C: not in Yambo, from the literature
 
 ### C1. The kernel `f_xc = chi0^-1 - P^-1`
 
-- **Fork:** `src/tddft/TDDFT_Chi_dynamic.F:579-583`, `src/bse/K_Chi_export.F:265`.
+- **Fork:** `src/tddft/TDDFT_Chi_dynamic.F:663-667`, `src/bse/K_Chi_export.F:314`.
 - **Source:** Del Sole, Adragna, Olevano, Reining, PRB 67, 045207 (2003), Eq. 4; Adragna, Del Sole, Marini, PRB 68, 165108 (2003), Eq. 7. **Equation numbers checked against the PDFs.**
 - **Difference:** they evaluated the head only, approximately (their Eq. 6, neglecting 1 against `eps`). The fork evaluates the full `G G'` matrix exactly, by inversion.
 - **Justification:** by definition this is the kernel for which TDDFT, starting from `chi0`, gives `P`. With it, `[chi0^-1 - vbar - f]^-1 = chib` is an exact algebraic identity (section 6).
@@ -316,14 +337,14 @@ These are numerical choices and checks. For each, the reason and the evidence.
 
 ### D1. The frequency set: `z = 0` exactly, then the BSE grid
 
-- **Where:** `src/bse/K_Chi_export.F:206-207`; loop `244-289`; early exit `285-288`.
+- **Where:** `src/bse/K_Chi_export.F:215-216`; loop `289-338`; early exit `334-337`.
 - **Why:** the static Casida needs `f(0)` at `z = 0`, not at `z = i eta`; the dynamic solver needs the BSE grid exactly, because `f` is not interpolated (`src/bse/K_Chi_dynamic.F:86-123`).
   Doing `z = 0` first lets a bad basis fail in seconds (on WS2 the frequency loop costs more than the diagonalization).
 - **Evidence:** tested (an ill-conditioned run skipped the loop: export step 1 s instead of 77 s, `doc/greens_function_fxc.md`).
 
 ### D2. Condition-number monitoring
 
-- **Where:** `src/tddft/TDDFT_Chi_dynamic.F:599-620` (`zgecon`); floor `ChiRcondMin` (`src/modules/mod_Chi.F:65`, default `1e-12`; `src/interface/INIT_load.F:301`); report and stop `src/bse/K_Chi_export.F:285-318`.
+- **Where:** `src/tddft/TDDFT_Chi_dynamic.F:683-704` (`zgecon`); floor `ChiRcondMin` (`src/modules/mod_Chi.F:65`, default `1e-12`; `src/interface/INIT_load.F:301`); report and stop `src/bse/K_Chi_export.F:334-368`.
 - **Why:** `f` is the difference of two nearly cancelling inverses, so an ill-conditioned inversion turns rounding into a spurious kernel. The reciprocal condition numbers of `chi0`, `chib` and `P^-1` are all checked. Below the floor
   the export warns, writes no `ndb.Chi`, and the BSE run still finishes.
 - **Evidence:** tested. WS2 (bands 11-16, 9 G, no cutoff) reached `2e-9`: the eight pure-`G_z` plane waves are nearly dependent, and the body of `f` reaches `3e6` in units of `v`
@@ -332,7 +353,7 @@ These are numerical choices and checks. For each, the reason and the evidence.
 
 ### D3. The in-plane `G` restriction (`BSEGinplane`)
 
-- **Where:** exchange zeroed on `G_z != 0` at `src/bse/K_exchange_collisions.F:172-176`; kernel set `S = {G_z = 0}` at `src/bse/K_Chi_export.F:175-181`; the kernel is embedded into the full matrix at `266-271`.
+- **Where:** exchange zeroed on `G_z != 0` at `src/bse/K_exchange_collisions.F:172-176`; kernel set `S = {G_z = 0}` at `src/bse/K_Chi_export.F:184-190`; the kernel is embedded into the full matrix at `266-271`.
 - **Exactness:** if `vbar` vanishes outside `S`, then `chib = P + P vbar chib` restricted to `S` is a closed Dyson equation,
   `chib_SS = P_SS + P_SS vbar_SS chib_SS`, so `f` on `S` is exact for that BSE.
 - **Why:** it removes the nearly dependent out-of-plane vectors that ruin the conditioning of a slab (D2).
@@ -341,14 +362,14 @@ These are numerical choices and checks. For each, the reason and the evidence.
 
 ### D4. The head-consistency fit
 
-- **Where:** `src/bse/K_Chi_export.F:323-343`.
+- **Where:** `src/bse/K_Chi_export.F:373-393`.
 - **What:** the `G = 0` element of `chib` is compared, at nine frequencies, with Yambo's own response built from `dipoles_opt` (the `f = 0` limit of the dynamic solver). One complex scale
   `lambda = sum(conjg(rr) head) / sum(abs(rr)^2)` is fitted (line 337); it must equal `c`, with residual (line 338) below `1e-4`.
 - **Why:** an independent check that the vertices, phases, anti-resonant convention and normalization match Yambo's. A mismatch here is invisible to the identity of section 6, which holds for any vertices (B2).
 
 ### D5. The static Hermiticity test
 
-- **Where:** `src/bse/K_kernel.F:466-485` (stop); report `src/bse/K_Chi_export.F:392-403`.
+- **Where:** `src/bse/K_kernel.F:466-485` (stop); report `src/bse/K_Chi_export.F:442-453`.
 - **What:** tested on `f` and on `|q+G| f |q+G'|`.
 - **Why:** the static Casida matrix must be Hermitian in its resonant block. At `q = 0` the raw head is `O(1/q0^2)` and would hide an anti-Hermitian body.
 
@@ -384,7 +405,7 @@ Every precondition of the identity is checked by the Casida run before any matri
 
 ### D8. The head structure report
 
-- **Where:** `src/bse/K_Chi_export.F:405-433`.
+- **Where:** `src/bse/K_Chi_export.F:455-483`.
 - **What:** the local minima of `|P_00|` (response zeros) and the local maxima of `-Im q^2 f_00` (kernel poles), up to six each, on the BSE grid.
 - **Why:** the poles are physical (Gulevich et al.) and explain the jumps of `lambda(omega)` in the root search; reporting them keeps them from being taken for numerical failures. Diagnostics only. The 20% and 50% thresholds are conventions.
 
@@ -404,7 +425,7 @@ Every precondition of the identity is checked by the Casida run before any matri
 
 ### D11. The `ndb.Chi` metadata
 
-- **Where:** `src/bse/K_Chi_export.F:469-495`; `src/io/io_Chi.F`.
+- **Where:** `src/bse/K_Chi_export.F:519-545`; `src/io/io_Chi.F`.
 - **What is stored besides `chi0`, `P`, `f_xc`:**
   - an export serial (line 473): tenths of a second in the month, modulo `2^24 - 1 = 16777215`, so that it is exact in the single-precision record; written in the header and in every `q` fragment;
   - the occupations of the BSE levels and the temperature (lines 475-482), and the band energies of the reference bubble (lines 484-485);
@@ -413,20 +434,20 @@ Every precondition of the identity is checked by the Casida run before any matri
 
 ### D12. The kernel embedded on the set `S`
 
-- **Where:** `src/bse/K_Chi_export.F:266-271`.
+- **Where:** `src/bse/K_Chi_export.F:315-320`.
 - **What:** `fs` and `Ps` live on `S`; `f` and `Pm` are zero outside it.
 - **Why:** `ndb.Chi` has a fixed `ng x ng` shape; with `BSEGinplane` the kernel is exact on `S` only (D3).
 
 ### D13. Threading and parallelism
 
-- **Where:** `!$omp` frequency loops at `src/bse/K_Chi_export.F:247, 250`, `src/bse/K_Chi_dynamic.F:201, 203`; MPI guards `K_Chi_export.F:121`, `K_Chi_dynamic.F:72`.
+- **Where:** `!$omp` frequency loops at `src/bse/K_Chi_export.F:292, 295`, `src/bse/K_Chi_dynamic.F:201, 203`; MPI guards `K_Chi_export.F:130`, `K_Chi_dynamic.F:72`.
 - **Why:** each frequency is independent, so OpenMP over frequencies is exact; one MPI rank because the BSE matrix is assembled serially (B10).
 
 ### D14. The Lkind and compiler fixes ported from Yambo 5.4
 
-- **Where:** `src/bse/K_driver_init.F:88-100, 224-227` (the default `Lkind` at `q /= 0`, `Lkind = "tilde"` accepted); `src/bse/K_correlation_collisions_std.F`, `_dir.F` (`intent(out)` to `intent(in)` for `j_k`, `j_p`).
+- **Where:** `src/bse/K_driver_init.F:91-103, 227-230` (the default `Lkind` at `q /= 0`, `Lkind = "tilde"` accepted); `src/bse/K_correlation_collisions_std.F`, `_dir.F` (`intent(out)` to `intent(in)` for `j_k`, `j_p`).
 - **Source:** Yambo 5.4 commits `ecd4a9667`, `1fceec807`, `d71faa3d3` (Paleari) and `81d6a687d` (Varsano). They are the Yambo authors' changes, ported unchanged; they are not fork work.
-- **Fork additions:** a stop with `Lkind = "tilde"` in the export (`src/bse/K_driver_init.F:74-75`) and a check that the Casida `Lkind` equals the export's (`src/bse/K_kernel.F:389`).
+- **Fork additions:** a stop with `Lkind = "tilde"` in the export (`src/bse/K_driver_init.F:77-78`) and a check that the Casida `Lkind` equals the export's (`src/bse/K_kernel.F:389`).
 
 ---
 
@@ -452,9 +473,9 @@ Classified at file level. "Detailed" means the sections above; "summary" means c
 
 | file | tier | what it is | depth |
 | --- | --- | --- | --- |
-| `src/tddft/TDDFT_Chi_dynamic.F` | B5-B9, C1-C2, D2 | linear algebra in transition space | detailed. Also holds `"mdr"`/`"nq"` routines, the Tamm-Dancoff solver and unused pair-space routines (section 7.4) |
+| `src/tddft/TDDFT_Chi_dynamic.F` | B5-B9, B16, C1-C2, D2 | linear algebra in transition space | detailed. Also holds `"mdr"`/`"nq"` routines, the Tamm-Dancoff solver and unused pair-space routines (section 7.4) |
 | `src/tddft/TDDFT_Chi_Fourier.F` | B4 | the pair projection; also `TDDFT_Chi_project_G/R` (unused outside tests) | detailed |
-| `src/bse/K_Chi_export.F` | B5-B11, C1-C3, D1-D4, D8, D11-D13 | the export driver | detailed |
+| `src/bse/K_Chi_export.F` | B5-B11, B16, C1-C3, D1-D4, D8, D11-D13 | the export driver | detailed |
 | `src/bse/K_Chi_dynamic.F` | B9-B10, D6, D13 | the dynamic Casida driver | detailed |
 | `src/bse/K_Chi_Kdump.F` | B14 | the text dump | detailed |
 | `src/modules/mod_Chi.F` | D | data module for `ndb.Chi`; defaults (`Chi_rcond_floor`) | detailed |
@@ -480,7 +501,7 @@ Classified at file level. "Detailed" means the sections above; "summary" means c
 | `src/bse/K_correlation_collisions_std.F`, `_dir.F` | D14 | ported 5.4 `intent` fix | detailed |
 | `src/tddft/TDDFT_ALDA_eh_space_G_collisions_L.F`, `_R.F` | B1, B2 | bare vertex | detailed |
 | `src/tddft/TDDFT_do_X_W_typs.F` | D | skips the local TDDFT setup for the CHI kernel (`l_chi_bs_fxc`) | summary |
-| `src/modules/mod_BS.F` | D | flags `BS_K_is_Chi`, `BS_K_Chi_dynamic`, `BS_K_Chi_out`, dump window, `BS_G_inplane` | detailed |
+| `src/modules/mod_BS.F` | D | flags `BS_K_is_Chi`, `BS_K_Chi_dynamic`, `BS_K_Chi_out`, `BS_K_Chi_solver`, dump window, `BS_G_inplane` | detailed |
 | `src/modules/mod_drivers.F` | D | `l_Wpot`, `l_chi_bs_fxc` | summary |
 | `src/modules/SET_defaults.F` | D | default `BS_K_is_Chi` | summary |
 | `src/output/K_OUTPUT.F`, `src/output/X_OUTPUT_driver.F` | A9 | output name `chidyn`; observables off | summary |
@@ -517,7 +538,7 @@ The six `.objects` files (`src/{bse,io,modules,pol_function,qp,tddft}/.objects`)
 4. **B6, "only the macroscopic response".** Verified for the diagonalization, inversion and Haydock solvers; not for the SLEPc path beyond its use of the diagonalization residuals.
 5. **Novelty.** Not claimed (0.5). A paper outside the project's set may contain Tier C or D items.
 6. **D-tier thresholds** (`1e-3`, `1e-4`, `1e-5`, `1e-6`, `1e-12`, 1%, 20%, 50%) are choices, not derivations. D2's default is the only one tied to a measured case (WS2).
-7. **Not tested:** `"full"` at finite q; partly filled bands with `"full"` (a guard stops it, `src/bse/K_driver_init.F:81-83`); the Tamm-Dancoff dynamic path; more than one MPI rank (refused).
+7. **Not tested:** `"full"` at finite q; partly filled bands with `"full"` (a guard stops it, `src/bse/K_driver_init.F:84-86`); the Tamm-Dancoff dynamic path; more than one MPI rank (refused).
 8. **Tier B items rest on structural resemblance.** "Adapted from" means the same construction with identified differences. It does not mean the fork's code was derived line by line from Yambo's.
 
 ---
@@ -527,6 +548,7 @@ The six `.objects` files (`src/{bse,io,modules,pol_function,qp,tddft}/.objects`)
 ### 9.1 Line references
 
 Every `path:line` and `U:path:line` in this note was checked against the source (fork at `df32790`, upstream at `19c1241`) by a script that prints the cited line for review.
+After the `BSEChiSolver` change the fork references to the edited files were shifted by a diff-based line map and re-checked the same way.
 
 ### 9.2 Tests of the numerics
 
@@ -534,6 +556,7 @@ Every `path:line` and `U:path:line` in this note was checked against the source 
 | --- | --- |
 | `tests/chi_dynamic` (check 1) | the transition-space response equals the `G`-space Dyson solution for an arbitrary complex, non-Hermitian `f(z)` |
 | `tests/chi_dynamic` (check 2) | the static limit equals the Lorentzian sums of `K_diago_response_functions` (TDA and coupling) |
+| `tests/chi_dynamic` (check 7) | `BSEChiSolver= "diago"` (B16) equals the solve (B6), `G`-resolved, for a stable coupled matrix and a non-Hermitian one |
 | `tests/chi_fxc_fourier` | the pair projection against a small grid |
 | silicon, `BSEChiDyn` | against the QP RPA+LF response of `ndb.Chi`: `3e-4`; "exc" and "full" dynamic Casida against the BSE: `1.4e-4` |
 | WS2 with SOC | dynamic Casida against its BSE: `Im eps` `7e-5`, `Re eps` `1e-4` |

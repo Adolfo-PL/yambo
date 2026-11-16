@@ -35,6 +35,10 @@ module BS
  ! "nq": as "exc" with fxc = Pref^-1 T2 Pref^-1, all of W to first order (doc/greens_function_fxc.md;
  !       Sottile-Olevano-Reining, PRL 91, 056402, Eq. 3; Adragna-Del Sole-Marini, PRB 68, 165108)
  character(schlen) :: BS_K_Chi_out="none"
+ ! BSEChiSolver: how BSEChiOut computes the BSE response chib(G,G';z): "solve" (default), one
+ ! linear solve with z - M per frequency; "diago", one diagonalization of M for all frequencies
+ ! (TDDFT_Chi_spectral_setup), checked against "solve" and replaced by it if they disagree
+ character(schlen) :: BS_K_Chi_solver="solve"
  ! BSEChiKout: with BSEChiDyn, write the Casida matrix (exchange and fxc parts) at the ndb.Chi
  ! frequencies with Re w in this window [Ha] (off when the upper bound is negative), for all
  ! transitions or for one valence/conduction band pair (0 = any band)

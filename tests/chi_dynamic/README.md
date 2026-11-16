@@ -40,6 +40,12 @@ projection, and A, B are the residual vectors of the diagonalization solver.
    it the "mdr" kernel fails the "nq" comparison; the exact kernel of the BSE with eps W
    differs from the "nq" one at second order in eps. The remaining lines of `K_Chi_export`
    (frequency loop, G set, I/O) are not covered.
+7. `BSEChiSolver= "diago"`: `TDDFT_Chi_spectral_setup` and `TDDFT_Chi_spectral_response` against
+   `TDDFT_Chi_full_response` (the default "solve"), G-resolved, at z = 0 and on the real axis with a
+   broadening: on a stable coupled matrix in yambo's storage (anti-resonant rows derived from the
+   resonant ones, real +-E pairs) and on a general non-Hermitian matrix with complex eigenvalues and
+   negative occupations. Error codes for sizes and for z on an eigenvalue. A control that must fail:
+   the coupling block's factor i dropped.
 
 Run with `python run_tests.py --fc gfortran` and, for the threaded loop,
 `python run_tests.py --fc gfortran --openmp`. LAPACK and BLAS are linked with
