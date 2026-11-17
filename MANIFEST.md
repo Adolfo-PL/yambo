@@ -2,7 +2,7 @@
 
 This branch is Yambo 5.3.0 (base commit `19c1241`) plus the **numerics** of the exact kernel,
 written to be read, not to be built or run as a product. It is generated from the fork branch
-`claude/nbd-file-generation-path-yidcr2` (commit `611894a`).
+`claude/nbd-file-generation-path-yidcr2` (commit `611894a`; the eigenvalue route `BSEChiSolver = "diago"` from commit `950b65b`).
 
 `git diff 19c1241 numerics-reading` shows everything the fork adds on this path.
 
@@ -11,13 +11,15 @@ written to be read, not to be built or run as a product. It is generated from th
 The exact kernel exported from a BSE, `BSEChiOut = "exc"` or `"full"`, at any q (explicit
 anti-resonant rows included), and the Casida solvers that use it: static (`BSKmod = "CHI"`) and
 frequency-dependent (`BSEChiDyn`), with coupling, length gauge, scalar or spinor states.
+The BSE response of the export is computed either by one linear solve per frequency (`BSEChiSolver = "solve"`,
+the default) or from one diagonalization of the BSE matrix (`BSEChiSolver = "diago"`).
 
 ## Size
 
 | | fork | this branch |
 | --- | --- | --- |
-| new Fortran files on this path | 5 files, 1,667 lines | 5 files, 480 lines (322 code) |
-| edits to upstream files | 43 files | 7 files, +215 / -52 lines |
+| new Fortran files on this path | 5 files, 1,801 lines | 5 files, 541 lines (374 non-comment) |
+| edits to upstream files | 43 files | 7 files, +216 / -52 lines |
 
 (The fork has 14 new Fortran files in all; the others belong to the routes left out below.)
 
@@ -25,9 +27,9 @@ frequency-dependent (`BSEChiDyn`), with coupling, length gauge, scalar or spinor
 
 | file | role |
 | --- | --- |
-| `src/tddft/TDDFT_Chi_dynamic.F` | linear algebra in transition space: bare bubble, G-resolved BSE response, kernel from the response (`fxc = chi0^-1 - (chib^-1 + vbar)`), per-frequency Casida solve |
+| `src/tddft/TDDFT_Chi_dynamic.F` | linear algebra in transition space: bare bubble, G-resolved BSE response, kernel from the response (`fxc = chi0^-1 - (chib^-1 + vbar)`), per-frequency Casida solve; the eigenvalue route of the BSE response (`BSEChiSolver = "diago"`: one diagonalization, then a sum over the eigenvalues) |
 | `src/tddft/TDDFT_Chi_Fourier.F` | projection of `fxc(G,G')` onto two transition vertices (static Casida) |
-| `src/bse/K_Chi_export.F` | `BSEChiOut`: builds H0, vertices, reference energies, runs the frequency loop, writes `ndb.Chi` |
+| `src/bse/K_Chi_export.F` | `BSEChiOut`: builds H0, vertices, reference energies, runs the frequency loop (solve or eigenvalue route), writes `ndb.Chi` |
 | `src/bse/K_Chi_dynamic.F` | `BSEChiDyn`: one linear solve per frequency with `fxc(z)` read from `ndb.Chi` |
 | `src/modules/mod_Chi.F` | the arrays of `ndb.Chi` and the transition vertices |
 | `src/bse/K_kernel.F` (edit) | reads `ndb.Chi`; collects the vertices; adds the static projection to the matrix elements |
@@ -35,7 +37,7 @@ frequency-dependent (`BSEChiDyn`), with coupling, length gauge, scalar or spinor
 | `src/bse/K_solvers.F` (edit) | calls the export; sends `BSEChiDyn` to `K_Chi_dynamic` |
 | `src/bse/K_dipoles.F` (edit) | keeps the position dipoles for the q -> 0 head |
 | `src/bse/K_exchange_collisions.F` (edit) | `BSEGinplane`: exchange vertex zero on G_z /= 0 |
-| `src/modules/mod_BS.F` (edit) | four flags: `BS_K_is_Chi`, `BS_K_Chi_dynamic`, `BS_K_Chi_out`, `BS_G_inplane` |
+| `src/modules/mod_BS.F` (edit) | five flags: `BS_K_is_Chi`, `BS_K_Chi_dynamic`, `BS_K_Chi_out`, `BS_K_Chi_solver`, `BS_G_inplane` |
 
 Variable names are those of the fork. Each file starts with a legend; each routine with one equation.
 
@@ -43,16 +45,19 @@ Variable names are those of the fork. Each file starts with a legend; each routi
 
 New files:
 
-- `TDDFT_Chi_dynamic.F` (622 -> 149 lines)
+- `TDDFT_Chi_dynamic.F` (706 -> 194 lines)
   - routines: `TDDFT_Chi_dynamic_response` and `_kernel` (Tamm-Dancoff dynamic solve), `TDDFT_Chi_pair_response`,
     `TDDFT_Chi_pair_bubble`, `TDDFT_Chi_mdr_response`, `TDDFT_Chi_kernel_mdr`, `TDDFT_Chi_exchange_free_split`,
     `TDDFT_Chi_first_order_kernel` (the last four belong to `"mdr"` and `"nq"`);
   - inside the kept routines: array-size checks and the `ierr` codes, the reciprocal condition numbers
-    (`zgecon`, `rcond`, `rcond_P`), and the `exch` argument (always `.TRUE.` on this path).
+    (`zgecon`, `rcond`, `rcond_P`, and `rcond_R` of the eigenvector matrix in `TDDFT_Chi_spectral_setup`), and the `exch`
+    argument (always `.TRUE.` on this path).
 - `TDDFT_Chi_Fourier.F` (122 -> 31): `TDDFT_Chi_project_G` and `_project_R` (used only by tests), size checks.
-- `K_Chi_export.F` (507 -> 154):
+- `K_Chi_export.F` (557 -> 170):
   - `"mdr"` and `"nq"` (exchange-free split, shifted bubble, first-order kernel and their checks);
   - the two-pass loop (z = 0 first) with the condition-number floor and early exit;
+  - for `BSEChiSolver = "diago"`: the comparison with the solve at z = 0 and mid-grid, the fallback to the solve above
+    `1e-8`, its messages and timer;
   - the head-consistency fit against Yambo's own response (nine frequencies);
   - the static Hermiticity report, the head zero and pole report;
   - the `ndb.Chi` metadata: `Chi_G_mode`, convention string, QP action, optical q0, occupations, band energies,
@@ -91,7 +96,9 @@ Not included at all (outside this path):
 1. **The linear algebra, on random data.** `TDDFT_Chi_dynamic.F` of this branch was compiled next to the
    fork's original and both were called on random complex data (14 transitions, 28 rows, 5 plane waves,
    both values of `exch_head`): bubble, G-resolved BSE response, kernel, polarization and dynamic response.
-   Maximum difference: 0, bit for bit.
+   Maximum difference: 0, bit for bit. The eigenvalue route (`TDDFT_Chi_spectral_setup`, `_response`) was compared the
+   same way with the fork's (a stable coupled matrix in yambo's storage, 28 rows, 5 plane waves, z = 0 and two complex
+   frequencies): eigenvalues, mixed vertices and response identical, difference 0.
 2. **Types and argument lists, against the real modules.** All 12 changed files were preprocessed and
    compiled with `gfortran -fsyntax-only` against the module files of the fork's build, with the reduced
    `Chi_m` and `BS` modules first in the search path. All compile. The check can fail: the fork's own

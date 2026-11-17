@@ -16,6 +16,8 @@
 !   c     spin_occ/(Omega Nk) = Co/4pi
 !   E     (nh)     reference transition energies E_A (negative for the anti-resonant rows)
 !   M,H0  (nh,nh)  BSE matrix in Yambo's storage; H0 = diag(E) + exchange, i.e. without the fxc part
+!   Z     (nh,nh)  right eigenvectors of M (columns), M = Z diag(Ex) Z^-1;  Ex (nh) its eigenvalues
+!   Pv,Qv (ng,nh), (nh,ng)  Pv = B Z, Qv = Z^-1 X with B(G,A) = s_A v(G,A), X(A,G') = s_A conj(v(G',A))
 !   d     (nh)     optical dipoles d_A         [full_dynamic_response]
 !         (ng)     D_G = sqrt(4 pi)/|q+G|      [kernel_from_response]
 !   chi0  bare bubble;  chib  BSE response (exchange included);  P  polarization (exchange removed)
@@ -27,6 +29,7 @@ module TDDFT_Chi_dynamic_m
  private
  public :: TDDFT_Chi_full_response,TDDFT_Chi_full_bubble
  public :: TDDFT_Chi_kernel_from_response,TDDFT_Chi_full_dynamic_response
+ public :: TDDFT_Chi_spectral_setup,TDDFT_Chi_spectral_response
  complex(DP), parameter :: zero=(0._DP,0._DP),one=(1._DP,0._DP)
 contains
  !
@@ -68,6 +71,48 @@ contains
    call zgemm('N','N',ng,ng,nh,cmplx(c,0._DP,kind=DP),B,ng,X,nh,zero,chi,ng)
    deallocate(W,X,B,ipiv)
  end subroutine TDDFT_Chi_full_response
+ !
+ recursive subroutine TDDFT_Chi_spectral_setup(M,v,s,Ex,Pv,Qv)
+   ! M = Z diag(Ex) Z^-1,  Pv = B Z,  Qv = Z^-1 X   (BSEChiSolver= "diago", once per q)
+   complex(DP), intent(in)  :: M(:,:),v(:,:),s(:)
+   complex(DP), intent(out) :: Ex(:),Pv(:,:),Qv(:,:)
+   complex(DP), allocatable :: A(:,:),Z(:,:),B(:,:),wk(:)
+   real(DP),    allocatable :: rwk(:)
+   integer,     allocatable :: ipiv(:)
+   complex(DP) :: vl(1,1),wq(1)
+   integer :: nh,ng,ig,info,lw
+   nh=size(s); ng=size(v,1)
+   allocate(A(nh,nh),Z(nh,nh),B(ng,nh),rwk(2*nh),ipiv(nh))
+   A=M
+   call zgeev('N','V',nh,A,nh,Ex,vl,1,Z,nh,wq,-1,rwk,info)
+   lw=max(1,int(real(wq(1))))
+   allocate(wk(lw))
+   call zgeev('N','V',nh,A,nh,Ex,vl,1,Z,nh,wk,lw,rwk,info)
+   do ig=1,ng
+     B(ig,:)=s*v(ig,:)
+     Qv(:,ig)=s*conjg(v(ig,:))
+   enddo
+   call zgemm('N','N',ng,nh,nh,one,B,ng,Z,nh,zero,Pv,ng)
+   call zgetrf(nh,nh,Z,nh,ipiv,info)
+   call zgetrs('N',nh,ng,Z,nh,ipiv,Qv,nh,info)
+   deallocate(A,Z,B,wk,rwk,ipiv)
+ end subroutine TDDFT_Chi_spectral_setup
+ !
+ recursive subroutine TDDFT_Chi_spectral_response(z,Ex,Pv,Qv,c,chi)
+   ! chib(G,G') = c sum_l Pv(G,l) Qv(l,G') / (z - Ex_l)   (BSEChiSolver= "diago", each frequency)
+   complex(DP), intent(in)  :: z,Ex(:),Pv(:,:),Qv(:,:)
+   real(DP),    intent(in)  :: c
+   complex(DP), intent(out) :: chi(:,:)
+   complex(DP), allocatable :: Y(:,:)
+   integer :: nh,ng,l
+   nh=size(Ex); ng=size(Pv,1)
+   allocate(Y(ng,nh))
+   do l=1,nh
+     Y(:,l)=Pv(:,l)/(z-Ex(l))
+   enddo
+   call zgemm('N','N',ng,ng,nh,cmplx(c,0._DP,kind=DP),Y,ng,Qv,nh,zero,chi,ng)
+   deallocate(Y)
+ end subroutine TDDFT_Chi_spectral_response
  !
  recursive subroutine TDDFT_Chi_kernel_from_response(chi0,chib,d,exch_head,fxc,P)
    ! fxc = chi0^-1 - P^-1,   P^-1 = chib^-1 + vbar
