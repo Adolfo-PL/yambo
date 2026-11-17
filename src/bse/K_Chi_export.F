@@ -11,6 +11,8 @@
 !   n, nh    N resonant transitions, 2N rows of BS_mat (resonant + anti-resonant)
 !   ng, ns   plane waves of the kernel; of those in the kernel set S (all G, or G_z = 0 with BSEGinplane)
 !   H0       BS_mat of this BSE run (energies, exchange, W), double precision
+!   l_diago  BSEChiSolver= "diago": chib from Ex, Pv, Qv (one diagonalization of H0), else one solve per z
+!   Ex,Pv,Qv eigenvalues of H0 and the vertices mixed by its eigenvectors (TDDFT_Chi_spectral_setup)
 !   Vf       (ng,nh) vertices rho_A(G): Chi_dyn_V resonant | de-excitation, collected in K_kernel
 !   sf       (nh)    s_A = sqrt(f_A); i sqrt|f_A| for f_A < 0
 !   E_ref    (nh)    energies of the reference bubble: BSE energies ("exc") or KS ones ("full")
@@ -24,6 +26,7 @@
 subroutine K_Chi_export(iq,Ken,Xk,W)
  !
  ! fxc(z) = chi0(z)^-1 - ( chib(z)^-1 + vbar ),   chib = c U (z - H0)^-1 U^H,   chi0 = c U (z - E_ref)^-1 U^H
+ !   "diago":  chib = c Pv diag(1/(z - Ex)) Qv
  !
  use pars,           ONLY:SP,DP,pi
  use frequency,      ONLY:w_samp,W_reset,W_duplicate
@@ -31,12 +34,14 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  use R_lattice,      ONLY:bz_samp,bare_qpg,qindx_X,g_vec
  use stderr,         ONLY:STRING_match
  use X_m,            ONLY:X_t,X_reset
- use BS,             ONLY:BS_K_dim,BS_H_dim,BS_n_g_fxc,BS_bands,BS_K_Chi_out,BSE_L_kind,l_BS_ares_from_res,BS_G_inplane
+ use BS,             ONLY:BS_K_dim,BS_H_dim,BS_n_g_fxc,BS_bands,BS_K_Chi_out,BSE_L_kind,l_BS_ares_from_res,BS_G_inplane,&
+&                          BS_K_Chi_solver
  use BS_solvers,     ONLY:BS_mat,BSS_eh_E,BSS_eh_table,BSS_eh_f
  use Chi_m,          ONLY:Chi_ng,Chi_n_freqs,Chi_alloc,Chi_free,Chi_freqs,Chi_0,Chi_P,Chi_fxc,Chi_dyn_V,Chi_dyn_c,Chi_dyn_free
  use IO_int,         ONLY:io_control
  use IO_m,           ONLY:OP_WR_CL,OP_APP_CL,REP
- use TDDFT_Chi_dynamic_m, ONLY:TDDFT_Chi_full_response,TDDFT_Chi_full_bubble,TDDFT_Chi_kernel_from_response
+ use TDDFT_Chi_dynamic_m, ONLY:TDDFT_Chi_full_response,TDDFT_Chi_full_bubble,TDDFT_Chi_kernel_from_response,&
+&                              TDDFT_Chi_spectral_setup,TDDFT_Chi_spectral_response
  !
  implicit none
  !
@@ -45,13 +50,13 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  type(bz_samp) :: Xk
  type(w_samp)  :: W
  !
- logical                  :: l_exc,l_qp,l_full_L
+ logical                  :: l_exc,l_qp,l_full_L,l_diago
  logical, save            :: header_done=.FALSE.
  integer                  :: n,nh,ng,ns,nw,iw,it,ig,ik,ikv,ID,io_err
  integer,     external    :: io_Chi
  integer,     allocatable :: S(:)
  real(DP),    allocatable :: E_ref(:)
- complex(DP), allocatable :: d(:),H0(:,:),zz(:),Vf(:,:),sf(:)
+ complex(DP), allocatable :: d(:),H0(:,:),zz(:),Vf(:,:),sf(:),Ex(:),Pv(:,:),Qv(:,:)
  complex(DP), allocatable :: chib(:,:),chi0(:,:),f(:,:),Pm(:,:),chs(:,:),c0s(:,:),fs(:,:),Ps(:,:)
  type(X_t)                :: X_io
  type(w_samp)             :: W_io
@@ -109,12 +114,22 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  allocate(H0(nh,nh))
  H0=cmplx(BS_mat,kind=DP)
  !
+ l_diago=trim(BS_K_Chi_solver)=='diago'
+ if (l_diago) then
+   allocate(Ex(nh),Pv(ng,nh),Qv(nh,ng))
+   call TDDFT_Chi_spectral_setup(H0,Vf,sf,Ex,Pv,Qv)
+ endif
+ !
  !$omp parallel default(shared) private(iw,chib,chi0,f,Pm,chs,c0s,fs,Ps)
  allocate(chib(ng,ng),chi0(ng,ng),f(ng,ng),Pm(ng,ng))
  allocate(chs(ns,ns),c0s(ns,ns),fs(ns,ns),Ps(ns,ns))
  !$omp do schedule(dynamic)
  do iw=1,nw
-   call TDDFT_Chi_full_response(zz(iw),H0,Vf,sf,Chi_dyn_c,chib)
+   if (l_diago) then
+     call TDDFT_Chi_spectral_response(zz(iw),Ex,Pv,Qv,Chi_dyn_c,chib)
+   else
+     call TDDFT_Chi_full_response(zz(iw),H0,Vf,sf,Chi_dyn_c,chib)
+   endif
    call TDDFT_Chi_full_bubble(zz(iw),E_ref,Vf,sf,Chi_dyn_c,chi0)
    chs=chib(S(:ns),S(:ns))
    c0s=chi0(S(:ns),S(:ns))
@@ -150,5 +165,6 @@ subroutine K_Chi_export(iq,Ken,Xk,W)
  call Chi_free()
  call Chi_dyn_free()
  deallocate(E_ref,d,Vf,sf,zz,H0,S)
+ if (l_diago) deallocate(Ex,Pv,Qv)
  !
 end subroutine K_Chi_export

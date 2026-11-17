@@ -30,6 +30,7 @@ module BS
  logical :: BS_K_is_Chi=.FALSE.
  logical :: BS_K_Chi_dynamic=.FALSE.
  character(schlen) :: BS_K_Chi_out="none"
+ character(schlen) :: BS_K_Chi_solver="solve"
  logical  :: BS_G_inplane=.FALSE.
  logical :: BS_not_const_eh_f=.FALSE.
  logical :: BS_perturbative_SOC=.FALSE.
