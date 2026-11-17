@@ -16,7 +16,7 @@ subroutine K_driver_init(what,iq,Ken,Xk)
 &                       BSS_slepc_double_grp,run_Slepc,BSS_mode,       &
 &                       l_abs_prop_chi_bse,l_eels_can_be_computed,l_eels_from_inversion
  use BS,           ONLY:BSE_L_kind,BSE_mode,BS_K_is_ALDA,BS_K_is_Chi,BS_dip_size,l_BSE_minimize_memory,BS_perturbative_SOC,&
-&                       BS_K_Chi_dynamic,BS_K_Chi_out,BS_G_inplane,&
+&                       BS_K_Chi_dynamic,BS_K_Chi_out,BS_K_Chi_solver,BS_G_inplane,&
 &                       BS_perturbative_SOC,l_BS_magnons,l_BS_photolum,&
 &                       BS_cpl_K_exchange,BS_n_g_exch,BS_res_K_exchange,BS_K_coupling,BS_res_ares_n_mat,&
 &                       BS_n_eh_spaces,l_BS_ares_from_res,BS_bands,BS_K_anti_resonant
@@ -51,6 +51,7 @@ subroutine K_driver_init(what,iq,Ken,Xk)
  if (BS_K_is_Chi) call parser('BSEChiDyn',BS_K_Chi_dynamic)
  call parser('BSEGinplane',BS_G_inplane)
  if (len_trim(BS_K_Chi_out)==0) BS_K_Chi_out='none'
+ if (len_trim(BS_K_Chi_solver)==0) BS_K_Chi_solver='solve'
  !
  ! default mode
  if(STRING_match(BSE_L_kind,"default")) BSE_L_kind="default-bar"

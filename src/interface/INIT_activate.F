@@ -224,7 +224,7 @@ subroutine INIT_activate()
    call initactivate(1,'Qdirection QShiftOrder')
    !
    if(l_td_hf.or.l_td_sex) call initactivate(1,'BSENGBlk')
-   if(l_td_sex)            call initactivate(1,'WehDiag WehCpl BSEChiOut BSENGfxc BSEGinplane')
+   if(l_td_sex)            call initactivate(1,'WehDiag WehCpl BSEChiOut BSEChiSolver BSENGfxc BSEGinplane')
    if(l_chi_bs_fxc)        call initactivate(1,'BSENGfxc BSEChiDyn BSEGinplane')
    if(l_alda_fxc) then
      call initactivate(1,'BSENGfxc FxcLibxc FxcMode UseNLCC')

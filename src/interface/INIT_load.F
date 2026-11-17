@@ -34,7 +34,7 @@ subroutine INIT_load(defs,en,q,k,X,Xw,Dip)
 &                        RIM_n_rand_pts,cyl_ph_radius,box_length,cyl_length,cut_geometry,ws_cutoff
  use BS,            ONLY:BSE_mode,BSE_prop,BSK_mode,BS_eh_en,BS_eh_win,BS_q,BS_bands,&
 &                        BS_n_g_W,BS_n_g_exch,BS_n_g_fxc,BSE_L_kind,BS_K_cutoff,BSK_IO_mode,BSE_dipole_geometry,&
-&                        BS_K_Chi_out
+&                        BS_K_Chi_out,BS_K_Chi_solver
  use BS_solvers,    ONLY:BSS_mode,Haydock_threshold,Haydock_iterIO,BSS_n_freqs,&
 &                        BSS_dr,BSS_er,BSS_E_dir,BSS_Q_dir,BSS_damp_reference,BSS_inversion_mode,&
 &                        BSS_Wd,K_INV_EPS,K_INV_PL,BSS_n_eig,Haydock_iterMAX
@@ -298,6 +298,8 @@ subroutine INIT_load(defs,en,q,k,X,Xw,Dip)
  call it(defs,'BSENGfxc','[BSK] Fxc components', BS_n_g_fxc,G_unit,verb_level=V_resp)
  call it(defs,'BSEChiOut','[BSK] Write ndb.Chi with P from this coupled BSE: none/exc (QP reference)/full (KS reference)',&
 &        BS_K_Chi_out,case="a")
+ call it(defs,'BSEChiSolver','[BSK] BSEChiOut: BSE response by one solve per frequency (solve) or one diagonalization (diago)',&
+&        BS_K_Chi_solver,case="a")
  call it('f',defs,'BSEChiDyn','[BSK] BSKmod=CHI: frequency-dependent fxc(w) from a real-axis ndb.Chi, one solve per frequency')
  call it('f',defs,'BSEGinplane','[BSK] Exchange and fxc on the in-plane G (G_z=0) only: layers in the xy plane')
  call it(defs,'FxcMode', '[TDDFT] ("G-XXX" or "R-XXX" with XXX=def/full/cut_Gmax/cut_GmGp") ',FXC_mode,verb_level=V_resp)

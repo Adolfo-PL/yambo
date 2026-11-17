@@ -134,6 +134,7 @@ The numerics files are the reading copies, with the guards still removed.
 | `l_chi_bs_fxc` (`mod_drivers.F`, `INIT*.F`), `BS_K_is_Chi` default (`SET_defaults.F`) | `BSKmod = "CHI"`, `-k chi` |
 | `BSEChiOut`, `BSEChiDyn`, `BSEGinplane` (`INIT_load.F`, `INIT_activate.F`, `K_driver_init.F`) | the input variables |
 | `TDDFT_do_X_W_typs.F`, `K_OUTPUT.F`, `X_OUTPUT_driver.F` | skip the local TDDFT setup; output name `ChiDyn` |
+| `BSEChiSolver` (`INIT_load.F`, `INIT_activate.F`, `K_driver_init.F`) | the input of the eigenvalue route; default `"solve"`, any other value than `"diago"` also runs the solve (no input check) |
 
 Still left out: `BSEChiKoutW/B` (text dump), the Green-function route, `ndb.W`, all guards and the `Lkind` checks.
 Without the guards a mismatched Casida run is not stopped.
@@ -151,4 +152,9 @@ On the same WS2 inputs as above (`BSEChiOut = "exc"` at q = 0, then static and d
 | dynamic Casida spectrum | identical |
 
 `ndb.Chi` written by this branch lacks two metadata fields the fork writes (`CHI_NTRANS`, `CHI_SERIAL`); they feed only the guards.
+
+With `BSEChiSolver= "diago"` (the fork's commit `950b65b`), the same three runs give the fork's `"diago"` results bit for bit
+(`ndb.Chi` and the three spectra), and the default still gives the fork's `"solve"` results bit for bit. The export run took
+64 s with `"diago"` and 126 s with the default (whole Yambo run, 4 threads). This branch has no comparison with the solve
+and no fallback: a failed diagonalization is not caught.
 Not tested: `"full"`, finite q, partly filled bands.
