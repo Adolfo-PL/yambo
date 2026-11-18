@@ -52,8 +52,11 @@ chain is `exact_kernel.sh`, with `STAGE=` options; GW: `gw_converge.sh`, `gw_run
   `yambo/5.3-cpu`, then `hpcx_load` (see `jobs/gw_run.sh`).
 - Typical node: 24 MPI tasks × 2 OpenMP threads, 150G, partition `normal`. In Yambo inputs every
   `*_CPU` product must equal the total number of MPI tasks.
-- Production WS2: PseudoDojo NC fully relativistic PBE (identical in the standard and stringent sets;
-  W 5s5p5d6s, S 3s3p: 13 occupied bands), 100/400 Ry, slab cutoff, RIM-W, PPA, SOC off.
+- Pseudopotentials: from Nov 2026 new runs use PseudoDojo NC **scalar-relativistic v0.5** PBE (`nc-sr-05_pbe_standard`;
+  W 5s5p5d6s, S 3s3p: 13 occupied bands). The earlier WS2 production (GW, BSE, kernels) used PseudoDojo NC
+  **fully relativistic v0.4** (`nc-fr-04`, SOC off; identical in the standard and stringent sets): its K gap is
+  ~12 meV larger (1.832 vs 1.820 eV PBE at a = 3.1842 A). SR files cannot do SOC: SOC runs need FR files.
+  Both: 100/400 Ry, slab cutoff, RIM-W, PPA.
   Bands are numbered from 1 with the VBM at 13 (20 with SG15, whose W includes 4f).
 
 ## Working with the user
