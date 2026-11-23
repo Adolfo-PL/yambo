@@ -53,8 +53,14 @@ For each q, the response loops over the complete requested band-pair
 range and BZ k points, using Yambo's `qindx_X` mapping k -> k-q and density
 vertices from `scatter_Bamp`. At the optical q=0 point, the G=0 density
 vertex instead uses Yambo's position dipoles and its numerical q0 norm;
-the remaining G components use the native k-star rotation. The frequency
-factor for a pair a,k and b,k-q is
+the remaining G components use the native k-star rotation. Position dipoles
+exist only for pairs of one occupied and one empty band, so at q=0 the
+`DYSON` bubble keeps only those pairs (the static modes have no others).
+Intraband (a=b) and same-occupancy pairs would enter there only through the
+tails of the spectral functions across mu: their density vertex tends to 1
+instead of vanishing like q, an O(1) head that needs a Drude treatment.
+They are left out at q=0, as in the BSE, and a warning says so; finite q
+keeps every pair. The frequency factor for a pair a,k and b,k-q is
 
 ```
 integral dE dE' A_a,k(E) A_b,k-q(E')
@@ -1307,7 +1313,7 @@ your W. Keep these companion databases and use the same screening settings
 to reuse them. **It does not import the standalone `ndb.W` export.** If the
 native screening databases are missing or incompatible, Yambo's usual
 screening machinery recalculates them. Do not enable `ChiFxc` in this GW
-step; it forces response recalculation and the new bubble path excludes q=0.
+step; it forces response recalculation.
 
 The old `ndb.G` convention is not accepted by `ChiGDb`; rebuild it with
 `GRetarded`. The new convention is also rejected by the historical
@@ -1406,8 +1412,8 @@ static terms over frequencies. `Green_Functions_Energies` includes eta.
 
 ## Current scope and validation
 
-The response G0, COHSEX and QP paths support optical q=0, serial CPUs and
-k-only MPI. The DYSON optical limit remains unsupported. They force retarded
+The response G0, COHSEX, QP and DYSON paths support optical q=0, serial CPUs
+and k-only MPI; optical DYSON keeps only occupied-empty band pairs (above). They force retarded
 ordering on the response, so they stop in a job that also runs GW or a BSE:
 build `ndb.Chi` in a screening-only job. They reject GPU execution,
 finite temperature, metallic KS references, double grids,
@@ -1437,7 +1443,8 @@ python tests/chi_green/run_tests.py --fc gfortran --single-precision --lapack-so
 The tests check analytic poles and satellites, an independent fermionic
 Matsubara sum, the G0 limit, causality, quadrature, XC subtraction, the
 imaginary export grid, inverse response differences, screening restoration,
-static COHSEX pole loading and inverse differences, preservation of retarded
+static COHSEX pole loading and inverse differences, the optical (q=0) Dyson
+bubble with occupied-empty pairs only and its kernel, preservation of retarded
 sampling damping, and disjoint k partitions whose sum matches the serial
 bubble (including an empty synthetic rank). Negative tests cover invalid
 COHSEX databases, occupation crossings, missing states, legacy spectra,

@@ -14,6 +14,8 @@ program test_pipeline
  use DIPOLES
  use pipeline_output
  use parallel_m
+ use electrons,only:spin_occ
+ use Chi_Green_m,only:Chi_spectral_pair
  use QP_m,only:QP_t,QP_Sc_steps,QP_G_amplitude_integral,QP_reset,QP_table,QP_n_states,&
 &              QP_Sc,QP_Vnl_xc,QP_Vxc,use_GreenF_Zoom,use_GreenF_to_eval_QP,&
 &              QP_prepare_G_grid,QP_retarded_G,QP_G_damp
@@ -25,7 +27,9 @@ program test_pipeline
  type(QP_t)::qp
  complex(SP)::original(2,2,2),factor0,factor1,expected(2,2),gram_inverse(2,2)
  complex(SP)::serial(2,2,2),partial(2,2,2),partitioned(2,2,2)
- integer::iw,rank,nranks,ik
+ integer::iw,rank,nranks,ik,info
+ complex(DP)::zq(2),p21(2),p12(2),p11(2),pdy(2),ainv(2,2),binv(2,2)
+ real(DP)::dq(2),worst
  character(24)::argument
  call get_command_argument(1,argument)
  allocate(DIP_iR(1,1,1,1,1))
@@ -215,6 +219,51 @@ program test_pipeline
  call require(minval(Chi_G_norm)>.98_SP,'loader retains unnormalized spectral weight')
  call require(maxval(Chi_G_norm)<1._SP,'loader does not hide finite spectral tails')
  call require(abs(Chi_G_mu-.1_SP)<1.E-3_SP,'Dyson chemical potential at the middle of the QP peaks')
+ ! Optical q=0 Dyson bubble: occupied-empty pairs only, with the dipole head and the rotated
+ ! wings of the other modes (same coefficients as the static optical check). The intraband
+ ! pair factor is not zero in this fixture (broad tails across mu), so leaving it in would
+ ! change the result: the comparison tests that it is left out.
+ zq=cmplx(w%p,kind=DP)
+ call Chi_spectral_pair(zq,Chi_G_energy(2,1,1,:),Chi_G_energy(1,1,1,:),Chi_G_weight(2,1,1,:),&
+&  Chi_G_weight(1,1,1,:),Chi_G_occupation(2,1,1,:),Chi_G_occupation(1,1,1,:),p21,info)
+ call require(info==0,'optical Dyson pair factor (empty, occupied)')
+ call Chi_spectral_pair(zq,Chi_G_energy(1,1,1,:),Chi_G_energy(2,1,1,:),Chi_G_weight(1,1,1,:),&
+&  Chi_G_weight(2,1,1,:),Chi_G_occupation(1,1,1,:),Chi_G_occupation(2,1,1,:),p12,info)
+ call require(info==0,'optical Dyson pair factor (occupied, empty)')
+ call Chi_spectral_pair(zq,Chi_G_energy(1,1,1,:),Chi_G_energy(1,1,1,:),Chi_G_weight(1,1,1,:),&
+&  Chi_G_weight(1,1,1,:),Chi_G_occupation(1,1,1,:),Chi_G_occupation(1,1,1,:),p11,info)
+ call require(minval(abs(p11))>1.E-3_DP,'fixture has a nonzero intraband tail term')
+ pdy=real(spin_occ,DP)*(p21+p12)
+ call Chi_G_bubble(1,x,k,w,d,.FALSE.,serial)
+ do iw=1,w%n_freqs
+   expected(1,1)=q0_def_norm**2*pdy(iw)
+   expected(1,2)=cmplx(0._SP,-.6_SP*q0_def_norm,SP)*pdy(iw)
+   expected(2,1)=-expected(1,2)
+   expected(2,2)=.52_SP*pdy(iw)
+   call require(maxval(abs(serial(:,:,iw)-expected))<max(1.E-11_SP,100._SP*epsilon(1._SP))*maxval(abs(expected)),&
+&               'optical Dyson head and wings, occupied-empty pairs only')
+ enddo
+ ! The whole optical export: fxc = chi0^-1 - P^-1, checked in the Coulomb-symmetrized basis
+ bare_qpg(1,1)=q0_def_norm
+ X_par(1)%blc=original
+ call Chi_fxc_eval(1,1,x,Chi_KS_levels,k,w,d)
+ call require(Chi_G0_error<1.E-5_SP,'optical Dyson run: G0 baseline agrees')
+ dq=sqrt(4._DP*acos(-1._DP))/real(bare_qpg(1,:),DP)
+ worst=0._DP
+ do iw=1,size(saved_freq)
+   do ik=1,2
+     ainv(:,ik)=dq*saved_c0(:,ik,iw)*dq(ik)
+     binv(:,ik)=dq*saved_p(:,ik,iw)*dq(ik)
+   enddo
+   ainv=inv2(ainv); binv=inv2(binv)
+   do ik=1,2
+     worst=max(worst,maxval(abs(saved_fxc(:,ik,iw)/(dq*dq(ik))-(ainv(:,ik)-binv(:,ik))))/&
+&                    maxval(abs(ainv-binv)))
+   enddo
+ enddo
+ call require(worst<1.E-5_DP,'optical Dyson kernel = chi0^-1 - P^-1 (symmetrized)')
+ call require(maxval(abs(X_par(1)%blc-original))<1.E-12_SP,'optical Dyson run restores screening')
+ bare_qpg(1,1)=1._SP
  call Chi_G_free()
  ! ndb.G stores Yambo's unshifted E_Fermi. It must not set the occupations of the
  ! (shifted) spectral grid: the valence peak (-1.2, grid point 941) stays filled.
@@ -241,6 +290,10 @@ program test_pipeline
  deallocate(QP_G_amplitude_integral,QP_table,QP_Sc,QP_Vnl_xc,QP_Vxc)
  print *,'PASS: G0/Dyson/COHSEX/QP pipeline, k partitions, sampling damping and frozen screening'
 contains
+ function inv2(m) result(r)
+   complex(DP)::m(2,2),r(2,2)
+   r=reshape([m(2,2),-m(2,1),-m(1,2),m(1,1)],[2,2])/(m(1,1)*m(2,2)-m(1,2)*m(2,1))
+ end function
  subroutine require(ok,label)
    logical::ok
    character(*)::label

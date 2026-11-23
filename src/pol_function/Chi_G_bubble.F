@@ -10,6 +10,11 @@ subroutine Chi_G_bubble(iq,X,Xk,Xw,Dip,is_G0,response)
  ! supplies the same rho*(G) rho(G') convention as X_irredux_residuals.
  ! This implementation requires CPU, a k-only MPI layout,
  ! an insulating KS reference, and no transition-energy filtering/terminator.
+ ! Optical q=0 with DYSON spectra: only pairs of one occupied and one empty KS
+ ! band enter (their head is the dipole limit, as for G0/COHSEX/QP). Intraband
+ ! (a=b) and same-occupancy pairs contribute there only through the tails of A
+ ! across mu, an O(1) head that would need a Drude treatment; they are left out,
+ ! as in the BSE. Finite q keeps every pair.
  use pars, ONLY:SP,DP
  use electrons, ONLY:n_sp_pol,spin_occ
  use Chi_m, ONLY:Chi_KS_levels,Chi_G_mode,Chi_G_axis,Chi_G_energy,Chi_G_weight,Chi_G_occupation
@@ -42,8 +47,6 @@ subroutine Chi_G_bubble(iq,X,Xk,Xw,Dip,is_G0,response)
  ! Validate before using an incomplete symmetry/distributed mapping.
  if (iq<1) call error('[Chi/G] invalid q index')
  if (iq==1) then
-   if (trim(Chi_G_mode)=='DYSON')&
-&    call error('[Chi/G] optical Dyson bubble needs an intraband spectral/Drude treatment')
    if (v_norm(Dip%q0)<=0._SP) call error('[Chi/G] optical direction is undefined')
    field_dir=cmplx(Dip%q0/v_norm(Dip%q0)*q0_def_norm,kind=SP)
  endif
@@ -82,6 +85,12 @@ subroutine Chi_G_bubble(iq,X,Xk,Xw,Dip,is_G0,response)
 &                                  Chi_G_static_energy(b,ikp,i_spin),fa,fb)
        enddo
      else
+       if (iq==1) then
+         ! interband pairs only at q=0 (see the header); fa/fb orient the dipole head
+         fa=real(Chi_KS_levels%f(a,ik,i_spin),DP)
+         fb=real(Chi_KS_levels%f(b,ikp,i_spin),DP)
+         if (fa==fb) cycle
+       endif
        call Chi_spectral_pair(z,Chi_G_energy(a,ik,i_spin,:),Chi_G_energy(b,ikp,i_spin,:),&
 &        Chi_G_weight(a,ik,i_spin,:),Chi_G_weight(b,ikp,i_spin,:),&
 &        Chi_G_occupation(a,ik,i_spin,:),Chi_G_occupation(b,ikp,i_spin,:),pair,info)
