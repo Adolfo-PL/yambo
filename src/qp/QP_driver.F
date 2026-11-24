@@ -22,7 +22,8 @@ subroutine QP_driver(X,Xen,Xk,en,k,q,Xw,Dip)
 &                        QP_nk,QP_state,QP_dSc_test,QP_reset,use_GreenF_Zoom,l_QP_symmetrize,&
 &                        QP_Sc_steps,QP_G_er,QP_G_dr,QP_SET_temperature_pre_factor,&
 &                        GF_is_causal,QP_G_amplitude_integral,use_GreenF_to_eval_QP,&
-&                        l_GW_terminator,QP_G_info,QP_retarded_G,QP_G_solver,QP_G_damp
+&                        l_GW_terminator,QP_G_info,QP_retarded_G,QP_G_solver,QP_G_damp,&
+&                        GW_terminator_Kind
  use parser_m,      ONLY:parser
 #if defined _ELPH
  use ELPH,          ONLY:QP_DW,QP_OMS_Fan
@@ -65,8 +66,11 @@ subroutine QP_driver(X,Xen,Xk,en,k,q,Xw,Dip)
 &     call error('[G] GRetarded requires a real energy grid, GEnSteps>=2 and positive GDmRnge')
    if (use_GreenF_to_eval_QP.or.use_GreenF_Zoom)&
 &     call error('[G] disable GreenF2QP and set GreenFTresh=0 for GRetarded')
-   if (QP_G_damp/=0._SP.or.l_GW_terminator)&
-&     call error('[G] set GDamping=0 and GTermKind="none"; GDmRnge controls retarded sampling')
+   if (QP_G_damp/=0._SP) call error('[G] set GDamping=0; GDmRnge controls retarded sampling')
+   ! BG adds one empty-state pole (bands above GbndRnge, weight from completeness)
+   ! with the same retarded frequency as the explicit empty bands. BRS is not validated.
+   if (l_GW_terminator.and.trim(GW_terminator_Kind)/='BG')&
+&     call error('[G] GRetarded supports GTermKind="BG" or "none"')
    if (allocated(en%Eo)) then
      if (maxval(abs(en%E-en%Eo))>1.E-5_SP)&
 &       call error('[G] GRetarded requires uncorrected KS starting energies (no GfnQPdb shifts)')

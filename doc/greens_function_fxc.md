@@ -1295,6 +1295,19 @@ GreenFTresh=0.0
 GTermKind="none"
 ```
 
+`GTermKind="BG"` is also accepted (BRS is not). The Bruneval-Gonze terminator
+adds one pole for all bands above `GbndRnge`: weight
+`rho_nn(G-G') - sum_{m<=N} rho_nm(G) rho_nm(G')*` (completeness), energy
+`min_k E(N) + GTermEn + omega_GG'` (`QP_ppa_EET_terminator.F`). It enters the
+self-energy loop with the same frequency `W_i` as the explicit empty bands, so
+GRetarded does not change its form. Its pole lies far above the GF grid; its
+real part shifts Sigma on the grid and its satellite lies outside it (part of
+the spectral norm the loader checks). `dyson_q0.sh` with `STAGE=validate`
+checks it on the material: on a few states, Re Sigma_c(Eo) on the grid must
+equal Newton's `Sc|Eo` at the same `Eo + i GDmRnge` (the real part is the same
+for retarded and time-ordered denominators), with and without BG, and the
+spectra must stay causal and normalized (`sbin/chi_tools/gf_check.py`).
+
 Remove the `GreenF2QP` flag. Do not apply `GfnQPdb` energy shifts. Set
 `QPkrange` to cover **every k point, band and spin** that will enter the
 response, with diagonal states only. Use the generated input's syntax for
@@ -1420,7 +1433,7 @@ build `ndb.Chi` in a screening-only job. They reject GPU execution,
 finite temperature, metallic KS references, double grids,
 transition-energy filtering and response terminators. The retarded GW
 export requires PPA, diagonal Sigma, unshifted KS starting energies and no
-GW terminator, Green-function zoom, GreenF2QP, self-consistent GW or mixed
+BRS terminator (BG is accepted), Green-function zoom, GreenF2QP, self-consistent GW or mixed
 electron-phonon/photon self-energies. Off-diagonal Sigma and the GW response
 vertex remain separate extensions. The optical COHSEX and QP kernels and the
 static Casida projection have been run on monolayer WS2; the frequency-dependent
