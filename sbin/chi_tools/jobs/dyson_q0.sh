@@ -28,6 +28,8 @@
 #   mkdir -p log && STAGE=test sbatch dyson_q0.sh     # one QP state: times the self-energy, builds the T=0 screening
 #   mkdir -p log && sbatch dyson_q0.sh                # full: gw_g (reusing gw_g_test's screening) then chi_dyson
 #   STAGE=chi sbatch dyson_q0.sh                      # only step 2, on an existing gw_g/ndb.G
+# Options: BANDS=NV:NC (window, default 1:2 = VB..VB+2), GW_BANDS, NP_CHI (tasks of step 2: with several
+# nodes the window dipoles may not fit all tasks, e.g. NP_CHI=24 for bands 13-15 on 18x18).
 # The self-energy is evaluated at GSTEPS frequencies per state (Newton uses 2): from the test run,
 # full self-energy time ~ (test self-energy time) x (number of QP states printed in the plan).
 
@@ -54,8 +56,11 @@ if type module >/dev/null 2>&1 && [ -n "$SLURM_JOB_ID" ]; then
 fi
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-${OMP_NUM_THREADS:-1}}
 NP=${NP:-${SLURM_NTASKS:-1}}
+NP_CHI=${NP_CHI:-$NP}                # tasks of step 2 (k-only; the window dipoles need k*c*v = NP_CHI)
 RUN="srun -n $NP --cpus-per-task=$OMP_NUM_THREADS"
 [ "$NP" -gt 1 ] || RUN=""
+RUN_CHI="srun -n $NP_CHI --cpus-per-task=$OMP_NUM_THREADS"
+[ "$NP_CHI" -gt 1 ] || RUN_CHI=""
 
 case $STAGE in test|all|gw|chi) ;; *) echo "!!! STAGE=$STAGE: use test, all, gw or chi"; exit 1;; esac
 
@@ -90,7 +95,8 @@ msg=""
 [ "$GW_BANDS" -le "$NB" ] || msg="$msg\n!!! GW_BANDS=$GW_BANDS > the $NB bands of the SAVE (no terminator: 800 converged; GW_BANDS=400 runs less converged)"
 [ "$XP_BANDS" -le "$GW_BANDS" ] || msg="$msg\n!!! XP_BANDS=$XP_BANDS > GW_BANDS=$GW_BANDS"
 [ "$NV" -le "$VB" ] || msg="$msg\n!!! $NV valence bands requested, there are $VB"
-[ "$NP" -le "$NKBZ" ] || msg="$msg\n!!! $NP tasks > $NKBZ BZ k: the response uses k-only MPI"
+[ "$NP_CHI" -le "$NKBZ" ] || msg="$msg\n!!! NP_CHI=$NP_CHI tasks > $NKBZ BZ k: the response uses k-only MPI"
+[ "$NP_CHI" -le "$NP" ] || msg="$msg\n!!! NP_CHI=$NP_CHI > the $NP tasks of the job"
 [ -z "$msg" ] || { echo -e "$msg"; exit 1; }
 
 # --- MPI layouts (every *_CPU product = NP) ---
@@ -114,10 +120,11 @@ par_gw () {   # nqp -> DIP, X, SE lines of the GW
   printf 'SE_CPU= "%d %d %d"\nSE_ROLEs= "q qp b"\n' ${s[1]} ${s[2]} ${s[0]}
 }
 par_chi () {  # DIP (window bands) and k-only X lines of the response
-  [ "$NP" -gt 1 ] || return 0
-  local d; d=($(split $NP $NK $NC $NV)); [ ${#d[@]} -eq 3 ] || { echo "!!! $NP tasks do not fit the dipoles: k <= $NK, c <= $NC, v <= $NV" >&2; return 1; }
+  [ "$NP_CHI" -gt 1 ] || return 0
+  local d; d=($(split $NP_CHI $NK $NC $NV)); [ ${#d[@]} -eq 3 ] || {
+    echo "!!! NP_CHI=$NP_CHI tasks do not fit the dipoles of bands $BLO-$BHI: k <= $NK, c <= $NC, v <= $NV (set NP_CHI, e.g. 24)" >&2; return 1; }
   printf 'DIP_CPU= "%d %d %d"\nDIP_ROLEs= "k c v"\n' ${d[0]} ${d[1]} ${d[2]}
-  printf 'X_and_IO_CPU= "1 1 %d 1 1"\nX_and_IO_ROLEs= "q g k c v"\n' $NP
+  printf 'X_and_IO_CPU= "1 1 %d 1 1"\nX_and_IO_ROLEs= "q g k c v"\n' $NP_CHI
 }
 
 gw_in () {   # file qpkrange-line nqp
@@ -218,10 +225,14 @@ ETStpsXd= $WSTEPS
 EOF
 }
 
+# both layouts must fit before anything runs
+[ "$STAGE" = chi ] || par_gw $NQP > /dev/null || exit 1
+[ "$STAGE" = test ] || par_chi > /dev/null || exit 1
+
 fresh () { rm -rf $1 o-$1.* r-$1_* LOG/l-$1_*; }
-run () {   # job -J-string done-test
-  local t0=$SECONDS
-  $RUN yambo -F $1.in -J "$2" > $1.out 2>&1
+run () {   # job -J-string done-test [runner]
+  local t0=$SECONDS r=${4-$RUN}
+  $r yambo -F $1.in -J "$2" > $1.out 2>&1
   if eval "$3"; then echo "  $1 done in $(( (SECONDS - t0) / 60 )) min ($(date +%H:%M))"; return 0; fi
   echo "!!! $1 failed: see $1.out and LOG/l-$1_* (or l-$1_*)"
   grep -h "ERROR" LOG/l-$1_* l-$1_* 2>/dev/null | sed 's/.*\[ERROR\]/  [ERROR]/' | sort -u | head -5
@@ -232,7 +243,7 @@ timing () { awk '/Timing/{p=1} p' r-$1_* 2>/dev/null | head -40; }
 echo "=== $(basename "$PWD"): $NB bands, $NK IBZ k, $NKBZ BZ k, VB $VB, $([ $SF = 2 ] && echo spinors || echo no SOC); $NP MPI x $OMP_NUM_THREADS threads ==="
 echo "    GW : PPA, T=0, GRetarded, $GW_BANDS bands (no terminator), screening $XP_BANDS bands $GW_BLOCK Ry"
 echo "         G grid E_KS +- $GRANGE eV, $GSTEPS steps, broadening $GDAMP eV; QP states: bands $BLO-$BHI at $NK k = $NQP"
-echo "    chi: q=0, bands $BLO-$BHI, $NGX, 0-$WMAX eV, $WSTEPS steps, eta $ETA eV, ChiGNormTol $NORMTOL"
+echo "    chi: $NP_CHI MPI, q=0, bands $BLO-$BHI, $NGX, 0-$WMAX eV, $WSTEPS steps, eta $ETA eV, ChiGNormTol $NORMTOL"
 
 if [ "$STAGE" = test ]; then
   fresh gw_g_test; gw_in gw_g_test.in "1|1|$VB|$VB|" 1 || exit 1
@@ -256,7 +267,7 @@ fi
 if [ "$STAGE" = all ] || [ "$STAGE" = chi ]; then
   ls gw_g/ndb.G* >/dev/null 2>&1 || { echo "!!! gw_g/ndb.G not found: run STAGE=gw (or all) first"; exit 1; }
   fresh chi_dyson; chi_in chi_dyson.in || exit 1
-  run chi_dyson chi_dyson "ls chi_dyson/ndb.Chi* >/dev/null 2>&1" || exit 1
+  run chi_dyson chi_dyson "ls chi_dyson/ndb.Chi* >/dev/null 2>&1" "$RUN_CHI" || exit 1
   grep -h "\[Chi/G\]\|\[Chi\]" r-chi_dyson_* LOG/l-chi_dyson_* 2>/dev/null | sort -u | head -20
   echo "  chi_dyson/ndb.Chi: chi0, P and fxc at q=0"
 fi
