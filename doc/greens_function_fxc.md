@@ -1346,8 +1346,9 @@ XTermKind="none"
 %
 ```
 
-Choose `QpntsRXd` entirely after q index 1; for an initial test, use one
-existing finite q. Set `BndsRnXd` to the intended response bands. Disable
+Choose `QpntsRXd` freely: q index 1 is the optical limit (head and wings from
+the dipoles; DYSON keeps only occupied-empty band pairs there, see "Current
+scope"). Set `BndsRnXd` to the intended response bands. Disable
 double-grid interpolation and external X energy, width, residue and
 Green-function corrections. The implementation selects retarded ordering
 and zero coarse-grid spacing for the KS baseline.
