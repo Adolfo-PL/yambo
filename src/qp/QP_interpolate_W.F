@@ -48,6 +48,11 @@ subroutine QP_interpolate_W(X,Xw,q,mode)
  !
  call timing('RIM-W-coeff',OPR='start')
  !
+ ! An earlier runlevel of the same job (GW before BSE) may have left them allocated
+ YAMBO_FREE_GPU(DEV_VAR(RIM_W))
+ YAMBO_FREE(RIM_W)
+ YAMBO_FREE(RIM_W_E)
+ !
  YAMBO_ALLOC(f_coeff,(6,RIM_W_ng,RIM_W_ng,q%nibz,Xw%n_freqs))
  !
  call section("+", "RIM-W interpolation")

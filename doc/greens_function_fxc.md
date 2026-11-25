@@ -1315,6 +1315,15 @@ before, a `rim_w` run with `DysSolver="g"` read the unallocated `RIM_W_E` in
 the q=0 plasmon-pole fit of `QP_ppa_cohsex.F` and crashed (segmentation fault,
 WS2 18x18, Nov 2026).
 
+BG terminator frequency: in Yambo 5.3.0 the terminator loop of
+`QP_ppa_cohsex.F` never set `W_i`, so every frequency used the last one of the
+band loop: `Eo + dScStep` for Newton (the BG term at 0.1 eV above Eo, with no
+BG contribution to dSigma/dw), and `Eo + GEnRnge(2)` for every point of a
+DysSolver="g" grid (the BG term constant over the grid, taken 40 eV above Eo).
+The fork sets `W_i=W_(i_w)` there. Newton+BG numbers change slightly (Sc|Eo by
+Sigma_BG(Eo) - Sigma_BG(Eo + 0.1 eV), and Z through the BG derivative); an
+ndb.G made with BG before the fix is wrong and must be regenerated.
+
 Remove the `GreenF2QP` flag. Do not apply `GfnQPdb` energy shifts. Set
 `QPkrange` to cover **every k point, band and spin** that will enter the
 response, with diagonal states only. Use the generated input's syntax for

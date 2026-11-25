@@ -709,7 +709,7 @@ subroutine QP_ppa_cohsex(X,Xk,E,k,q,qp,Xw,GW_iter)
            !DEV_OMPGPU &      map(tofrom:dp_dummy_r,dp_dummy_i)
            !DEV_OMPGPU teams  loop collapse(2) private(PPA_E,PPA_R,l_rim_W_g,bose_PPA_E,ctmp) &
            !DEV_OMPGPU &           reduction(+:dp_dummy_r,dp_dummy_i)
-           !DEV_OMP parallel do default(shared), private(ig1,ig2,PPA_E,PPA_R,ctmp,l_RIM_W_g), &
+           !DEV_OMP parallel do default(shared), private(ig1,ig2,PPA_E,PPA_R,ctmp,l_RIM_W_g,bose_PPA_E), &
            !DEV_OMP &        reduction(+:dp_dummy), collapse(2)
            !
            do ig2=X_cols1,X_cols2
@@ -796,6 +796,10 @@ subroutine QP_ppa_cohsex(X,Xk,E,k,q,qp,Xw,GW_iter)
        forall (i_w=1:QP_dSc_steps) W_(i_w)=Sc_W(i_qp)%p(i_w)+cI*QP_G_damp
        !
        do i_w=1,QP_dSc_steps
+         !
+         ! The terminator at this frequency: W_i was left at the last one of the band loop
+         ! (upstream 5.3.0 evaluated it at W_(QP_dSc_steps) for every i_w)
+         W_i=W_(i_w)
          !
          dp_dummy_r=0.0_DP
          dp_dummy_i=0.0_DP

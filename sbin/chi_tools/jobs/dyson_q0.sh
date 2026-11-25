@@ -78,12 +78,13 @@ grep -q "optical q=0 DYSON" $YSRC/src/pol_function/X_pre_setup.F 2>/dev/null &&
 grep -q "GRetarded" $YSRC/src/qp/QP_driver.F 2>/dev/null &&
 grep -q 'GRetarded supports GTermKind="BG"' $YSRC/src/qp/QP_driver.F 2>/dev/null || {
   echo "!!! $YSRC lacks q=0 DYSON or GRetarded with BG: git pull there (branch claude/nbd-file-generation-path-yidcr2)"; exit 1; }
-[ "$(which yambo)" -nt $YSRC/src/qp/QP_driver.F ] || {
-  echo "!!! $(which yambo) is older than $YSRC/src/qp/QP_driver.F: make yambo"; exit 1; }
+grep -q "W_i was left at the last one of the band loop" $YSRC/src/qp/QP_ppa_cohsex.F 2>/dev/null || {
+  echo "!!! $YSRC/src/qp/QP_ppa_cohsex.F lacks the BG terminator frequency fix: git pull there"; exit 1; }
+for f in src/qp/QP_driver.F src/qp/QP_ppa_cohsex.F src/qp/QP_interpolate_W.F src/pol_function/Chi_G_bubble.F; do
+  [ "$(which yambo)" -nt $YSRC/$f ] || { echo "!!! $(which yambo) is older than $YSRC/$f: make yambo"; exit 1; }
+done
 GFCHECK=$YSRC/sbin/chi_tools/gf_check.py
 python3 -c "import netCDF4, numpy" 2>/dev/null || { echo "!!! python3 lacks netCDF4/numpy (needed by gf_check.py)"; exit 1; }
-[ "$(which yambo)" -nt $YSRC/src/pol_function/Chi_G_bubble.F ] || {
-  echo "!!! $(which yambo) is older than $YSRC/src/pol_function/Chi_G_bubble.F: make yambo"; exit 1; }
 
 # --- the system ---
 [ -f SAVE/ns.db1 ] || { echo "!!! SAVE/ns.db1 not found: run from the folder with SAVE"; exit 1; }
@@ -253,26 +254,33 @@ run () {   # job -J-string done-test [runner]
   return 1
 }
 timing () { awk '/Timing/{p=1} p' r-$1_* 2>/dev/null | head -40; }
+scr () {   # job -> -J string reusing the T=0 screening, kept in scr_T0 (only ndb.pp*)
+  local d f t
+  for f in scr_T0/ndb.pp*; do            # links of an older version of this script: real files
+    [ -L "$f" ] && [ -e "$f" ] && { t=$(readlink -f "$f"); rm "$f"; mv "$t" "$f"; }
+  done
+  if [ ! -e scr_T0/ndb.pp ]; then        # moved, so that deleting a run folder keeps the screening
+    for d in gw_g_test v_nbg gw_g; do
+      [ -e $d/ndb.pp ] && { mkdir -p scr_T0; mv $d/ndb.pp* scr_T0/; break; }
+    done
+  fi
+  [ -e scr_T0/ndb.pp ] && echo "$1,scr_T0" || echo $1
+}
 
 echo "=== $(basename "$PWD"): $NB bands, $NK IBZ k, $NKBZ BZ k, VB $VB, $([ $SF = 2 ] && echo spinors || echo no SOC); $NP MPI x $OMP_NUM_THREADS threads ==="
 echo "    GW : PPA, T=0, GRetarded, $GW_BANDS bands, terminator ${GTERM:-none}, screening $XP_BANDS bands $GW_BLOCK Ry"
 echo "         G grid E_KS +- $GRANGE eV, $GSTEPS steps, broadening $GDAMP eV; QP states: bands $BLO-$BHI at $NK k = $NQP"
 echo "    chi: $NP_CHI MPI, q=0, bands $BLO-$BHI, $NGX, 0-$WMAX eV, $WSTEPS steps, eta $ETA eV, ChiGNormTol $NORMTOL"
 
+scr init > /dev/null   # gather an existing T=0 screening in scr_T0 before any run folder is cleared
+
 if [ "$STAGE" = test ]; then
   fresh gw_g_test; gw_in gw_g_test.in "1|1|$VB|$VB|" 1 || exit 1
   run gw_g_test "$(scr gw_g_test)" "ls gw_g_test/ndb.G* >/dev/null 2>&1" || exit 1
   timing gw_g_test
-  echo "  self-energy of the full run ~ (self-energy time above) x $NQP; the screening (gw_g_test/ndb.pp) is reused"
+  echo "  self-energy of the full run ~ (self-energy time above) x $NQP; the screening is reused (scr_T0)"
   exit 0
 fi
-
-scr () {   # job -> -J string reusing an existing T=0 screening (only ndb.pp*, linked in scr_T0)
-  local d; for d in gw_g_test v_nbg; do
-    [ -e $d/ndb.pp ] || continue
-    mkdir -p scr_T0; local f; for f in $d/ndb.pp*; do ln -sf ../$f scr_T0/; done; echo "$1,scr_T0"; return
-  done; echo $1
-}
 
 if [ "$STAGE" = validate ]; then
   echo "  validate on QPkrange $VSTATES ($NV_QP states), $GW_BANDS bands"
@@ -299,7 +307,9 @@ if [ "$STAGE" = all ] || [ "$STAGE" = gw ]; then
   else
     fresh gw_g; gw_in gw_g.in "1|$NK|$BLO|$BHI|" $NQP || exit 1
     run gw_g "$(scr gw_g)" "ls gw_g/ndb.G* >/dev/null 2>&1" || exit 1
-    python3 $GFCHECK gw_g/ndb.G --norm-tol $NORMTOL | tail -3
+    python3 $GFCHECK gw_g/ndb.G --norm-tol $NORMTOL > gf_check_gw_g.txt; rc=$?
+    tail -3 gf_check_gw_g.txt
+    [ $rc = 0 ] || { echo "!!! gw_g/ndb.G fails gf_check (gf_check_gw_g.txt): the DYSON loader would stop"; exit 1; }
     timing gw_g
   fi
 fi

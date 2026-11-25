@@ -9,7 +9,7 @@
 """Check a retarded ndb.G (GRetarded) against the conditions ChiGMode="DYSON" relies on.
 
 Per state:
-  causality   A(w) = -Im G(w)/pi >= 0 on the whole grid (the Chi/G loader stops otherwise)
+  causality   A(w) = -Im G(w)/pi >= 0 on the whole grid, with the loader's round-off tolerance
   norm        trapezoid sum of A, as in Chi_spectral_weights (the loader stops if |norm-1| > --norm-tol)
   Sc(Eo)      Re Sigma_c at the KS energy, Sigma_c = SE_Operator - G_SIGMA_X + G_VXC_REFERENCE,
               interpolated on the grid (whose points carry +i*GDmRnge)
@@ -33,13 +33,11 @@ from netCDF4 import Dataset
 HA2EV = 27.211386245988
 
 
-def cplx(ds, name, n):
-    """A Yambo (2, n[, steps]) Fortran array as complex (n[, steps])."""
+def cplx(ds, name):
+    """A Yambo complex array. Yambo defines netCDF variables with the Fortran VAR_SZ order
+    (2, n[, steps]), so Python reads it reversed, ([steps,] n, 2). Returns complex (n[, steps])."""
     a = np.array(ds.variables[name][:], dtype=float)
-    a = a[..., 0] + 1j * a[..., 1] if a.shape[-1] == 2 else a[0] + 1j * a[1]
-    if a.ndim == 2 and a.shape[1] == n and a.shape[0] != n:
-        a = a.T
-    return a
+    return (a[..., 0] + 1j * a[..., 1]).T
 
 
 def load_g(path):
@@ -48,15 +46,15 @@ def load_g(path):
             sys.exit(f'!!! {path}: no G_RETARDED (not a GRetarded ndb.G)')
         eo = np.array(ds.variables['G_REFERENCE_ENERGIES'][:], dtype=float).ravel()
         n = eo.size
-        t = np.array(ds.variables['QP_table'][:])
+        t = np.array(ds.variables['QP_table'][:]).T     # Fortran (n, 3+n_sp_pol-1), read reversed
         if t.shape[0] != n:
-            t = t.T
+            sys.exit(f'!!! {path}: QP_table has {t.shape[0]} states, G_REFERENCE_ENERGIES {n}')
         g = {'eo': eo * HA2EV, 'band': t[:, 0].astype(int), 'k': t[:, 2].astype(int),
-             'w': cplx(ds, 'Green_Functions_Energies', n) * HA2EV,
-             'G': cplx(ds, 'Green_Functions', n) / HA2EV,
-             'se': cplx(ds, 'SE_Operator', n) * HA2EV,
-             'sx': cplx(ds, 'G_SIGMA_X', n).ravel() * HA2EV,
-             'vxc': cplx(ds, 'G_VXC_REFERENCE', n).ravel() * HA2EV}
+             'w': cplx(ds, 'Green_Functions_Energies') * HA2EV,
+             'G': cplx(ds, 'Green_Functions') / HA2EV,
+             'se': cplx(ds, 'SE_Operator') * HA2EV,
+             'sx': cplx(ds, 'G_SIGMA_X') * HA2EV,
+             'vxc': cplx(ds, 'G_VXC_REFERENCE') * HA2EV}
     g['sc'] = g['se'] - g['sx'][:, None] + g['vxc'][:, None]
     return g
 
@@ -73,7 +71,9 @@ def norm_and_minA(g, i):
     de[0] = (e[1] - e[0]) / 2
     de[-1] = (e[-1] - e[-2]) / 2
     de[1:-1] = (e[2:] - e[:-2]) / 2
-    return float(np.sum(a * de)), float(a.min() / a.max()), float(e[np.argmax(a)])
+    # negative A tolerated by the loader (Chi_spectral_weights): 100 eps(DP) max(1, max|A|), A in 1/Ha
+    tol = 100 * np.finfo(float).eps * max(1.0, np.abs(a).max() * HA2EV) / HA2EV
+    return float(np.sum(a * de)), float(a.min() / a.max()), float(e[np.argmax(a)]), bool(a.min() < -tol)
 
 
 def load_newton(path):
@@ -116,14 +116,14 @@ def main():
     worst = {'norm': 0.0, 'neg': np.inf, 'sc': 0.0, 'shift': 0.0}
     for i in range(g['eo'].size):
         k, b = g['k'][i], g['band'][i]
-        nrm, mina, peak = norm_and_minA(g, i)
+        nrm, mina, peak, neg = norm_and_minA(g, i)
         sc, off = sc_at_eo(g, i)
         line = f'{k:6d}{b:6d}{g["eo"][i]:11.4f}{peak:11.4f}{nrm:10.5f}{mina:13.2e}{sc:15.5f}'
         worst['norm'] = max(worst['norm'], abs(nrm - 1))
         worst['neg'] = min(worst['neg'], mina)
         if abs(nrm - 1) > a.norm_tol:
             bad.append(f'k {k} band {b}: norm {nrm:.4f}')
-        if mina < -1e-5:
+        if neg:
             bad.append(f'k {k} band {b}: negative spectral weight ({mina:.2e} of the peak)')
         if nw:
             if (k, b) not in nw:
