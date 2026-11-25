@@ -1347,9 +1347,11 @@ positive definite) can have Im Sigma_c > 0 at isolated frequencies: WS2 9x9,
 band 13 at Gamma, +208 meV at Eo - 11.3 eV, above eta = 136 meV, so A < 0 there
 (-6e-5 of the peak, 1.5e-5 of the norm), with and without BG; Newton never sees
 it (Re Sigma at Eo only). `Chi_spectral_weights` sets to zero negative weight
-down to `Chi_clip_rel` = 1e-3 of the peak, adding up to at most 1e-3 of the
-weight, and returns the clipped weight; deeper or larger negative weight is
-still rejected. The loader reports the number of clipped states and the largest
+down to `Chi_clip_peak` = 1e-2 of the peak, adding up to at most
+`Chi_clip_rel` = 1e-3 of the weight, and returns the clipped weight; deeper or
+larger negative weight is still rejected. With a +-80 eV grid the same artifact
+appears 61 eV from Eo (Im Sigma_c up to +17 eV; -1.1e-3 of the peak, 6e-4 of the
+weight), far from the response window. The loader reports the number of clipped states and the largest
 clipped weight; `gf_check.py` applies the same rule.
 
 Remove the `GreenF2QP` flag. Do not apply `GfnQPdb` energy shifts. Set

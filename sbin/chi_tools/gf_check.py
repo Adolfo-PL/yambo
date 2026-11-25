@@ -9,7 +9,8 @@
 """Check a retarded ndb.G (GRetarded) against the conditions ChiGMode="DYSON" relies on.
 
 Per state:
-  causality   A(w) = -Im G(w)/pi >= 0 on the whole grid, as the loader: dips down to 1e-3 of the peak
+  causality   A(w) = -Im G(w)/pi >= 0 on the whole grid, as the loader: dips down to 1e-2 of the peak,
+              adding up to 1e-3 of the norm,
               (PPA Im Sigma > 0 at isolated frequencies) are set to zero and reported
   norm        trapezoid sum of A, as in Chi_spectral_weights (the loader stops if |norm-1| > --norm-tol)
   Sc(Eo)      Re Sigma_c at the KS energy, Sigma_c = SE_Operator - G_SIGMA_X + G_VXC_REFERENCE,
@@ -32,7 +33,8 @@ import numpy as np
 from netCDF4 import Dataset
 
 HA2EV = 27.211386245988
-CLIP_REL = 1e-3    # Chi_clip_rel in src/modules/mod_Chi_Green.F
+CLIP_REL = 1e-3    # Chi_clip_rel in src/modules/mod_Chi_Green.F: largest clipped weight (of the norm)
+CLIP_PEAK = 1e-2   # Chi_clip_peak: deepest clipped dip (of the peak)
 
 
 def cplx(ds, name):
@@ -73,9 +75,9 @@ def norm_and_minA(g, i):
     de[0] = (e[1] - e[0]) / 2
     de[-1] = (e[-1] - e[-2]) / 2
     de[1:-1] = (e[2:] - e[:-2]) / 2
-    # as the loader (Chi_spectral_weights): negative A tolerated down to round-off or CLIP_REL of the
+    # as the loader (Chi_spectral_weights): negative A tolerated down to round-off or CLIP_PEAK of the
     # peak, adding up to at most CLIP_REL of the weight; tolerated negatives are set to zero (A in 1/Ha)
-    tol = max(100 * np.finfo(float).eps * max(1.0, np.abs(a).max() * HA2EV) / HA2EV, CLIP_REL * max(a.max(), 0.0))
+    tol = max(100 * np.finfo(float).eps * max(1.0, np.abs(a).max() * HA2EV) / HA2EV, CLIP_PEAK * max(a.max(), 0.0))
     clipped = float(-np.sum(np.minimum(a, 0.0) * de))
     neg = bool(a.min() < -tol or clipped > CLIP_REL * max(float(np.sum(np.maximum(a, 0.0) * de)), 0.0))
     return float(np.sum(np.maximum(a, 0.0) * de)), float(a.min() / a.max()), float(e[np.argmax(a)]), neg, clipped

@@ -65,7 +65,7 @@ program test_chi_green
  g(7000)=cmplx(real(g(7000)),5.E-4_DP*maxval(-aimag(g)),DP)
  call Chi_spectral_weights(e,g,weight,norm,info,omega)
  call require(info==0.and.omega>0._DP.and.weight(7000)==0._DP,'small negative dip clipped')
- g(7000)=cmplx(real(g(7000)),2.E-3_DP*maxval(-aimag(g)),DP)
+ g(7000)=cmplx(real(g(7000)),2.E-2_DP*maxval(-aimag(g)),DP)
  call Chi_spectral_weights(e,g,weight,norm,info)
  call require(info==2,'deep negative dip rejected')
  g(6900:7100)=cmplx(real(g(6900:7100)),9.E-4_DP*maxval(-aimag(g)),DP)

@@ -29,10 +29,11 @@ module Chi_Green_m
  !
  integer,  parameter :: bins_per_eta=80,bins_per_margin=50,bins_n_mom=8
  ! Negative spectral weight tolerated (and set to zero) in Chi_spectral_weights: dips down to
- ! Chi_clip_rel of the peak, adding up to at most Chi_clip_rel of the weight. The PPA self-energy
+ ! Chi_clip_peak of the peak, adding up to at most Chi_clip_rel of the weight. The PPA self-energy
  ! (one pole per G,G' with weights not positive definite) can have Im Sigma > 0 at isolated
- ! frequencies; deeper or larger negative weight is still rejected as a noncausal spectrum.
- real(DP), parameter, public :: Chi_clip_rel=1.E-3_DP
+ ! frequencies (WS2 9x9: +17 eV at 61 eV from Eo, -1.1e-3 of the peak, 6e-4 of the weight);
+ ! deeper or larger negative weight is still rejected as a noncausal spectrum.
+ real(DP), parameter, public :: Chi_clip_rel=1.E-3_DP,Chi_clip_peak=1.E-2_DP
  real(DP), parameter :: bins_margin=10._DP/27.211386245988_DP   ! 10 eV, in Ha
  type Chi_pole_bins
    real(DP) :: x0_f=0._DP,d_f=1._DP,x0_c=0._DP,d_c=1._DP,c=0._DP
@@ -178,10 +179,10 @@ module Chi_Green_m
    de(1)=(e(2)-e(1))/2._DP
    de(n)=(e(n)-e(n-1))/2._DP
    if (n>2) de(2:n-1)=(e(3:)-e(:n-2))/2._DP
-   ! Reject a noncausal spectrum: negatives beyond round-off and beyond Chi_clip_rel
+   ! Reject a noncausal spectrum: negatives beyond round-off and beyond Chi_clip_peak
    ! of the peak, or adding up to more than Chi_clip_rel. Tolerated ones are set to zero.
    negative_tolerance=max(100._DP*epsilon(1._DP)*max(1._DP,maxval(abs(a))),&
-&                         Chi_clip_rel*max(maxval(a),0._DP))
+&                         Chi_clip_peak*max(maxval(a),0._DP))
    info=2
    if (minval(a)<-negative_tolerance) return
    neg_weight=-sum(min(a,0._DP)*de)
