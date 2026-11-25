@@ -1308,6 +1308,13 @@ equal Newton's `Sc|Eo` at the same `Eo + i GDmRnge` (the real part is the same
 for retarded and time-ordered denominators), with and without BG, and the
 spectra must stay causal and normalized (`sbin/chi_tools/gf_check.py`).
 
+RIM-W with `DysSolver="g"`: Yambo sets up the RIM-W arrays (`RIM_W`,
+`RIM_W_E`) in `QP_interpolate_W`, which only the Newton solver called
+(`QP_newton.F`). The Green-function branch of `QP_driver.F` now calls it too;
+before, a `rim_w` run with `DysSolver="g"` read the unallocated `RIM_W_E` in
+the q=0 plasmon-pole fit of `QP_ppa_cohsex.F` and crashed (segmentation fault,
+WS2 18x18, Nov 2026).
+
 Remove the `GreenF2QP` flag. Do not apply `GfnQPdb` energy shifts. Set
 `QPkrange` to cover **every k point, band and spin** that will enter the
 response, with diagonal states only. Use the generated input's syntax for

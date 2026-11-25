@@ -267,8 +267,11 @@ if [ "$STAGE" = test ]; then
   exit 0
 fi
 
-scr () {   # job -> -J string reusing an existing T=0 screening of this script
-  local d; for d in gw_g_test v_nbg; do [ -e $d/ndb.pp ] && { echo "$1,$d"; return; }; done; echo $1
+scr () {   # job -> -J string reusing an existing T=0 screening (only ndb.pp*, linked in scr_T0)
+  local d; for d in gw_g_test v_nbg; do
+    [ -e $d/ndb.pp ] || continue
+    mkdir -p scr_T0; local f; for f in $d/ndb.pp*; do ln -sf ../$f scr_T0/; done; echo "$1,scr_T0"; return
+  done; echo $1
 }
 
 if [ "$STAGE" = validate ]; then

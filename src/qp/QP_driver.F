@@ -331,8 +331,12 @@ subroutine QP_driver(X,Xen,Xk,en,k,q,Xw,Dip)
      !
      if (.not.l_ppa.and..not.l_mpa.and..not.l_cohsex) call QP_real_axis(X,Xen,Xk,en,k,q,qp,Xw,Dip,0)
      !
-     ! GF for ppa and mpa
+     ! GF for ppa and mpa. RIM-W arrays (RIM_W, RIM_W_E) are set up by
+     ! QP_interpolate_W, called by QP_newton only: call it here too, or
+     ! QP_ppa_cohsex reads unallocated RIM_W_E at q=0 (segfault).
      !
+     if ( l_ppa .and. l_rim_w ) call QP_interpolate_W(X,Xw,q,'PPA')
+     if ( l_mpa .and. l_rim_w ) call QP_interpolate_W(X,Xw,q,'MPA')
      if ( l_ppa ) call QP_ppa_cohsex(X,Xk,en,k,q,qp,Xw,0)
      if ( l_mpa ) call QP_mpa(X,Xk,en,k,q,qp,Xw,0)
      !
