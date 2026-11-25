@@ -28,6 +28,11 @@ module Chi_Green_m
  ! Packed storage b(:): fine nodes 0:n_f, coarse nodes 0:n_c, then bins_n_mom moments.
  !
  integer,  parameter :: bins_per_eta=80,bins_per_margin=50,bins_n_mom=8
+ ! Negative spectral weight tolerated (and set to zero) in Chi_spectral_weights: dips down to
+ ! Chi_clip_rel of the peak, adding up to at most Chi_clip_rel of the weight. The PPA self-energy
+ ! (one pole per G,G' with weights not positive definite) can have Im Sigma > 0 at isolated
+ ! frequencies; deeper or larger negative weight is still rejected as a noncausal spectrum.
+ real(DP), parameter, public :: Chi_clip_rel=1.E-3_DP
  real(DP), parameter :: bins_margin=10._DP/27.211386245988_DP   ! 10 eV, in Ha
  type Chi_pole_bins
    real(DP) :: x0_f=0._DP,d_f=1._DP,x0_c=0._DP,d_c=1._DP,c=0._DP
@@ -151,16 +156,18 @@ module Chi_Green_m
    p=(fb-fa)/(z-ea+eb)
  end function
  !
- subroutine Chi_spectral_weights(e,g,weight,norm,info)
+ subroutine Chi_spectral_weights(e,g,weight,norm,info,clipped)
    real(DP), intent(in) :: e(:)
    complex(DP), intent(in) :: g(:)
    real(DP), intent(out) :: weight(size(e)),norm
    integer, intent(out) :: info
-   real(DP) :: a(size(e)),de(size(e)),negative_tolerance
+   real(DP), intent(out), optional :: clipped
+   real(DP) :: a(size(e)),de(size(e)),negative_tolerance,neg_weight
    integer :: n
    info=1
    weight=0._DP
    norm=0._DP
+   if (present(clipped)) clipped=0._DP
    n=size(e)
    if (n<2.or.size(g)/=n) return
    if (.not.all(ieee_is_finite(e))) return
@@ -168,14 +175,19 @@ module Chi_Green_m
    if (.not.all(ieee_is_finite(aimag(g)))) return
    if (any(e(2:)<=e(:n-1))) return
    a=-aimag(g)/acos(-1._DP)
-   ! Reject a noncausal spectrum. Only roundoff-sized negatives may be clipped.
-   negative_tolerance=100._DP*epsilon(1._DP)*max(1._DP,maxval(abs(a)))
-   info=2
-   if (minval(a)<-negative_tolerance) return
-   a=max(a,0._DP)
    de(1)=(e(2)-e(1))/2._DP
    de(n)=(e(n)-e(n-1))/2._DP
    if (n>2) de(2:n-1)=(e(3:)-e(:n-2))/2._DP
+   ! Reject a noncausal spectrum: negatives beyond round-off and beyond Chi_clip_rel
+   ! of the peak, or adding up to more than Chi_clip_rel. Tolerated ones are set to zero.
+   negative_tolerance=max(100._DP*epsilon(1._DP)*max(1._DP,maxval(abs(a))),&
+&                         Chi_clip_rel*max(maxval(a),0._DP))
+   info=2
+   if (minval(a)<-negative_tolerance) return
+   neg_weight=-sum(min(a,0._DP)*de)
+   if (neg_weight>Chi_clip_rel*max(sum(max(a,0._DP)*de),0._DP)) return
+   if (present(clipped)) clipped=neg_weight
+   a=max(a,0._DP)
    weight=a*de
    norm=sum(weight)
    info=3

@@ -1342,6 +1342,16 @@ GPU builds keep the frequency loop. Checks: `tests/chi_green/test_numerics.F90`
 with RIM-W and BG, 1 and 4 OpenMP threads; both checks fail when a weight or an
 occupation factor is swapped).
 
+Negative spectral weight. The PPA self-energy (one pole per G,G', weights not
+positive definite) can have Im Sigma_c > 0 at isolated frequencies: WS2 9x9,
+band 13 at Gamma, +208 meV at Eo - 11.3 eV, above eta = 136 meV, so A < 0 there
+(-6e-5 of the peak, 1.5e-5 of the norm), with and without BG; Newton never sees
+it (Re Sigma at Eo only). `Chi_spectral_weights` sets to zero negative weight
+down to `Chi_clip_rel` = 1e-3 of the peak, adding up to at most 1e-3 of the
+weight, and returns the clipped weight; deeper or larger negative weight is
+still rejected. The loader reports the number of clipped states and the largest
+clipped weight; `gf_check.py` applies the same rule.
+
 Remove the `GreenF2QP` flag. Do not apply `GfnQPdb` energy shifts. Set
 `QPkrange` to cover **every k point, band and spin** that will enter the
 response, with diagonal states only. Use the generated input's syntax for

@@ -9,7 +9,8 @@
 """Check a retarded ndb.G (GRetarded) against the conditions ChiGMode="DYSON" relies on.
 
 Per state:
-  causality   A(w) = -Im G(w)/pi >= 0 on the whole grid, with the loader's round-off tolerance
+  causality   A(w) = -Im G(w)/pi >= 0 on the whole grid, as the loader: dips down to 1e-3 of the peak
+              (PPA Im Sigma > 0 at isolated frequencies) are set to zero and reported
   norm        trapezoid sum of A, as in Chi_spectral_weights (the loader stops if |norm-1| > --norm-tol)
   Sc(Eo)      Re Sigma_c at the KS energy, Sigma_c = SE_Operator - G_SIGMA_X + G_VXC_REFERENCE,
               interpolated on the grid (whose points carry +i*GDmRnge)
@@ -31,6 +32,7 @@ import numpy as np
 from netCDF4 import Dataset
 
 HA2EV = 27.211386245988
+CLIP_REL = 1e-3    # Chi_clip_rel in src/modules/mod_Chi_Green.F
 
 
 def cplx(ds, name):
@@ -71,9 +73,12 @@ def norm_and_minA(g, i):
     de[0] = (e[1] - e[0]) / 2
     de[-1] = (e[-1] - e[-2]) / 2
     de[1:-1] = (e[2:] - e[:-2]) / 2
-    # negative A tolerated by the loader (Chi_spectral_weights): 100 eps(DP) max(1, max|A|), A in 1/Ha
-    tol = 100 * np.finfo(float).eps * max(1.0, np.abs(a).max() * HA2EV) / HA2EV
-    return float(np.sum(a * de)), float(a.min() / a.max()), float(e[np.argmax(a)]), bool(a.min() < -tol)
+    # as the loader (Chi_spectral_weights): negative A tolerated down to round-off or CLIP_REL of the
+    # peak, adding up to at most CLIP_REL of the weight; tolerated negatives are set to zero (A in 1/Ha)
+    tol = max(100 * np.finfo(float).eps * max(1.0, np.abs(a).max() * HA2EV) / HA2EV, CLIP_REL * max(a.max(), 0.0))
+    clipped = float(-np.sum(np.minimum(a, 0.0) * de))
+    neg = bool(a.min() < -tol or clipped > CLIP_REL * max(float(np.sum(np.maximum(a, 0.0) * de)), 0.0))
+    return float(np.sum(np.maximum(a, 0.0) * de)), float(a.min() / a.max()), float(e[np.argmax(a)]), neg, clipped
 
 
 def load_newton(path):
@@ -113,10 +118,11 @@ def main():
     head += '   -Newton[meV]' if nw else ''
     head += '   dSc_grid[meV] dSc_Newton[meV] diff[meV]' if r is not None and nw and rn else ''
     print(head)
-    worst = {'norm': 0.0, 'neg': np.inf, 'sc': 0.0, 'shift': 0.0}
+    worst = {'norm': 0.0, 'neg': np.inf, 'sc': 0.0, 'shift': 0.0, 'clip': 0.0}
+    n_clipped = 0
     for i in range(g['eo'].size):
         k, b = g['k'][i], g['band'][i]
-        nrm, mina, peak, neg = norm_and_minA(g, i)
+        nrm, mina, peak, neg, clipped = norm_and_minA(g, i)
         sc, off = sc_at_eo(g, i)
         line = f'{k:6d}{b:6d}{g["eo"][i]:11.4f}{peak:11.4f}{nrm:10.5f}{mina:13.2e}{sc:15.5f}'
         worst['norm'] = max(worst['norm'], abs(nrm - 1))
@@ -124,7 +130,10 @@ def main():
         if abs(nrm - 1) > a.norm_tol:
             bad.append(f'k {k} band {b}: norm {nrm:.4f}')
         if neg:
-            bad.append(f'k {k} band {b}: negative spectral weight ({mina:.2e} of the peak)')
+            bad.append(f'k {k} band {b}: negative spectral weight ({mina:.2e} of the peak, {clipped:.1e} in all)')
+        elif clipped > 0:
+            n_clipped += 1
+            worst['clip'] = max(worst['clip'], clipped)
         if nw:
             if (k, b) not in nw:
                 sys.exit(f'!!! k {k} band {b} not in {a.newton}')
@@ -147,6 +156,8 @@ def main():
           + (f', |Sc - Newton| {1000 * worst["sc"]:.3f} meV' if nw else '')
           + (f', |shift difference| {1000 * worst["shift"]:.3f} meV' if r is not None and nw and rn else '')
           + f' (tol {1000 * a.sc_tol:.1f} meV)')
+    if n_clipped:
+        print(f'# negative weight set to zero (as the loader) in {n_clipped} states, largest {worst["clip"]:.1e} of the norm')
     if bad:
         print('!!! FAILED:\n  ' + '\n  '.join(bad[:20]))
         sys.exit(1)

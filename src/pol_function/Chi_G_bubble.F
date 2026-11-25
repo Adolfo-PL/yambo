@@ -305,7 +305,8 @@ subroutine Chi_G_load(X,Xk)
  integer :: saved_kind,disk_kind,ID,io_err,i,a,ik,s,iw,n,info,ipk
  logical :: saved_causal
  logical, allocatable :: covered(:,:,:)
- real(DP) :: norm,reference_tolerance,peak,top_occ,bottom_empty
+ real(DP) :: norm,reference_tolerance,peak,top_occ,bottom_empty,clipped,max_clipped
+ integer :: n_clipped
  complex(DP), allocatable :: reconstructed(:)
  integer, external :: io_QP_and_GF
  if (allocated(Chi_G_energy).or.allocated(Chi_G_static_energy)) return
@@ -365,6 +366,7 @@ subroutine Chi_G_load(X,Xk)
  allocate(Chi_G_norm(X%ib(2),Xk%nibz,n_sp_pol))
  Chi_G_energy=0._DP; Chi_G_weight=0._DP; Chi_G_occupation=0._DP; Chi_G_norm=0._SP
  top_occ=-huge(1._DP); bottom_empty=huge(1._DP)
+ n_clipped=0; max_clipped=0._DP
  reference_tolerance=1.E-5_DP
  do i=1,qp%n_states
    a=qp%table(i,1); ik=qp%table(i,3); s=spin(qp%table(i,:))
@@ -384,8 +386,10 @@ subroutine Chi_G_load(X,Xk)
 &       100._DP*real(epsilon(1._SP),DP)*max(maxval(abs(reconstructed)),tiny(1._DP)))&
 &       call error('[Chi/G] exported G is inconsistent with its self-energy and KS reference')
    call Chi_spectral_weights(Chi_G_energy(a,ik,s,:),cmplx(qp%GreenF(i,:),kind=DP),&
-&                           Chi_G_weight(a,ik,s,:),norm,info)
+&                           Chi_G_weight(a,ik,s,:),norm,info,clipped)
    if (info/=0) call error('[Chi/G] invalid/noncausal spectrum at state '//trim(intc(i)))
+   if (clipped>0._DP) n_clipped=n_clipped+1
+   max_clipped=max(max_clipped,clipped)
    Chi_G_norm(a,ik,s)=real(norm,SP)
    if (abs(norm-1._DP)>real(Chi_G_norm_tol,DP)) then
      call msg('r','[Chi/G] spectral integral at rejected state',real(norm,SP))
@@ -419,6 +423,10 @@ subroutine Chi_G_load(X,Xk)
  enddo
  call msg('r','[Chi/G] spectral integral min/max',&
 & (/minval(Chi_G_norm(X%ib(1):,:,:)),maxval(Chi_G_norm(X%ib(1):,:,:))/))
+ call msg('r','[Chi/G] states with clipped negative weight (PPA Im Sigma > 0)',n_clipped)
+ call msg('r','[Chi/G] largest clipped weight',real(max_clipped,SP))
+ if (n_clipped>0) call warning('[Chi/G] negative spectral weight below the tolerance set to zero in '//&
+&  trim(intc(n_clipped))//' states (see the report)')
  deallocate(covered,reconstructed)
  call QP_reset(qp)
 end subroutine
