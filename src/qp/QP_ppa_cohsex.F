@@ -46,6 +46,7 @@ subroutine QP_ppa_cohsex(X,Xk,E,k,q,qp,Xw,GW_iter)
 &                        QP_Sc,QP_n_states,QP_G_damp,QP_table,QP_dSc_delta,GW_terminator_E,&
 &                        COHSEX_use_empties,l_GW_terminator,GW_terminator_Kind,QP_states_simmetrize
  use QP_m,          ONLY:QP_retarded_G,QP_prepare_G_grid
+ use Chi_Green_m,   ONLY:Chi_pole_bins,Chi_bins_setup,Chi_bins_size,Chi_bins_add,Chi_bins_eval
  use ALLOC,         ONLY:X_ALLOC_elemental
  use X_m,           ONLY:X_t,X_par
  use wave_func,     ONLY:WF
@@ -112,6 +113,20 @@ subroutine QP_ppa_cohsex(X,Xk,E,k,q,qp,Xw,GW_iter)
  integer      :: PPcond_rate,TO_rate
  real(SP)     :: PP_err
  complex(SP)  :: W_hole
+ !
+ ! Retarded G on a grid (GRetarded): every PPA term is a pole r/(W-x) with x real and
+ ! independent of W. The poles are binned (Chi_bins_*, mod_Chi_Green.F) over bands and
+ ! q, and the bins evaluated once per state at the end, instead of repeating the
+ ! G,G' sum at every frequency of the grid (cost then ~ a Newton run).
+ logical          :: l_PB
+ integer          :: PB_n,PB_n_local,n_th,ith
+ integer,             allocatable :: PB_idx(:)
+ type(Chi_pole_bins), allocatable :: PB_L(:)
+ complex(DP),         allocatable :: PB_state(:,:),PB_thread(:,:),PB_w(:),PB_s(:)
+ complex(DP)      :: K_pole
+#if defined _OPENMP
+ integer, external :: omp_get_thread_num,omp_get_max_threads
+#endif
  !
  ! Reset & checks
  !
@@ -294,6 +309,38 @@ subroutine QP_ppa_cohsex(X,Xk,E,k,q,qp,Xw,GW_iter)
  X_range1=1
  X_range2=Xw%n_freqs
  X_ppaE  =X%ppaE
+ !
+ ! Retarded G on a grid: pole bins of each local QP state (see the declarations)
+ !
+ n_th=1
+ l_PB=QP_retarded_G.and.l_ppa.and..not.have_gpu
+#if defined _GPU
+ l_PB=.FALSE.
+#endif
+ if (l_PB) then
+   if (l_GW_terminator.and.trim(GW_terminator_Kind)/='BG') &
+&    call error('[G] binned retarded self-energy: GTermKind must be "BG" or "none"')
+#if defined _OPENMP
+   n_th=max(1,omp_get_max_threads())
+#endif
+   YAMBO_ALLOC(PB_idx,(QP_n_states))
+   allocate(PB_L(QP_n_states))
+   PB_idx=0
+   PB_n=0
+   PB_n_local=0
+   do i_qp=1,QP_n_states
+     if (.not.PAR_IND_QP%element_1D(i_qp)) cycle
+     PB_n_local=PB_n_local+1
+     PB_idx(i_qp)=PB_n_local
+     call Chi_bins_setup(PB_L(i_qp),real(minval(real(Sc_W(i_qp)%p)),DP),real(maxval(real(Sc_W(i_qp)%p)),DP),&
+&                        real(minval(aimag(Sc_W(i_qp)%p))+QP_G_damp,DP))
+     PB_n=max(PB_n,Chi_bins_size(PB_L(i_qp)))
+   enddo
+   YAMBO_ALLOC(PB_state,(max(PB_n,1),max(PB_n_local,1)))
+   YAMBO_ALLOC(PB_thread,(max(PB_n,1),0:n_th-1))
+   PB_state=(0._DP,0._DP)
+   call msg('r','[GW/PPA] Retarded G: pole bins per state ',PB_n)
+ endif
  !
  Q_loop: do iqbz=iq_to_start,q%nbz
    !
@@ -638,6 +685,8 @@ subroutine QP_ppa_cohsex(X,Xk,E,k,q,qp,Xw,GW_iter)
        !
      endif
      !
+     if (l_PB) PB_thread=(0._DP,0._DP)
+     !
      do ib=QP_n_G_bands(1),QP_n_G_bands(2)
        !
        if (.not.PAR_IND_G_b%element_1D(ib)) cycle
@@ -688,6 +737,50 @@ subroutine QP_ppa_cohsex(X,Xk,E,k,q,qp,Xw,GW_iter)
          E_kmq=E%E(isc%os(1),isc%os(2),isc%os(4))
          f_kmq=E%f(isc%os(1),isc%os(2),isc%os(4))
          !
+#if !defined _GPU
+         if (l_PB) then
+           !
+           ! The terms of the frequency loop below, as poles: electron pole at E+PPA_E,
+           ! hole pole at E-PPA_E (W_hole=W_i, retarded). T=0: GRetarded refuses Finite_Tel.
+           !
+           !$omp parallel num_threads(n_th) default(shared), &
+           !$omp & private(ig1,ig2,ith,PPA_E,PPA_R,l_RIM_W_g,bose_PPA_E,K_pole)
+           ith=0
+#if defined _OPENMP
+           ith=omp_get_thread_num()
+#endif
+           !$omp do collapse(2)
+           do ig2=X_cols1,X_cols2
+           do ig1=X_rows1,X_rows2
+             !
+             PPA_E= real(X_ppaE/X_blc_p(ig1,ig2,X_range2),kind=SP)
+             !
+             l_RIM_W_g=(l_RIM_W.and.ig1<=RIM_W_ng.and.ig2<=RIM_W_ng)
+             if (RIM_W_is_diagonal.and.l_RIM_W_g) l_RIM_W_g=(ig1==ig2)
+             !
+             if (l_RIM_W_g) then
+               PPA_R=-cmplx(real(DEV_VAR(RIM_W)(1,iqibz,ig1,ig2))/2._SP, &
+&                           aimag(X_blc_p(ig1,ig2,X_range1))*real(isc_gamp_p(ig1,ig2)),kind=SP)/2._SP*PPA_E
+             else
+               PPA_R=-X_blc_p(ig1,ig2,X_range1)/2._SP*PPA_E*isc_gamp_p(ig1,ig2)
+             endif
+             !
+             bose_PPA_E=0.
+             if (PPA_E<0.) bose_PPA_E=-spin_occ
+             !
+             K_pole=cmplx(-4._SP/spin_occ*pi*isc_rhotw_p(ig1)*conjg_iscp_rhotw(ig2)*(-PPA_R),kind=DP)
+             call Chi_bins_add(PB_L(i_qp),PB_thread(:,ith),real(E_kmq+PPA_E,DP),&
+&                              K_pole*real(spin_occ-f_kmq+bose_PPA_E,DP))
+             call Chi_bins_add(PB_L(i_qp),PB_thread(:,ith),real(E_kmq-PPA_E,DP),&
+&                              K_pole*real(f_kmq+bose_PPA_E,DP))
+             !
+           enddo
+           enddo
+           !$omp end do
+           !$omp end parallel
+           !
+         else
+#endif
          !
          do i_w=1,QP_dSc_steps
            !
@@ -765,6 +858,10 @@ subroutine QP_ppa_cohsex(X,Xk,E,k,q,qp,Xw,GW_iter)
          !
          QP_Sc(i_qp,:QP_dSc_steps)=QP_Sc(i_qp,:QP_dSc_steps)+dc(:QP_dSc_steps)
          !
+#if !defined _GPU
+         endif
+#endif
+         !
          !
        else if (l_sc_sex.or.l_cohsex.or.(l_sc_coh.and.COHSEX_use_empties)) then
          !
@@ -790,7 +887,31 @@ subroutine QP_ppa_cohsex(X,Xk,E,k,q,qp,Xw,GW_iter)
        !
      enddo ! loop on scattering states
      !
-     if(l_ppa.and.l_GW_terminator) then
+     if(l_ppa.and.l_GW_terminator.and.l_PB) then
+#if !defined _GPU
+       !
+       ! BG terminator as one pole at eet_cutoff1+GW_terminator_E+PPA_E (QP_ppa_EET_terminator, T=0)
+       !
+       eet_energy=eet_cutoff1+GW_terminator_E
+       !$omp parallel num_threads(n_th) default(shared), private(ig1,ig2,ith,PPA_E,PPA_R,K_pole)
+       ith=0
+#if defined _OPENMP
+       ith=omp_get_thread_num()
+#endif
+       !$omp do collapse(2)
+       do ig2=X_cols1,X_cols2
+       do ig1=X_rows1,X_rows2
+         PPA_E=X_ppaE/real(X_blc_p(ig1,ig2,X_range2))
+         PPA_R=-X_blc_p(ig1,ig2,X_range1)/2._SP*PPA_E*isc_gamp_p(ig1,ig2)
+         K_pole=cmplx(4._SP/spin_occ*pi*PPA_R*eet_factor(ig1,ig2)*real(spin_occ),kind=DP)
+         call Chi_bins_add(PB_L(i_qp),PB_thread(:,ith),real(eet_energy+PPA_E,DP),K_pole)
+       enddo
+       enddo
+       !$omp end do
+       !$omp end parallel
+#endif
+       !
+     else if(l_ppa.and.l_GW_terminator) then
        !
        ! DALV: here the grid is center in E0
        forall (i_w=1:QP_dSc_steps) W_(i_w)=Sc_W(i_qp)%p(i_w)+cI*QP_G_damp
@@ -854,6 +975,12 @@ subroutine QP_ppa_cohsex(X,Xk,E,k,q,qp,Xw,GW_iter)
        !
      endif
      !
+     if (l_PB) then
+       do ith=0,n_th-1
+         PB_state(:,PB_idx(i_qp))=PB_state(:,PB_idx(i_qp))+PB_thread(:,ith)
+       enddo
+     endif
+     !
    enddo QP_loop
    !
    YAMBO_FREE_GPU(eet_factor)
@@ -865,6 +992,25 @@ subroutine QP_ppa_cohsex(X,Xk,E,k,q,qp,Xw,GW_iter)
    endif
    !
  enddo Q_loop 
+ !
+ ! Retarded G on a grid: the binned poles at every frequency of each local state
+ !
+ if (l_PB) then
+   YAMBO_ALLOC(PB_w,(QP_dSc_steps))
+   YAMBO_ALLOC(PB_s,(QP_dSc_steps))
+   do i_qp=1,QP_n_states
+     if (PB_idx(i_qp)==0) cycle
+     PB_w=cmplx(Sc_W(i_qp)%p(:QP_dSc_steps)+cI*QP_G_damp,kind=DP)
+     call Chi_bins_eval(PB_L(i_qp),PB_state(:,PB_idx(i_qp)),PB_w,PB_s)
+     QP_Sc(i_qp,:QP_dSc_steps)=QP_Sc(i_qp,:QP_dSc_steps)+cmplx(PB_s,kind=SP)
+   enddo
+   YAMBO_FREE(PB_w)
+   YAMBO_FREE(PB_s)
+   YAMBO_FREE(PB_state)
+   YAMBO_FREE(PB_thread)
+   YAMBO_FREE(PB_idx)
+   deallocate(PB_L)
+ endif
  !
  call live_timing()
  !

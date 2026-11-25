@@ -1324,6 +1324,24 @@ The fork sets `W_i=W_(i_w)` there. Newton+BG numbers change slightly (Sc|Eo by
 Sigma_BG(Eo) - Sigma_BG(Eo + 0.1 eV), and Z through the BG derivative); an
 ndb.G made with BG before the fix is wrong and must be regenerated.
 
+Binned retarded self-energy (cost). With `GRetarded` every PPA term is a simple
+pole, `r/(W - x)`, with `x = E_m +- omega_GG'` real and independent of `W`
+(`W_hole = W` for the retarded hole term). Yambo's loop instead recomputed the
+G,G' sum at every grid frequency, so a 589-point grid cost ~150-265 Newton runs
+(estimated; WS2 18x18, 863 G). `QP_ppa_cohsex.F` now bins the poles of each
+state (`Chi_bins_setup/add/eval` in `mod_Chi_Green.F`): each residue is split
+linearly between the two nearest nodes of an energy mesh (step `eta/80` over the
+grid plus `max(10 eV, 50 eta)`, coarse step `margin/50` out to `40 margin`, an
+8-term series beyond), summed over bands and q, and evaluated once per state at
+the grid. Error of one pole relative to its term: `(step/|W-x|)^2/4`, at most
+4e-5 on the fine mesh. The BG terminator pole is binned the same way. Newton and
+GPU builds keep the frequency loop. Checks: `tests/chi_green/test_numerics.F90`
+(binned sum vs direct sum on the production grid shape: 2e-6 of the term scale,
+2e-5 of max|S| with clustered and cancelling poles) and `tests/chi_green/qp_ppa/`
+(`QP_ppa_cohsex.F` itself on mock data, binned vs the frequency loop: 2.5e-5,
+with RIM-W and BG, 1 and 4 OpenMP threads; both checks fail when a weight or an
+occupation factor is swapped).
+
 Remove the `GreenF2QP` flag. Do not apply `GfnQPdb` energy shifts. Set
 `QPkrange` to cover **every k point, band and spin** that will enter the
 response, with diagonal states only. Use the generated input's syntax for

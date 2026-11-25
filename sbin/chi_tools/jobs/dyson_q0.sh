@@ -37,7 +37,8 @@
 # for retarded and time-ordered G), and the BG shift of Re Sigma_c(Eo) on the grid = the Newton BG shift.
 # Options: BANDS=NV:NC (window, default 1:2 = VB..VB+2), GW_BANDS, NP_CHI (tasks of step 2: with several
 # nodes the window dipoles may not fit all tasks, e.g. NP_CHI=24 for bands 13-15 on 18x18).
-# The self-energy is evaluated at GSTEPS frequencies per state (Newton uses 2): from the test run,
+# The retarded self-energy is binned (pole histogram, evaluated once per state at the GSTEPS
+# frequencies), so its cost is close to a Newton run of the same states: from the test run,
 # full self-energy time ~ (test self-energy time) x (number of QP states printed in the plan).
 
 STAGE=${STAGE:-all}                  # test | all | gw | chi | validate
@@ -78,9 +79,11 @@ grep -q "optical q=0 DYSON" $YSRC/src/pol_function/X_pre_setup.F 2>/dev/null &&
 grep -q "GRetarded" $YSRC/src/qp/QP_driver.F 2>/dev/null &&
 grep -q 'GRetarded supports GTermKind="BG"' $YSRC/src/qp/QP_driver.F 2>/dev/null || {
   echo "!!! $YSRC lacks q=0 DYSON or GRetarded with BG: git pull there (branch claude/nbd-file-generation-path-yidcr2)"; exit 1; }
-grep -q "W_i was left at the last one of the band loop" $YSRC/src/qp/QP_ppa_cohsex.F 2>/dev/null || {
-  echo "!!! $YSRC/src/qp/QP_ppa_cohsex.F lacks the BG terminator frequency fix: git pull there"; exit 1; }
-for f in src/qp/QP_driver.F src/qp/QP_ppa_cohsex.F src/qp/QP_interpolate_W.F src/pol_function/Chi_G_bubble.F; do
+grep -q "W_i was left at the last one of the band loop" $YSRC/src/qp/QP_ppa_cohsex.F 2>/dev/null &&
+grep -q "call Chi_bins_add" $YSRC/src/qp/QP_ppa_cohsex.F 2>/dev/null || {
+  echo "!!! $YSRC/src/qp/QP_ppa_cohsex.F lacks the BG frequency fix or the binned retarded self-energy: git pull there"; exit 1; }
+for f in src/qp/QP_driver.F src/qp/QP_ppa_cohsex.F src/qp/QP_interpolate_W.F src/pol_function/Chi_G_bubble.F \
+         src/modules/mod_Chi_Green.F; do
   [ "$(which yambo)" -nt $YSRC/$f ] || { echo "!!! $(which yambo) is older than $YSRC/$f: make yambo"; exit 1; }
 done
 GFCHECK=$YSRC/sbin/chi_tools/gf_check.py

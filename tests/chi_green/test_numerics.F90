@@ -64,7 +64,66 @@ program test_chi_green
  call Chi_spectral_weights(e,g,weight,norm,info)
  call require(info==1,'nonmonotonic spectral grid rejected')
  print *, 'PASS: numerical G0, Dyson, spectral, Matsubara and causality checks'
+ call test_pole_bins()
 contains
+ subroutine test_pole_bins()
+   ! Binned pole sum against the direct sum on the production grid shape:
+   ! Eo +- 40 eV, 589 points, eta = 0.136 eV (Hartree units).
+   integer, parameter :: nw=589,np=20000
+   real(DP), parameter :: ha=27.211386245988_DP
+   type(Chi_pole_bins) :: L
+   complex(DP), allocatable :: b(:)
+   complex(DP) :: w(nw),sd(nw),sb(nw),r(np)
+   real(DP) :: x(np),u(4),eo,eta,scale(nw),err,err_rel
+   integer :: i,ip,seed(64)
+   seed=12345
+   call random_seed(put=seed(1:size(seed)))
+   eo=0.1_DP; eta=0.136_DP/ha
+   do i=1,nw
+     w(i)=cmplx(eo+(-40._DP+80._DP*real(i-1,DP)/real(nw-1,DP))/ha,eta,DP)
+   enddo
+   do ip=1,np
+     call random_number(u)
+     if (ip<=12000) then                      ! across the grid and its margin
+       x(ip)=eo+(-60._DP+120._DP*u(1))/ha
+     else if (ip<=16000) then                 ! clusters within eta of grid points
+       x(ip)=real(w(1+int(u(1)*(nw-1))),DP)+(u(2)-0.5_DP)*eta
+     else if (ip<=19000) then                 ! coarse mesh
+       x(ip)=eo+sign(1._DP,u(1)-0.5_DP)*(50._DP+(1000._DP*u(2)))/ha
+     else                                     ! far: series
+       x(ip)=eo+sign(1._DP,u(1)-0.5_DP)*(1.E3_DP+1.E6_DP*u(2))/ha
+     endif
+     r(ip)=cmplx(u(3)-0.5_DP,u(4)-0.5_DP,DP)
+   enddo
+   ! strong cancellation: pairs of opposite residues 1 meV apart
+   do ip=1,2000,2
+     x(ip+1)=x(ip)+0.001_DP/ha; r(ip+1)=-r(ip)
+   enddo
+   call Chi_bins_setup(L,real(w(1),DP),real(w(nw),DP),eta)
+   allocate(b(Chi_bins_size(L)))
+   b=(0._DP,0._DP)
+   do ip=1,np
+     call Chi_bins_add(L,b,x(ip),r(ip))
+   enddo
+   call Chi_bins_eval(L,b,w,sb)
+   sd=(0._DP,0._DP); scale=0._DP
+   do ip=1,np
+     sd=sd+r(ip)/(w-x(ip))
+     scale=scale+abs(r(ip)/(w-x(ip)))
+   enddo
+   err=maxval(abs(sb-sd)/scale)
+   err_rel=maxval(abs(sb-sd))/maxval(abs(sd))
+   write(*,'(a,es10.2,a,es10.2,a,i0)') ' pole bins: max |error|/sum|terms| ',err,&
+&    ', max |error|/max|S| ',err_rel,', bins ',size(b)
+   call require(err<2.E-4_DP,'binned pole sum (term scale)')
+   call require(err_rel<1.E-3_DP,'binned pole sum (sum scale)')
+   ! infinite and NaN-free far poles add nothing
+   b=(0._DP,0._DP)
+   call Chi_bins_add(L,b,huge(1._DP),(1._DP,0._DP))
+   call Chi_bins_eval(L,b,w,sb)
+   call require(maxval(abs(sb))<1.E-30_DP,'pole at infinity')
+   deallocate(b)
+ end subroutine
  subroutine require(ok,label)
    logical,intent(in)::ok
    character(*),intent(in)::label
